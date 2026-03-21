@@ -37,6 +37,34 @@ IMPORTANT: CI sets `RUSTFLAGS="-Dwarnings"` — all compiler warnings are errors
 
 When adding new features, follow the Iced/Elm pattern: define messages in the `Message` enum, handle them in `update()`, render in `view()`.
 
+## Project structure
+
+```
+src/
+  main.rs          — entry point, application wiring only
+  app.rs           — App struct, new(), update(), view(), subscription(), theme()
+  message.rs       — Message enum (single source of truth for all messages)
+  model/           — data types (no UI or IO logic)
+    mod.rs
+    repository.rs
+    workspace.rs
+  ui/              — view functions, one file per major UI region
+    mod.rs
+    sidebar.rs
+    main_content.rs
+    modal.rs
+    style.rs       — shared color constants and styling helpers
+```
+
+### Guidelines for new code
+
+- **Data types** go in `model/` — keep them free of UI and IO dependencies
+- **UI views** go in `ui/` — each major panel or overlay gets its own file. View functions take data by reference and return `Element<Message>`
+- **Message variants** all live in `message.rs` — never define messages elsewhere
+- **Update logic** stays in `app.rs` — this is the only place that mutates `App` state
+- **Colors and styling constants** go in `ui/style.rs` — don't scatter inline color literals
+- Add a new module when a file would exceed ~300 lines, or when a feature is logically distinct (e.g., `ui/diff_viewer.rs`, `model/checkpoint.rs`)
+
 ## Project context
 
 - See GitHub Issue #5 for the full MVP PRD
