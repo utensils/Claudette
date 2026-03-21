@@ -123,7 +123,9 @@ fn view_workspace_entry<'a>(
 ) -> Element<'a, Message> {
     let is_selected = selected_workspace == Some(ws.id);
 
-    let status_dot = text("\u{25CF}").size(10).color(style::agent_status_color(&ws.agent_status));
+    let status_dot = text("\u{25CF}")
+        .size(10)
+        .color(style::agent_status_color(&ws.agent_status));
 
     let entry_content = row![
         container(status_dot).padding(Padding {

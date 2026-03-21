@@ -26,7 +26,9 @@ pub fn view_main_content<'a>(
                         .color(style::DIM),
                     Space::new().height(12),
                     row![
-                        text("\u{25CF}").size(12).color(style::agent_status_color(&ws.agent_status)),
+                        text("\u{25CF}")
+                            .size(12)
+                            .color(style::agent_status_color(&ws.agent_status)),
                         Space::new().width(6),
                         text(ws.agent_status.label())
                             .size(14)
