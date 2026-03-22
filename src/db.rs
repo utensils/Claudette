@@ -11,7 +11,11 @@ pub struct Database {
 impl Database {
     pub fn open(path: &Path) -> Result<Self, rusqlite::Error> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).ok();
+            std::fs::create_dir_all(parent).map_err(|e| {
+                rusqlite::Error::InvalidPath(
+                    format!("Failed to create database directory: {e}").into(),
+                )
+            })?;
         }
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
@@ -128,14 +132,20 @@ impl Database {
         )?;
         let rows = stmt.query_map([], |row| {
             let status_str: String = row.get(5)?;
+            let status = WorkspaceStatus::from_str(&status_str);
+            let agent_status = if status == WorkspaceStatus::Archived {
+                crate::model::AgentStatus::Stopped
+            } else {
+                crate::model::AgentStatus::Idle
+            };
             Ok(Workspace {
                 id: row.get(0)?,
                 repository_id: row.get(1)?,
                 name: row.get(2)?,
                 branch_name: row.get(3)?,
                 worktree_path: row.get(4)?,
-                status: WorkspaceStatus::from_str(&status_str),
-                agent_status: crate::model::AgentStatus::Idle,
+                status,
+                agent_status,
                 status_line: row.get(6)?,
                 created_at: row.get(7)?,
             })

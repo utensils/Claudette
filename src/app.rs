@@ -99,6 +99,10 @@ impl App {
             }
             Message::SelectWorkspace(id) => {
                 self.selected_workspace = Some(id);
+                if self.show_fuzzy_finder {
+                    self.show_fuzzy_finder = false;
+                    self.fuzzy_query.clear();
+                }
             }
             Message::ToggleRepoCollapsed(id) => {
                 let collapsed = self.repo_collapsed.entry(id).or_insert(false);
@@ -116,8 +120,8 @@ impl App {
                 self.repositories = repos;
                 self.workspaces = workspaces;
             }
-            Message::DataLoaded(Err(_)) => {
-                // DB load failed — start with empty state
+            Message::DataLoaded(Err(e)) => {
+                eprintln!("Failed to load data from database: {e}");
             }
 
             // --- Add Repository ---
@@ -216,7 +220,9 @@ impl App {
                     self.selected_workspace = None;
                 }
             }
-            Message::RepositoryRemoved(Err(_)) => {}
+            Message::RepositoryRemoved(Err(e)) => {
+                eprintln!("Failed to remove repository: {e}");
+            }
 
             // --- Re-link Repository ---
             Message::ShowRelinkRepo(repo_id) => {
@@ -306,6 +312,25 @@ impl App {
 
                 if ws_name.is_empty() {
                     self.create_workspace_error = Some("Name cannot be empty".into());
+                    return Task::none();
+                }
+
+                if ws_name.contains('/')
+                    || ws_name.contains('\\')
+                    || ws_name.contains("..")
+                    || ws_name.contains(' ')
+                    || ws_name.contains('~')
+                    || ws_name.contains(':')
+                    || ws_name.contains('?')
+                    || ws_name.contains('*')
+                    || ws_name.contains('[')
+                    || ws_name.starts_with('.')
+                    || ws_name.ends_with('.')
+                    || ws_name.ends_with(".lock")
+                {
+                    self.create_workspace_error = Some(
+                        "Invalid name: avoid /, \\, .., spaces, and special characters".into(),
+                    );
                     return Task::none();
                 }
 
@@ -410,7 +435,9 @@ impl App {
                     ws.agent_status = AgentStatus::Stopped;
                 }
             }
-            Message::WorkspaceArchived(Err(_)) => {}
+            Message::WorkspaceArchived(Err(e)) => {
+                eprintln!("Failed to archive workspace: {e}");
+            }
 
             // --- Restore ---
             Message::RestoreWorkspace(ws_id) => {
@@ -436,29 +463,13 @@ impl App {
 
                 return Task::perform(
                     async move {
-                        // For restore, the branch already exists so we use worktree add without -b
-                        let output = tokio::process::Command::new("git")
-                            .args([
-                                "-C",
-                                &repo.path,
-                                "worktree",
-                                "add",
-                                &worktree_path_str,
-                                &ws.branch_name,
-                            ])
-                            .output()
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        if !output.status.success() {
-                            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                            return Err(stderr);
-                        }
-
-                        let abs_path = std::path::Path::new(&worktree_path_str)
-                            .canonicalize()
-                            .map_err(|e| e.to_string())?;
-                        let wt_path = abs_path.to_string_lossy().to_string();
+                        let wt_path = crate::git::restore_worktree(
+                            &repo.path,
+                            &ws.branch_name,
+                            &worktree_path_str,
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
 
                         let db = Database::open(&db_path).map_err(|e| e.to_string())?;
                         db.update_workspace_status(
@@ -479,7 +490,9 @@ impl App {
                     ws.agent_status = AgentStatus::Idle;
                 }
             }
-            Message::WorkspaceRestored(Err(_)) => {}
+            Message::WorkspaceRestored(Err(e)) => {
+                eprintln!("Failed to restore workspace: {e}");
+            }
 
             // --- Delete ---
             Message::DeleteWorkspace(ws_id) => {
@@ -521,7 +534,9 @@ impl App {
                     self.selected_workspace = None;
                 }
             }
-            Message::WorkspaceDeleted(Err(_)) => {}
+            Message::WorkspaceDeleted(Err(e)) => {
+                eprintln!("Failed to delete workspace: {e}");
+            }
 
             // --- Fuzzy Finder ---
             Message::ToggleFuzzyFinder => {

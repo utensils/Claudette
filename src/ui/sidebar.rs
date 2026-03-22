@@ -394,7 +394,7 @@ fn view_workspace_entry<'a>(
         .spacing(2)
     };
 
-    let entry_content = row![
+    let select_content = row![
         container(status_dot).padding(Padding {
             top: 2.0,
             right: 0.0,
@@ -403,7 +403,6 @@ fn view_workspace_entry<'a>(
         }),
         Space::new().width(8),
         column![info].width(Fill),
-        action,
     ]
     .align_y(iced::Alignment::Start);
 
@@ -413,7 +412,7 @@ fn view_workspace_entry<'a>(
         None
     };
 
-    button(entry_content)
+    let select_button = button(select_content)
         .on_press(Message::SelectWorkspace(ws_id))
         .style(move |theme: &Theme, status| {
             let mut s = button::text(theme, status);
@@ -426,10 +425,19 @@ fn view_workspace_entry<'a>(
         })
         .padding(Padding {
             top: 8.0,
-            right: 12.0,
+            right: 0.0,
             bottom: 8.0,
             left: 28.0,
         })
-        .width(Fill)
+        .width(Fill);
+
+    row![select_button, action]
+        .align_y(iced::Alignment::Start)
+        .padding(Padding {
+            top: 0.0,
+            right: 12.0,
+            bottom: 0.0,
+            left: 0.0,
+        })
         .into()
 }

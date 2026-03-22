@@ -37,7 +37,7 @@ async fn run_git(repo_path: &str, args: &[&str]) -> Result<String, GitError> {
 }
 
 pub async fn validate_repo(path: &str) -> Result<(), GitError> {
-    if !Path::new(path).join(".git").exists() && !Path::new(path).is_dir() {
+    if !Path::new(path).is_dir() {
         return Err(GitError::NotAGitRepo);
     }
     run_git(path, &["rev-parse", "--git-dir"]).await?;
@@ -88,6 +88,19 @@ pub async fn create_worktree(
     .await?;
 
     // Return the absolute worktree path
+    let abs_path = std::path::Path::new(worktree_path)
+        .canonicalize()
+        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    Ok(abs_path.to_string_lossy().to_string())
+}
+
+/// Restore a worktree for an existing branch (no -b flag).
+pub async fn restore_worktree(
+    repo_path: &str,
+    branch_name: &str,
+    worktree_path: &str,
+) -> Result<String, GitError> {
+    run_git(repo_path, &["worktree", "add", worktree_path, branch_name]).await?;
     let abs_path = std::path::Path::new(worktree_path)
         .canonicalize()
         .map_err(|e| GitError::CommandFailed(e.to_string()))?;
