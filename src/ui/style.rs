@@ -62,5 +62,6 @@ pub fn agent_status_color(status: &AgentStatus) -> Color {
         AgentStatus::Running => STATUS_RUNNING,
         AgentStatus::Idle => STATUS_IDLE,
         AgentStatus::Stopped => STATUS_STOPPED,
+        AgentStatus::Error(_) => ERROR,
     }
 }

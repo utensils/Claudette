@@ -454,6 +454,8 @@ dependencies = [
  "rand",
  "rfd",
  "rusqlite",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "uuid",
