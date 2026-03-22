@@ -165,3 +165,60 @@ pub fn view_create_workspace_modal<'a>(
         Message::HideCreateWorkspace,
     )
 }
+
+pub fn view_relink_repo_modal<'a>(
+    base: Element<'a, Message>,
+    repo_name: &str,
+    path_input: &str,
+    error: Option<&String>,
+) -> Element<'a, Message> {
+    let mut content = column![
+        text("Re-link Repository").size(20),
+        text(format!(
+            "The path for \"{repo_name}\" is no longer valid. Enter the new location:"
+        ))
+        .size(14)
+        .color(style::DIM),
+        text_input("Enter new repository path", path_input)
+            .on_input(Message::RelinkRepoPathChanged)
+            .on_submit(Message::ConfirmRelinkRepo)
+            .padding(10)
+            .size(16),
+    ]
+    .spacing(12);
+
+    if let Some(err) = error {
+        content = content.push(text(err.clone()).size(14).color(style::ERROR));
+    }
+
+    content = content.push(
+        row![
+            button(text("Cancel").size(14))
+                .on_press(Message::HideRelinkRepo)
+                .style(|theme: &Theme, status| {
+                    let mut s = button::secondary(theme, status);
+                    s.border = Border {
+                        radius: 4.0.into(),
+                        ..s.border
+                    };
+                    s
+                })
+                .padding([8, 16]),
+            Space::new().width(8),
+            button(text("Re-link").size(14))
+                .on_press(Message::ConfirmRelinkRepo)
+                .style(|theme: &Theme, status| {
+                    let mut s = button::primary(theme, status);
+                    s.border = Border {
+                        radius: 4.0.into(),
+                        ..s.border
+                    };
+                    s
+                })
+                .padding([8, 16]),
+        ]
+        .align_y(iced::Alignment::Center),
+    );
+
+    modal_backdrop(base, modal_card(content.into()), Message::HideRelinkRepo)
+}

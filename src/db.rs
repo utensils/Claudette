@@ -82,12 +82,20 @@ impl Database {
                 path: row.get(1)?,
                 name: row.get(2)?,
                 created_at: row.get(3)?,
+                path_valid: true, // validated after load
             })
         })?;
         rows.collect()
     }
 
-    #[allow(dead_code)]
+    pub fn update_repository_path(&self, id: &str, path: &str) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE repositories SET path = ?1 WHERE id = ?2",
+            params![path, id],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_repository(&self, id: &str) -> Result<(), rusqlite::Error> {
         self.conn
             .execute("DELETE FROM repositories WHERE id = ?1", params![id])?;
@@ -166,6 +174,7 @@ mod tests {
             path: path.into(),
             name: name.into(),
             created_at: String::new(),
+            path_valid: true,
         }
     }
 

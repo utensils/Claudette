@@ -32,6 +32,11 @@ pub struct App {
     create_workspace_name: String,
     create_workspace_error: Option<String>,
 
+    // Re-link repo modal
+    show_relink_repo: Option<String>, // Some(repo_id)
+    relink_repo_path_input: String,
+    relink_repo_error: Option<String>,
+
     // Fuzzy finder
     show_fuzzy_finder: bool,
     fuzzy_query: String,
@@ -65,6 +70,9 @@ impl App {
             show_create_workspace: None,
             create_workspace_name: String::new(),
             create_workspace_error: None,
+            show_relink_repo: None,
+            relink_repo_path_input: String::new(),
+            relink_repo_error: None,
             show_fuzzy_finder: false,
             fuzzy_query: String::new(),
             fuzzy_selected_index: 0,
@@ -101,7 +109,10 @@ impl App {
             }
 
             // --- Data Loading ---
-            Message::DataLoaded(Ok((repos, workspaces))) => {
+            Message::DataLoaded(Ok((mut repos, workspaces))) => {
+                for repo in &mut repos {
+                    repo.path_valid = std::path::Path::new(&repo.path).join(".git").exists();
+                }
                 self.repositories = repos;
                 self.workspaces = workspaces;
             }
@@ -147,6 +158,7 @@ impl App {
                             path,
                             name,
                             created_at: String::new(),
+                            path_valid: true,
                         };
 
                         let db = Database::open(&db_path).map_err(|e| e.to_string())?;
@@ -164,6 +176,79 @@ impl App {
             }
             Message::RepoAdded(Err(msg)) => {
                 self.add_repo_error = Some(msg);
+            }
+
+            // --- Remove Repository ---
+            Message::RemoveRepository(repo_id) => {
+                let db_path = self.db_path.clone();
+                return Task::perform(
+                    async move {
+                        let db = Database::open(&db_path).map_err(|e| e.to_string())?;
+                        db.delete_repository(&repo_id).map_err(|e| e.to_string())?;
+                        Ok(repo_id)
+                    },
+                    Message::RepositoryRemoved,
+                );
+            }
+            Message::RepositoryRemoved(Ok(repo_id)) => {
+                self.repositories.retain(|r| r.id != repo_id);
+                self.workspaces.retain(|w| w.repository_id != repo_id);
+                if let Some(sel) = &self.selected_workspace
+                    && !self.workspaces.iter().any(|w| w.id == *sel)
+                {
+                    self.selected_workspace = None;
+                }
+            }
+            Message::RepositoryRemoved(Err(_)) => {}
+
+            // --- Re-link Repository ---
+            Message::ShowRelinkRepo(repo_id) => {
+                let current_path = self
+                    .repositories
+                    .iter()
+                    .find(|r| r.id == repo_id)
+                    .map(|r| r.path.clone())
+                    .unwrap_or_default();
+                self.show_relink_repo = Some(repo_id);
+                self.relink_repo_path_input = current_path;
+                self.relink_repo_error = None;
+            }
+            Message::HideRelinkRepo => {
+                self.show_relink_repo = None;
+            }
+            Message::RelinkRepoPathChanged(value) => {
+                self.relink_repo_path_input = value;
+                self.relink_repo_error = None;
+            }
+            Message::ConfirmRelinkRepo => {
+                let Some(repo_id) = self.show_relink_repo.clone() else {
+                    return Task::none();
+                };
+                let path = self.relink_repo_path_input.trim().to_string();
+                let db_path = self.db_path.clone();
+
+                return Task::perform(
+                    async move {
+                        crate::git::validate_repo(&path)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let db = Database::open(&db_path).map_err(|e| e.to_string())?;
+                        db.update_repository_path(&repo_id, &path)
+                            .map_err(|e| e.to_string())?;
+                        Ok((repo_id, path))
+                    },
+                    Message::RepoRelinked,
+                );
+            }
+            Message::RepoRelinked(Ok((repo_id, new_path))) => {
+                if let Some(repo) = self.repositories.iter_mut().find(|r| r.id == repo_id) {
+                    repo.path = new_path;
+                    repo.path_valid = true;
+                }
+                self.show_relink_repo = None;
+            }
+            Message::RepoRelinked(Err(msg)) => {
+                self.relink_repo_error = Some(msg);
             }
 
             // --- Create Workspace ---
@@ -438,6 +523,8 @@ impl App {
             Message::EscapePressed => {
                 if self.show_fuzzy_finder {
                     self.show_fuzzy_finder = false;
+                } else if self.show_relink_repo.is_some() {
+                    self.show_relink_repo = None;
                 } else if self.show_create_workspace.is_some() {
                     self.show_create_workspace = None;
                 } else if self.show_add_repo {
@@ -503,6 +590,21 @@ impl App {
                 repo_name,
                 &self.create_workspace_name,
                 self.create_workspace_error.as_ref(),
+            );
+        }
+
+        if let Some(repo_id) = &self.show_relink_repo {
+            let repo_name = self
+                .repositories
+                .iter()
+                .find(|r| r.id == *repo_id)
+                .map(|r| r.name.as_str())
+                .unwrap_or("Unknown");
+            return ui::view_relink_repo_modal(
+                base,
+                repo_name,
+                &self.relink_repo_path_input,
+                self.relink_repo_error.as_ref(),
             );
         }
 

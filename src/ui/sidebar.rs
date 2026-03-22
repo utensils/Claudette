@@ -161,55 +161,129 @@ fn view_repo_group<'a>(
     let chevron = if collapsed { "\u{25B6}" } else { "\u{25BC}" };
 
     let repo_id = repo.id.clone();
-    let repo_id_for_create = repo.id.clone();
-    let header = row![
-        button(
-            row![
-                text(chevron).size(10).color(style::MUTED),
-                Space::new().width(6),
-                text(&repo.name).size(14),
-            ]
-            .align_y(iced::Alignment::Center),
-        )
-        .on_press(Message::ToggleRepoCollapsed(repo_id))
-        .style(|theme: &Theme, status| {
-            let mut s = button::text(theme, status);
-            if matches!(status, button::Status::Hovered) {
-                s.background = Some(Background::Color(style::HOVER_BG));
-            }
-            s
+
+    let name_label = if repo.path_valid {
+        row![
+            text(chevron).size(10).color(style::MUTED),
+            Space::new().width(6),
+            text(&repo.name).size(14),
+        ]
+        .align_y(iced::Alignment::Center)
+    } else {
+        row![
+            text("\u{26A0}").size(10).color(style::WARNING),
+            Space::new().width(6),
+            text(&repo.name).size(14).color(style::WARNING),
+        ]
+        .align_y(iced::Alignment::Center)
+    };
+
+    let mut header_row = row![
+        button(name_label)
+            .on_press(Message::ToggleRepoCollapsed(repo_id))
+            .style(|theme: &Theme, status| {
+                let mut s = button::text(theme, status);
+                if matches!(status, button::Status::Hovered) {
+                    s.background = Some(Background::Color(style::HOVER_BG));
+                }
+                s
+            })
+            .padding([6, 8])
+            .width(Fill),
+    ];
+
+    if repo.path_valid {
+        let repo_id_for_create = repo.id.clone();
+        header_row = header_row.push(
+            tooltip(
+                button(text("+").size(14).color(style::MUTED))
+                    .on_press(Message::ShowCreateWorkspace(repo_id_for_create))
+                    .style(|theme: &Theme, status| {
+                        let mut s = button::text(theme, status);
+                        if matches!(status, button::Status::Hovered) {
+                            s.background = Some(Background::Color(style::HOVER_BG));
+                        }
+                        s.border = Border {
+                            radius: 4.0.into(),
+                            ..Default::default()
+                        };
+                        s
+                    })
+                    .padding([4, 8]),
+                "New workspace",
+                tooltip::Position::Bottom,
+            )
+            .style(style::tooltip_style),
+        );
+    } else {
+        let repo_id_for_relink = repo.id.clone();
+        let repo_id_for_remove = repo.id.clone();
+        header_row = header_row
+            .push(
+                tooltip(
+                    button(text("\u{1F517}").size(12).color(style::MUTED))
+                        .on_press(Message::ShowRelinkRepo(repo_id_for_relink))
+                        .style(|theme: &Theme, status| {
+                            let mut s = button::text(theme, status);
+                            if matches!(status, button::Status::Hovered) {
+                                s.background = Some(Background::Color(style::HOVER_BG));
+                            }
+                            s.border = Border {
+                                radius: 4.0.into(),
+                                ..Default::default()
+                            };
+                            s
+                        })
+                        .padding([4, 6]),
+                    "Re-link",
+                    tooltip::Position::Bottom,
+                )
+                .style(style::tooltip_style),
+            )
+            .push(
+                tooltip(
+                    button(text("\u{2715}").size(12).color(style::MUTED))
+                        .on_press(Message::RemoveRepository(repo_id_for_remove))
+                        .style(|theme: &Theme, status| {
+                            let mut s = button::text(theme, status);
+                            if matches!(status, button::Status::Hovered) {
+                                s.background = Some(Background::Color(style::HOVER_BG));
+                            }
+                            s.border = Border {
+                                radius: 4.0.into(),
+                                ..Default::default()
+                            };
+                            s
+                        })
+                        .padding([4, 6]),
+                    "Remove",
+                    tooltip::Position::Bottom,
+                )
+                .style(style::tooltip_style),
+            );
+    }
+
+    let header = header_row
+        .padding(Padding {
+            top: 0.0,
+            right: 8.0,
+            bottom: 0.0,
+            left: 8.0,
         })
-        .padding([6, 8])
-        .width(Fill),
-        tooltip(
-            button(text("+").size(14).color(style::MUTED))
-                .on_press(Message::ShowCreateWorkspace(repo_id_for_create))
-                .style(|theme: &Theme, status| {
-                    let mut s = button::text(theme, status);
-                    if matches!(status, button::Status::Hovered) {
-                        s.background = Some(Background::Color(style::HOVER_BG));
-                    }
-                    s.border = Border {
-                        radius: 4.0.into(),
-                        ..Default::default()
-                    };
-                    s
-                })
-                .padding([4, 8]),
-            "New workspace",
-            tooltip::Position::Bottom,
-        )
-        .style(style::tooltip_style),
-    ]
-    .padding(Padding {
-        top: 0.0,
-        right: 8.0,
-        bottom: 0.0,
-        left: 8.0,
-    })
-    .align_y(iced::Alignment::Center);
+        .align_y(iced::Alignment::Center);
 
     let mut group = Column::new().push(header);
+
+    if !repo.path_valid && !collapsed {
+        group = group.push(
+            container(text("Path not found: ").size(11).color(style::WARNING)).padding(Padding {
+                top: 0.0,
+                right: 16.0,
+                bottom: 4.0,
+                left: 28.0,
+            }),
+        );
+    }
 
     if !collapsed {
         for ws in workspaces {

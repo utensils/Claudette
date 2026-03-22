@@ -32,8 +32,9 @@ pub const STATUS_RUNNING: Color = Color::from_rgb(0.2, 0.8, 0.3);
 pub const STATUS_IDLE: Color = Color::from_rgb(0.5, 0.5, 0.5);
 pub const STATUS_STOPPED: Color = Color::from_rgb(0.8, 0.2, 0.2);
 
-// Error
+// Error / Warning
 pub const ERROR: Color = Color::from_rgb(0.9, 0.3, 0.3);
+pub const WARNING: Color = Color::from_rgb(0.9, 0.7, 0.2);
 
 // Tooltip
 pub const TOOLTIP_BG: Color = Color::from_rgb(0.2, 0.2, 0.24);

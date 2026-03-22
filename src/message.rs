@@ -25,6 +25,15 @@ pub enum Message {
     ConfirmAddRepo,
     RepoAdded(Result<Repository, String>),
 
+    // Repository management
+    RemoveRepository(String),                  // repo_id
+    RepositoryRemoved(Result<String, String>), // Ok(repo_id)
+    ShowRelinkRepo(String),                    // repo_id
+    HideRelinkRepo,
+    RelinkRepoPathChanged(String),
+    ConfirmRelinkRepo,
+    RepoRelinked(Result<(String, String), String>), // Ok((repo_id, new_path))
+
     // Create workspace
     ShowCreateWorkspace(String), // repo_id
     HideCreateWorkspace,
