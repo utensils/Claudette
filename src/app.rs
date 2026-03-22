@@ -58,8 +58,6 @@ fn db_path() -> PathBuf {
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
-        set_dock_icon();
-
         let path = db_path();
         let app = Self {
             repositories: Vec::new(),
@@ -94,7 +92,9 @@ impl App {
             Message::DataLoaded,
         );
 
-        (app, load_task)
+        let startup = Task::batch([load_task, Task::done(Message::ApplyDockIcon)]);
+
+        (app, startup)
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -589,6 +589,11 @@ impl App {
                 }
                 self.show_fuzzy_finder = false;
                 self.fuzzy_query.clear();
+            }
+
+            // --- App lifecycle ---
+            Message::ApplyDockIcon => {
+                set_dock_icon();
             }
 
             // --- Escape ---
