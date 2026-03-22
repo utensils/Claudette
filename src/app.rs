@@ -58,6 +58,8 @@ fn db_path() -> PathBuf {
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
+        set_dock_icon();
+
         let path = db_path();
         let app = Self {
             repositories: Vec::new(),
@@ -727,3 +729,33 @@ impl App {
         Theme::Dark
     }
 }
+
+/// Sets the macOS dock icon programmatically.
+///
+/// On macOS, `iced::window::Settings::icon` only affects the titlebar (which macOS doesn't
+/// display). The dock icon requires setting it via NSApplication after Iced has initialized.
+#[cfg(target_os = "macos")]
+fn set_dock_icon() {
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSData};
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+
+    unsafe {
+        let data = NSData::initWithBytes_length(
+            NSData::alloc(),
+            crate::ICON_PNG.as_ptr().cast(),
+            crate::ICON_PNG.len(),
+        );
+        if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+            let app = NSApplication::sharedApplication(mtm);
+            app.setApplicationIconImage(Some(&image));
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_dock_icon() {}
