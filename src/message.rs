@@ -120,6 +120,8 @@ pub enum Message {
     // --- Chat ---
     ChatInputChanged(String),
     ChatSend,
+    ChatHistoryUp,
+    ChatHistoryDown,
     ChatMessageSaved(Result<ChatMessage, String>),
     ChatHistoryLoaded(String, Result<Vec<ChatMessage>, String>), // ws_id, result
 

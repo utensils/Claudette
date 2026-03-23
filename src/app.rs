@@ -1,3 +1,5 @@
+mod chat;
+
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
@@ -121,6 +123,8 @@ pub struct App {
     // Chat state
     chat_messages: HashMap<String, Vec<ChatMessage>>,
     chat_input: String,
+    chat_history_index: Option<usize>,
+    chat_history_draft: String,
 
     // Markdown rendering cache: workspace_id -> vec of parsed items per message
     markdown_cache: HashMap<String, Vec<Vec<markdown::Item>>>,
@@ -201,6 +205,8 @@ impl App {
             agents: HashMap::new(),
             chat_messages: HashMap::new(),
             chat_input: String::new(),
+            chat_history_index: None,
+            chat_history_draft: String::new(),
             markdown_cache: HashMap::new(),
             right_sidebar_visible: true,
             right_sidebar_tab: crate::message::RightSidebarTab::Changes,
@@ -258,6 +264,7 @@ impl App {
                     self.fuzzy_query.clear();
                 }
                 self.chat_input.clear();
+                self.reset_chat_history();
 
                 // Reset diff state when switching workspaces
                 self.diff_files.clear();
@@ -1152,83 +1159,27 @@ impl App {
 
             // --- Chat ---
             Message::ChatInputChanged(text) => {
-                self.chat_input = text;
+                self.handle_chat_input_changed(text);
             }
             Message::ChatSend => {
-                let Some(ws_id) = self.selected_workspace.clone() else {
-                    return Task::none();
-                };
-                let content = self.chat_input.trim().to_string();
-                if content.is_empty() {
-                    return Task::none();
-                }
-                if !self.agents.contains_key(&ws_id) {
-                    return Task::none();
-                }
-                self.chat_input.clear();
-
-                // Create user message
-                let user_msg = ChatMessage {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    workspace_id: ws_id.clone(),
-                    role: ChatRole::User,
-                    content: content.clone(),
-                    cost_usd: None,
-                    duration_ms: None,
-                    created_at: String::new(),
-                };
-
-                self.chat_messages
-                    .entry(ws_id.clone())
-                    .or_default()
-                    .push(user_msg.clone());
-                self.rebuild_markdown_cache(&ws_id);
-
-                // Send to agent via stdin
-                let mut tasks = vec![];
-                if let Some(state) = self.agents.get(&ws_id) {
-                    let stdin_tx = state.handle.stdin_tx.clone();
-                    tasks.push(Task::perform(
-                        async move {
-                            agent::send_user_message(&stdin_tx, &content).await.ok();
-                        },
-                        |()| Message::ChatInputChanged(String::new()), // no-op callback
-                    ));
-                }
-
-                // Persist user message
-                let db_path = self.db_path.clone();
-                tasks.push(Task::perform(
-                    async move {
-                        let db = Database::open(&db_path).map_err(|e| e.to_string())?;
-                        db.insert_chat_message(&user_msg)
-                            .map_err(|e| e.to_string())?;
-                        Ok(user_msg)
-                    },
-                    Message::ChatMessageSaved,
-                ));
-
-                return Task::batch(tasks);
+                return self.handle_chat_send();
             }
-            Message::ChatMessageSaved(Ok(_msg)) => {
-                // Message persisted successfully
+            Message::ChatMessageSaved(result) => {
+                self.handle_chat_message_saved(result);
             }
-            Message::ChatMessageSaved(Err(e)) => {
-                eprintln!("Failed to save chat message: {e}");
+            Message::ChatHistoryLoaded(ws_id, result) => {
+                self.handle_chat_history_loaded(ws_id, result);
             }
-            Message::ChatHistoryLoaded(ws_id, Ok(messages)) => {
-                self.chat_messages.insert(ws_id.clone(), messages);
-                self.rebuild_markdown_cache(&ws_id);
+            Message::ChatHistoryUp => {
+                self.handle_chat_history_up();
             }
-            Message::ChatHistoryLoaded(_ws_id, Err(e)) => {
-                eprintln!("Failed to load chat history: {e}");
+            Message::ChatHistoryDown => {
+                self.handle_chat_history_down();
             }
 
             // --- Markdown link ---
             Message::ChatLinkClicked(url) => {
-                if let Err(e) = open::that(&url) {
-                    eprintln!("Failed to open URL {url}: {e}");
-                }
+                self.handle_chat_link_clicked(&url);
             }
 
             // --- Right sidebar / Diff ---
@@ -1754,28 +1705,6 @@ impl App {
         Task::none()
     }
 
-    fn rebuild_markdown_cache(&mut self, ws_id: &str) {
-        if let Some(messages) = self.chat_messages.get(ws_id) {
-            let cache = self
-                .markdown_cache
-                .entry(ws_id.to_string())
-                .or_insert_with(|| Vec::with_capacity(messages.len()));
-
-            // Truncate if messages were removed
-            if cache.len() > messages.len() {
-                cache.truncate(messages.len());
-            }
-
-            // Only parse new messages beyond what's already cached
-            for msg in messages.iter().skip(cache.len()) {
-                if msg.role == ChatRole::Assistant {
-                    cache.push(markdown::parse(&msg.content).collect());
-                } else {
-                    cache.push(Vec::new());
-                }
-            }
-        }
-    }
 
     /// Build an async task that loads changed files for the currently selected workspace.
     /// Returns `None` if no workspace is selected or the workspace has no worktree.
@@ -2030,6 +1959,12 @@ impl App {
                     }
                     Key::Character(c) if c.as_ref() == "`" && modifiers.command() => {
                         Some(Message::TerminalTogglePanel)
+                    }
+                    Key::Named(keyboard::key::Named::ArrowUp) if modifiers.is_empty() => {
+                        Some(Message::ChatHistoryUp)
+                    }
+                    Key::Named(keyboard::key::Named::ArrowDown) if modifiers.is_empty() => {
+                        Some(Message::ChatHistoryDown)
                     }
                     Key::Named(keyboard::key::Named::Escape) => Some(Message::EscapePressed),
                     _ => None,
