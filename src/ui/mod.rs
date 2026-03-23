@@ -6,7 +6,9 @@ mod fuzzy_finder;
 mod icon_picker;
 mod main_content;
 mod modal;
+mod right_sidebar;
 mod sidebar;
+mod status_bar;
 pub mod style;
 pub mod terminal_panel;
 
@@ -18,4 +20,6 @@ pub use modal::{
     view_delete_workspace_modal, view_relink_repo_modal, view_repo_settings_modal,
     view_revert_file_modal,
 };
+pub use right_sidebar::view_right_sidebar;
 pub use sidebar::view_sidebar;
+pub use status_bar::view_status_bar;

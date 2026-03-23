@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 use crate::agent::{self, StreamEvent};
 use crate::db::Database;
 use crate::message::{Message, SidebarFilter};
-use crate::model::diff::{DiffFile, DiffViewMode, DiffViewState, FileDiff};
+use crate::model::diff::{DiffFile, DiffViewMode, FileDiff};
 use crate::model::{
     AgentStatus, ChatMessage, ChatRole, Repository, TerminalTab, Workspace, WorkspaceStatus,
 };
@@ -125,8 +125,11 @@ pub struct App {
     // Markdown rendering cache: workspace_id -> vec of parsed items per message
     markdown_cache: HashMap<String, Vec<Vec<markdown::Item>>>,
 
-    // Diff viewer state
-    diff_visible: bool,
+    // Right sidebar state
+    right_sidebar_visible: bool,
+    right_sidebar_tab: crate::message::RightSidebarTab,
+
+    // Diff state
     diff_files: Vec<DiffFile>,
     diff_selected_file: Option<String>,
     diff_content: Option<FileDiff>,
@@ -191,7 +194,8 @@ impl App {
             chat_messages: HashMap::new(),
             chat_input: String::new(),
             markdown_cache: HashMap::new(),
-            diff_visible: false,
+            right_sidebar_visible: true,
+            right_sidebar_tab: crate::message::RightSidebarTab::Changes,
             diff_files: Vec::new(),
             diff_selected_file: None,
             diff_content: None,
@@ -239,21 +243,19 @@ impl App {
                 self.chat_input.clear();
 
                 // Reset diff state when switching workspaces
-                let was_diff_visible = self.diff_visible;
-                if was_diff_visible {
-                    self.diff_files.clear();
-                    self.diff_selected_file = None;
-                    self.diff_content = None;
-                    self.diff_error = None;
-                    self.diff_merge_base = None;
-                    self.diff_revert_target = None;
-                    self.diff_visible = false;
-                }
+                self.diff_files.clear();
+                self.diff_selected_file = None;
+                self.diff_content = None;
+                self.diff_error = None;
+                self.diff_merge_base = None;
+                self.diff_revert_target = None;
 
                 let mut tasks = vec![];
 
-                if was_diff_visible {
-                    tasks.push(Task::done(Message::ToggleDiffViewer));
+                // Auto-load changed files for the right sidebar
+                if let Some(task) = self.load_diff_files_task() {
+                    self.diff_loading = true;
+                    tasks.push(task);
                 }
 
                 // Load chat history if not already loaded
@@ -952,8 +954,9 @@ impl App {
                     self.diff_revert_target = None;
                 } else if self.show_fuzzy_finder {
                     self.show_fuzzy_finder = false;
-                } else if self.diff_visible {
-                    self.diff_visible = false;
+                } else if self.diff_selected_file.is_some() {
+                    self.diff_selected_file = None;
+                    self.diff_content = None;
                 } else if self.show_delete_workspace.is_some() {
                     self.show_delete_workspace = None;
                 } else if self.show_relink_repo.is_some() {
@@ -1201,66 +1204,35 @@ impl App {
                 }
             }
 
-            // --- Diff Viewer ---
-            Message::ToggleDiffViewer => {
-                let Some(ws_id) = self.selected_workspace.clone() else {
-                    return Task::none();
-                };
-
-                if self.diff_visible {
-                    self.diff_visible = false;
-                    return Task::none();
+            // --- Right sidebar / Diff ---
+            Message::ToggleRightSidebar => {
+                self.right_sidebar_visible = !self.right_sidebar_visible;
+                // Auto-load changed files when opening if empty
+                if self.right_sidebar_visible
+                    && self.diff_files.is_empty()
+                    && let Some(task) = self.load_diff_files_task()
+                {
+                    self.diff_loading = true;
+                    return task;
                 }
-
-                let ws = self.workspaces.iter().find(|w| w.id == ws_id).cloned();
-                let Some(ws) = ws else {
-                    return Task::none();
-                };
-                let Some(worktree_path) = ws.worktree_path.clone() else {
-                    self.diff_error = Some("Workspace has no worktree (archived?)".into());
-                    self.diff_visible = true;
-                    return Task::none();
-                };
-
-                self.diff_visible = true;
-                self.diff_loading = true;
-                self.diff_error = None;
+            }
+            Message::SetRightSidebarTab(tab) => {
+                self.right_sidebar_tab = tab;
+            }
+            Message::DiffClearSelection => {
+                self.diff_selected_file = None;
+                self.diff_content = None;
+            }
+            Message::DiffRefresh => {
                 self.diff_files.clear();
                 self.diff_selected_file = None;
                 self.diff_content = None;
-
-                let repo = self
-                    .repositories
-                    .iter()
-                    .find(|r| r.id == ws.repository_id)
-                    .cloned();
-                let Some(repo) = repo else {
-                    return Task::none();
-                };
-
-                return Task::perform(
-                    async move {
-                        let base_branch = git::default_branch(&repo.path)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let mb = diff::merge_base(&worktree_path, "HEAD", &base_branch)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let files = diff::changed_files(&worktree_path, &mb)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        Ok((files, mb))
-                    },
-                    Message::DiffFilesLoaded,
-                );
-            }
-            Message::DiffRefresh => {
-                // Re-trigger the same load as ToggleDiffViewer but without toggling
-                if !self.diff_visible {
-                    return Task::none();
+                self.diff_error = None;
+                self.diff_merge_base = None;
+                if let Some(task) = self.load_diff_files_task() {
+                    self.diff_loading = true;
+                    return task;
                 }
-                self.diff_visible = false; // toggle off, then back on
-                return Task::done(Message::ToggleDiffViewer);
             }
             Message::DiffFilesLoaded(Ok((files, merge_base))) => {
                 self.diff_loading = false;
@@ -1720,6 +1692,35 @@ impl App {
         }
     }
 
+    /// Build an async task that loads changed files for the currently selected workspace.
+    /// Returns `None` if no workspace is selected or the workspace has no worktree.
+    fn load_diff_files_task(&self) -> Option<Task<Message>> {
+        let ws_id = self.selected_workspace.as_ref()?;
+        let ws = self.workspaces.iter().find(|w| w.id == *ws_id)?;
+        let worktree_path = ws.worktree_path.clone()?;
+        let repo = self
+            .repositories
+            .iter()
+            .find(|r| r.id == ws.repository_id)?;
+        let repo_path = repo.path.clone();
+
+        Some(Task::perform(
+            async move {
+                let base_branch = git::default_branch(&repo_path)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mb = diff::merge_base(&worktree_path, "HEAD", &base_branch)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let files = diff::changed_files(&worktree_path, &mb)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok((files, mb))
+            },
+            Message::DiffFilesLoaded,
+        ))
+    }
+
     fn fuzzy_filtered_workspaces(&self) -> impl Iterator<Item = &Workspace> {
         let query = self.fuzzy_query.to_lowercase();
         self.workspaces.iter().filter(move |ws| {
@@ -1766,16 +1767,6 @@ impl App {
             (&[] as &[ChatMessage], &[] as &[Vec<markdown::Item>], "")
         };
 
-        let diff_state = DiffViewState {
-            visible: self.diff_visible,
-            files: &self.diff_files,
-            selected_file: self.diff_selected_file.as_deref(),
-            content: self.diff_content.as_ref(),
-            view_mode: self.diff_view_mode,
-            loading: self.diff_loading,
-            error: self.diff_error.as_deref(),
-        };
-
         let (term_tabs, active_term) = if let Some(ws_id) = &self.selected_workspace {
             let tabs = self
                 .terminal_tabs
@@ -1796,14 +1787,44 @@ impl App {
             &self.chat_input,
             streaming,
             md_items,
-            &diff_state,
+            &self.diff_files,
+            self.diff_selected_file.as_deref(),
+            self.diff_content.as_ref(),
+            self.diff_view_mode,
+            self.diff_loading,
+            self.diff_error.as_deref(),
             &self.terminals,
             term_tabs,
             active_term,
             self.terminal_panel_visible,
         ));
 
-        let base: Element<'_, Message> = layout.into();
+        // Right sidebar
+        if self.right_sidebar_visible {
+            layout = layout.push(ui::view_right_sidebar(
+                self.right_sidebar_tab,
+                &self.diff_files,
+                self.diff_selected_file.as_deref(),
+                self.diff_view_mode,
+                self.diff_loading,
+            ));
+        }
+
+        // Wrap in Column with status bar at bottom
+        let base: Element<'_, Message> = iced::widget::Column::new()
+            .push(
+                iced::widget::container(layout)
+                    .width(iced::Fill)
+                    .height(iced::Fill),
+            )
+            .push(ui::view_status_bar(
+                self.sidebar_visible,
+                self.terminal_panel_visible,
+                self.right_sidebar_visible,
+            ))
+            .width(iced::Fill)
+            .height(iced::Fill)
+            .into();
 
         // Icon picker layered on top of repo settings modal
         if self.show_icon_picker && self.show_repo_settings.is_some() {
@@ -1913,7 +1934,7 @@ impl App {
                         return Some(Message::ToggleFuzzyFinder);
                     }
                     Key::Character(c) if c.as_ref() == "d" && modifiers.command() => {
-                        return Some(Message::ToggleDiffViewer);
+                        return Some(Message::ToggleRightSidebar);
                     }
                     Key::Character(c) if c.as_ref() == "`" && modifiers.command() => {
                         return Some(Message::TerminalTogglePanel);

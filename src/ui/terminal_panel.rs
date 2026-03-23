@@ -23,7 +23,7 @@ pub fn view_terminal_panel<'a>(
     }
 
     if !panel_visible {
-        return view_collapsed_bar();
+        return Space::new().into();
     }
 
     let tab_bar = view_tab_bar(tabs, active_tab_id, workspace_id);
@@ -151,41 +151,6 @@ fn view_tab_bar<'a>(
             background: Some(Background::Color(style::TERMINAL_TAB_BG)),
             border: Border {
                 width: 0.0,
-                color: style::TERMINAL_TAB_BORDER,
-                radius: 0.0.into(),
-            },
-            ..Default::default()
-        })
-        .into()
-}
-
-fn view_collapsed_bar<'a>() -> Element<'a, Message> {
-    let restore_btn = button(
-        row![text("Terminal").size(12), text("\u{25B2}").size(10)]
-            .spacing(6)
-            .align_y(iced::Alignment::Center),
-    )
-    .on_press(Message::TerminalTogglePanel)
-    .padding([4, 10])
-    .style(|_theme, _status| button::Style {
-        background: None,
-        text_color: style::MUTED,
-        ..Default::default()
-    });
-
-    let bar = Row::new()
-        .push(restore_btn)
-        .push(Space::new().width(Fill))
-        .align_y(iced::Alignment::Center)
-        .height(TAB_BAR_HEIGHT)
-        .width(Fill);
-
-    container(bar)
-        .width(Fill)
-        .style(|_theme| container::Style {
-            background: Some(Background::Color(style::TERMINAL_TAB_BG)),
-            border: Border {
-                width: 1.0,
                 color: style::TERMINAL_TAB_BORDER,
                 radius: 0.0.into(),
             },

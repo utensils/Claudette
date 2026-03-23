@@ -9,6 +9,12 @@ pub enum SidebarFilter {
     Archived,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RightSidebarTab {
+    AllFiles,
+    Changes,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     // Sidebar
@@ -113,8 +119,10 @@ pub enum Message {
     // --- Markdown link ---
     ChatLinkClicked(String), // URL
 
-    // --- Diff viewer ---
-    ToggleDiffViewer,
+    // --- Right sidebar / Diff ---
+    ToggleRightSidebar,
+    SetRightSidebarTab(RightSidebarTab),
+    DiffClearSelection,
     DiffRefresh,
     DiffFilesLoaded(Result<(Vec<DiffFile>, String), String>), // Ok((files, merge_base))
     DiffSelectFile(String),                                   // file path
