@@ -253,6 +253,8 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Noop => {}
+
             // --- Sidebar ---
             Message::ToggleSidebar => {
                 self.sidebar_visible = !self.sidebar_visible;
@@ -1689,7 +1691,7 @@ impl App {
                                 .map_err(|e| e.to_string())?;
                             Ok(())
                         },
-                        |_: Result<(), String>| Message::ChatInputChanged(String::new()),
+                        |_: Result<(), String>| Message::Noop,
                     );
                 }
 
@@ -1704,7 +1706,6 @@ impl App {
         }
         Task::none()
     }
-
 
     /// Build an async task that loads changed files for the currently selected workspace.
     /// Returns `None` if no workspace is selected or the workspace has no worktree.
@@ -1960,10 +1961,10 @@ impl App {
                     Key::Character(c) if c.as_ref() == "`" && modifiers.command() => {
                         Some(Message::TerminalTogglePanel)
                     }
-                    Key::Named(keyboard::key::Named::ArrowUp) if modifiers.is_empty() => {
+                    Key::Named(keyboard::key::Named::ArrowUp) if modifiers.alt() => {
                         Some(Message::ChatHistoryUp)
                     }
-                    Key::Named(keyboard::key::Named::ArrowDown) if modifiers.is_empty() => {
+                    Key::Named(keyboard::key::Named::ArrowDown) if modifiers.alt() => {
                         Some(Message::ChatHistoryDown)
                     }
                     Key::Named(keyboard::key::Named::Escape) => Some(Message::EscapePressed),

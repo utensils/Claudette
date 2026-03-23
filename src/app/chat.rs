@@ -55,7 +55,7 @@ impl App {
                 async move {
                     agent::send_user_message(&stdin_tx, &content).await.ok();
                 },
-                |()| Message::ChatInputChanged(String::new()), // no-op callback
+                |()| Message::Noop,
             ));
         }
 

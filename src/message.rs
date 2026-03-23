@@ -24,6 +24,9 @@ pub enum DividerDrag {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    /// No-op message for async task callbacks that don't need to trigger updates.
+    Noop,
+
     // Sidebar
     ToggleSidebar,
     SelectWorkspace(String),
