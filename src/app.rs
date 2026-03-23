@@ -301,6 +301,14 @@ impl App {
                             move |result| Message::TerminalTabsLoaded(ws_id, result)
                         },
                     ));
+                } else if self
+                    .terminal_tabs
+                    .get(&id)
+                    .map(|t| t.is_empty())
+                    .unwrap_or(false)
+                {
+                    // Already loaded but empty — ensure at least 1 terminal exists
+                    tasks.push(Task::done(Message::TerminalCreate(id.clone())));
                 }
 
                 if !tasks.is_empty() {
