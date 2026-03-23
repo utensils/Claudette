@@ -234,12 +234,10 @@ impl App {
                     self.diff_error = None;
                     self.diff_merge_base = None;
                     self.diff_revert_target = None;
-                    // Re-load diff for new workspace
-                    let mut tasks = vec![Task::done(Message::ToggleDiffViewer)];
-                    // ToggleDiffViewer will toggle off since diff_visible is true,
-                    // so we need to toggle it off first
+                    // Set diff_visible to false so ToggleDiffViewer will re-open
+                    // and reload diff data for the new workspace
                     self.diff_visible = false;
-                    // Then load chat + re-open diff
+                    let mut tasks = vec![];
                     if !self.chat_messages.contains_key(&id) {
                         let db_path = self.db_path.clone();
                         let ws_id = id.clone();
@@ -1242,6 +1240,7 @@ impl App {
             Message::DiffSelectFile(path) => {
                 self.diff_selected_file = Some(path.clone());
                 self.diff_content = None;
+                self.diff_error = None;
                 self.diff_loading = true;
 
                 let Some(ws_id) = self.selected_workspace.clone() else {
@@ -1269,8 +1268,13 @@ impl App {
                 );
             }
             Message::DiffFileContentLoaded(Ok(file_diff)) => {
-                self.diff_loading = false;
-                self.diff_content = Some(file_diff);
+                // Guard against out-of-order responses: only update if the loaded
+                // diff still matches the currently selected file
+                if self.diff_selected_file.as_ref() == Some(&file_diff.path) {
+                    self.diff_loading = false;
+                    self.diff_error = None;
+                    self.diff_content = Some(file_diff);
+                }
             }
             Message::DiffFileContentLoaded(Err(e)) => {
                 self.diff_loading = false;
