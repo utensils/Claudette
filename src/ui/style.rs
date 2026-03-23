@@ -66,6 +66,11 @@ pub const CHAT_INPUT_BG: Color = Color::from_rgb(0.12, 0.12, 0.14);
 pub const CHAT_INPUT_BORDER: Color = Color::from_rgb(0.22, 0.22, 0.26);
 pub const CHAT_HEADER_BG: Color = Color::from_rgb(0.1, 0.1, 0.12);
 
+// Terminal
+pub const TERMINAL_TAB_BG: Color = Color::from_rgb(0.12, 0.12, 0.14);
+pub const TERMINAL_TAB_ACTIVE_BG: Color = Color::from_rgb(0.18, 0.18, 0.22);
+pub const TERMINAL_TAB_BORDER: Color = Color::from_rgb(0.2, 0.2, 0.24);
+
 use iced::{Background, Border, Theme};
 
 pub fn tooltip_style(_theme: &Theme) -> iced::widget::container::Style {

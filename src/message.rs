@@ -1,6 +1,6 @@
 use crate::agent::StreamEvent;
 use crate::model::diff::{DiffFile, DiffViewMode, FileDiff};
-use crate::model::{ChatMessage, Repository, Workspace};
+use crate::model::{ChatMessage, Repository, TerminalTab, Workspace};
 
 #[derive(Debug, Clone)]
 pub enum SidebarFilter {
@@ -124,4 +124,18 @@ pub enum Message {
     DiffConfirmRevert,
     DiffCancelRevert,
     DiffFileReverted(Result<String, String>), // Ok(file_path)
+
+    // --- Terminal ---
+    TerminalCreate(String),                                 // workspace_id
+    TerminalCreated(Result<(String, TerminalTab), String>), // Ok((ws_id, tab))
+    TerminalClose(u64),                                     // terminal_id
+    TerminalClosed(Result<i64, String>),                    // Ok(tab_id)
+    TerminalSelectTab(u64),                                 // terminal_id
+    TerminalTogglePanel,                                    // Ctrl/Cmd+`
+    TerminalEvent(iced_term::Event),                        // event from backend
+    TerminalTabsLoaded(String, Result<Vec<TerminalTab>, String>), // ws_id, tabs
+
+    // Script output (foundation for §4.7)
+    #[allow(dead_code)]
+    ScriptOutputCreate(String, String), // workspace_id, command
 }

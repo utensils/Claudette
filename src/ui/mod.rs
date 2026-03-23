@@ -8,6 +8,7 @@ mod main_content;
 mod modal;
 mod sidebar;
 pub mod style;
+pub mod terminal_panel;
 
 pub use fuzzy_finder::view_fuzzy_finder;
 pub use icon_picker::view_icon_picker;
