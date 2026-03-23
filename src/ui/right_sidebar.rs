@@ -11,6 +11,7 @@ pub fn view_right_sidebar<'a>(
     selected_file: Option<&str>,
     view_mode: DiffViewMode,
     loading: bool,
+    width: f32,
 ) -> Element<'a, Message> {
     let tab_bar = view_tab_bar(active_tab);
 
@@ -37,24 +38,14 @@ pub fn view_right_sidebar<'a>(
 
     let content = column![tab_bar, tab_divider, tab_content];
 
-    // Left border divider
-    let divider = container(column![])
-        .width(1)
-        .height(Fill)
-        .style(|_theme: &Theme| container::Style {
-            background: Some(Background::Color(style::DIVIDER)),
-            ..Default::default()
-        });
-
-    let sidebar = container(content)
-        .width(Length::Fixed(style::RIGHT_SIDEBAR_WIDTH - 1.0))
+    container(content)
+        .width(Length::Fixed(width))
         .height(Fill)
         .style(|_theme: &Theme| container::Style {
             background: Some(Background::Color(style::SIDEBAR_BG)),
             ..Default::default()
-        });
-
-    row![divider, sidebar].into()
+        })
+        .into()
 }
 
 fn view_tab_bar(active_tab: RightSidebarTab) -> Element<'static, Message> {

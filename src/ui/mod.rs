@@ -2,6 +2,7 @@ pub mod chat_panel;
 mod diff_content;
 mod diff_file_tree;
 pub mod diff_viewer;
+pub mod divider;
 mod fuzzy_finder;
 mod icon_picker;
 mod main_content;

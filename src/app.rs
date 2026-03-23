@@ -144,6 +144,14 @@ pub struct App {
     terminal_tabs: HashMap<String, Vec<TerminalTab>>,
     active_terminal_tab: HashMap<String, u64>,
     terminal_panel_visible: bool,
+
+    // Panel sizing & drag state
+    sidebar_width: f32,
+    right_sidebar_width: f32,
+    terminal_height: f32,
+    dragging_divider: Option<crate::message::DividerDrag>,
+    drag_cursor_initialized: bool,
+    last_cursor_position: iced::Point,
 }
 
 fn claudette_home() -> PathBuf {
@@ -208,6 +216,12 @@ impl App {
             terminal_tabs: HashMap::new(),
             active_terminal_tab: HashMap::new(),
             terminal_panel_visible: true,
+            sidebar_width: ui::style::SIDEBAR_WIDTH,
+            right_sidebar_width: ui::style::RIGHT_SIDEBAR_WIDTH,
+            terminal_height: 300.0,
+            dragging_divider: None,
+            drag_cursor_initialized: false,
+            last_cursor_position: iced::Point::ORIGIN,
         };
 
         let load_task = Task::perform(
@@ -1572,6 +1586,46 @@ impl App {
                     }
                 }
             }
+
+            // --- Panel resizing ---
+            Message::DividerDragStart(divider) => {
+                self.dragging_divider = Some(divider);
+                self.drag_cursor_initialized = false;
+            }
+            Message::DividerDragUpdate(x, y) => {
+                if self.dragging_divider.is_none() {
+                    // Not dragging — just track position for when a drag starts
+                    self.last_cursor_position = iced::Point::new(x, y);
+                    return Task::none();
+                }
+                if !self.drag_cursor_initialized {
+                    self.last_cursor_position = iced::Point::new(x, y);
+                    self.drag_cursor_initialized = true;
+                    return Task::none();
+                }
+
+                let dx = x - self.last_cursor_position.x;
+                let dy = y - self.last_cursor_position.y;
+                self.last_cursor_position = iced::Point::new(x, y);
+
+                if let Some(divider) = self.dragging_divider {
+                    match divider {
+                        crate::message::DividerDrag::LeftSidebar => {
+                            self.sidebar_width = (self.sidebar_width + dx).clamp(150.0, 500.0);
+                        }
+                        crate::message::DividerDrag::RightSidebar => {
+                            self.right_sidebar_width =
+                                (self.right_sidebar_width - dx).clamp(150.0, 500.0);
+                        }
+                        crate::message::DividerDrag::Terminal => {
+                            self.terminal_height = (self.terminal_height - dy).clamp(100.0, 800.0);
+                        }
+                    }
+                }
+            }
+            Message::DividerDragEnd => {
+                self.dragging_divider = None;
+            }
         }
         Task::none()
     }
@@ -1742,6 +1796,10 @@ impl App {
                 self.selected_workspace.as_deref(),
                 &self.sidebar_filter,
                 &self.repo_collapsed,
+                self.sidebar_width,
+            ));
+            layout = layout.push(ui::divider::vertical_divider(
+                crate::message::DividerDrag::LeftSidebar,
             ));
         }
 
@@ -1797,16 +1855,21 @@ impl App {
             term_tabs,
             active_term,
             self.terminal_panel_visible,
+            self.terminal_height,
         ));
 
         // Right sidebar
         if self.right_sidebar_visible {
+            layout = layout.push(ui::divider::vertical_divider(
+                crate::message::DividerDrag::RightSidebar,
+            ));
             layout = layout.push(ui::view_right_sidebar(
                 self.right_sidebar_tab,
                 &self.diff_files,
                 self.diff_selected_file.as_deref(),
                 self.diff_view_mode,
                 self.diff_loading,
+                self.right_sidebar_width,
             ));
         }
 
@@ -1922,30 +1985,32 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let keyboard_sub = event::listen_with(|event, _status, _id| {
-            if let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) =
-                &event
-            {
+        let input_sub = event::listen_with(|event, _status, _id| match &event {
+            iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 match key {
                     Key::Character(c) if c.as_ref() == "b" && modifiers.command() => {
-                        return Some(Message::ToggleSidebar);
+                        Some(Message::ToggleSidebar)
                     }
                     Key::Character(c) if c.as_ref() == "k" && modifiers.command() => {
-                        return Some(Message::ToggleFuzzyFinder);
+                        Some(Message::ToggleFuzzyFinder)
                     }
                     Key::Character(c) if c.as_ref() == "d" && modifiers.command() => {
-                        return Some(Message::ToggleRightSidebar);
+                        Some(Message::ToggleRightSidebar)
                     }
                     Key::Character(c) if c.as_ref() == "`" && modifiers.command() => {
-                        return Some(Message::TerminalTogglePanel);
+                        Some(Message::TerminalTogglePanel)
                     }
-                    Key::Named(keyboard::key::Named::Escape) => {
-                        return Some(Message::EscapePressed);
-                    }
-                    _ => {}
+                    Key::Named(keyboard::key::Named::Escape) => Some(Message::EscapePressed),
+                    _ => None,
                 }
             }
-            None
+            iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                Some(Message::DividerDragUpdate(position.x, position.y))
+            }
+            iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                Some(Message::DividerDragEnd)
+            }
+            _ => None,
         });
 
         // Agent streaming subscriptions — one per active agent
@@ -1968,7 +2033,7 @@ impl App {
             .map(|term| term.subscription().map(Message::TerminalEvent))
             .collect();
 
-        let mut subs = vec![keyboard_sub];
+        let mut subs = vec![input_sub];
         subs.extend(agent_subs);
         subs.extend(terminal_subs);
         Subscription::batch(subs)

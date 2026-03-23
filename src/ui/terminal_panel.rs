@@ -8,7 +8,6 @@ use crate::message::Message;
 use crate::model::TerminalTab;
 use crate::ui::style;
 
-const TERMINAL_PANEL_HEIGHT: f32 = 300.0;
 const TAB_BAR_HEIGHT: f32 = 32.0;
 
 pub fn view_terminal_panel<'a>(
@@ -17,6 +16,7 @@ pub fn view_terminal_panel<'a>(
     active_tab_id: Option<u64>,
     panel_visible: bool,
     workspace_id: &str,
+    panel_height: f32,
 ) -> Element<'a, Message> {
     if tabs.is_empty() {
         return Space::new().into();
@@ -45,12 +45,12 @@ pub fn view_terminal_panel<'a>(
     let content = Column::new().push(tab_bar).push(
         container(terminal_content)
             .width(Fill)
-            .height(TERMINAL_PANEL_HEIGHT - TAB_BAR_HEIGHT),
+            .height(panel_height - TAB_BAR_HEIGHT),
     );
 
     container(content)
         .width(Fill)
-        .height(TERMINAL_PANEL_HEIGHT)
+        .height(panel_height)
         .style(|_theme| container::Style {
             background: Some(Background::Color(style::TERMINAL_TAB_BG)),
             border: Border {

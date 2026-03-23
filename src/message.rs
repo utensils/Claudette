@@ -15,6 +15,13 @@ pub enum RightSidebarTab {
     Changes,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DividerDrag {
+    LeftSidebar,
+    RightSidebar,
+    Terminal,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     // Sidebar
@@ -146,4 +153,9 @@ pub enum Message {
     // Script output (foundation for §4.7)
     #[allow(dead_code)]
     ScriptOutputCreate(String, String), // workspace_id, command
+
+    // --- Panel resizing ---
+    DividerDragStart(DividerDrag),
+    DividerDragUpdate(f32, f32), // cursor_x, cursor_y
+    DividerDragEnd,
 }

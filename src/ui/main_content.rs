@@ -4,10 +4,10 @@ use iced::widget::{Column, Space, center, column, container, markdown, text};
 use iced::{Element, Fill};
 use iced_term::Terminal;
 
-use crate::message::Message;
+use crate::message::{DividerDrag, Message};
 use crate::model::diff::{DiffFile, DiffViewMode, FileDiff};
 use crate::model::{AgentStatus, ChatMessage, Repository, TerminalTab, Workspace};
-use crate::ui::{chat_panel, diff_viewer, style, terminal_panel};
+use crate::ui::{chat_panel, diff_viewer, divider, style, terminal_panel};
 
 #[allow(clippy::too_many_arguments)]
 pub fn view_main_content<'a>(
@@ -18,7 +18,7 @@ pub fn view_main_content<'a>(
     chat_input: &str,
     streaming_text: &'a str,
     markdown_items: &'a [Vec<markdown::Item>],
-    // Diff state (individual fields, no DiffViewState)
+    // Diff state
     diff_files: &'a [DiffFile],
     diff_selected_file: Option<&'a str>,
     diff_content: Option<&'a FileDiff>,
@@ -30,6 +30,7 @@ pub fn view_main_content<'a>(
     terminal_tabs: &[TerminalTab],
     active_terminal_tab: Option<u64>,
     terminal_panel_visible: bool,
+    terminal_height: f32,
 ) -> Element<'a, Message> {
     let content: Element<'_, Message> = if let Some(ws_id) = selected_workspace {
         if let Some(ws) = workspaces.iter().find(|w| w.id == ws_id) {
@@ -62,14 +63,22 @@ pub fn view_main_content<'a>(
                 active_terminal_tab,
                 terminal_panel_visible,
                 ws_id,
+                terminal_height,
             );
 
-            Column::new()
+            let mut col = Column::new()
                 .push(container(top_content).width(Fill).height(Fill))
-                .push(terminal)
                 .width(Fill)
-                .height(Fill)
-                .into()
+                .height(Fill);
+
+            // Add horizontal divider + terminal if terminal is visible and has tabs
+            if terminal_panel_visible && !terminal_tabs.is_empty() {
+                col = col
+                    .push(divider::horizontal_divider(DividerDrag::Terminal))
+                    .push(terminal);
+            }
+
+            col.into()
         } else {
             center(text("Workspace not found").size(16).color(style::FAINT)).into()
         }
