@@ -36,7 +36,7 @@ pub fn view_status_bar(
     container(bar)
         .width(Fill)
         .height(style::STATUS_BAR_HEIGHT)
-        .center_y(Fill)
+        .center_y(style::STATUS_BAR_HEIGHT)
         .style(|_theme: &Theme| container::Style {
             background: Some(Background::Color(style::STATUS_BAR_BG)),
             border: Border {
