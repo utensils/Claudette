@@ -1516,6 +1516,11 @@ impl App {
             }
 
             Message::TerminalTabsLoaded(ws_id, Ok(tabs)) => {
+                if tabs.is_empty() {
+                    // Auto-create a terminal if none exist (always at least 1)
+                    self.terminal_tabs.insert(ws_id.clone(), Vec::new());
+                    return Task::done(Message::TerminalCreate(ws_id));
+                }
                 let ws = self.workspaces.iter().find(|w| w.id == ws_id);
                 if let Some(wt_path) = ws.and_then(|w| w.worktree_path.as_deref()) {
                     let mut first_id = None;
