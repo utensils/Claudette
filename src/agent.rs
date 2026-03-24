@@ -39,6 +39,9 @@ pub enum StreamEvent {
         duration_ms: Option<i64>,
     },
 
+    #[serde(rename = "user")]
+    User { message: UserEventMessage },
+
     #[serde(other)]
     Unknown,
 }
@@ -50,7 +53,11 @@ pub enum InnerStreamEvent {
     MessageStart {},
 
     #[serde(rename = "content_block_start")]
-    ContentBlockStart { index: usize },
+    ContentBlockStart {
+        index: usize,
+        #[serde(default)]
+        content_block: Option<StartContentBlock>,
+    },
 
     #[serde(rename = "content_block_delta")]
     ContentBlockDelta { index: usize, delta: Delta },
@@ -78,6 +85,48 @@ pub enum Delta {
     ToolUse {
         #[serde(default)]
         partial_json: Option<String>,
+    },
+
+    #[serde(rename = "input_json_delta")]
+    InputJson {
+        #[serde(default)]
+        partial_json: Option<String>,
+    },
+
+    #[serde(other)]
+    Unknown,
+}
+
+/// Content block info from `content_block_start` events.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+pub enum StartContentBlock {
+    #[serde(rename = "tool_use")]
+    ToolUse { id: String, name: String },
+
+    #[serde(rename = "text")]
+    Text {},
+
+    #[serde(other)]
+    Unknown,
+}
+
+/// Message payload from `user` type events (tool results fed back to the model).
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserEventMessage {
+    #[serde(default)]
+    pub content: Vec<UserContentBlock>,
+}
+
+/// Content block within a `user` event message.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+pub enum UserContentBlock {
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        #[serde(default)]
+        content: serde_json::Value,
     },
 
     #[serde(other)]
@@ -326,7 +375,7 @@ mod tests {
         let event = parse_stream_line(line).unwrap();
         match event {
             StreamEvent::Stream { event } => match event {
-                InnerStreamEvent::ContentBlockStart { index } => assert_eq!(index, 0),
+                InnerStreamEvent::ContentBlockStart { index, .. } => assert_eq!(index, 0),
                 _ => panic!("Expected ContentBlockStart"),
             },
             _ => panic!("Expected Stream event"),
@@ -480,8 +529,28 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_unknown_delta_type() {
+    fn test_parse_input_json_delta() {
         let line = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}}"#;
+        let event = parse_stream_line(line).unwrap();
+        match event {
+            StreamEvent::Stream { event } => match event {
+                InnerStreamEvent::ContentBlockDelta { delta, .. } => {
+                    assert!(matches!(
+                        delta,
+                        Delta::InputJson {
+                            partial_json: Some(_)
+                        }
+                    ));
+                }
+                _ => panic!("Expected ContentBlockDelta"),
+            },
+            _ => panic!("Expected Stream event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_unknown_delta_type() {
+        let line = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"some_future_delta","data":123}}}"#;
         let event = parse_stream_line(line).unwrap();
         match event {
             StreamEvent::Stream { event } => match event {
@@ -514,10 +583,25 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_user_event_as_unknown() {
+    fn test_parse_user_event_with_tool_result() {
         let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_01","content":"ok"}]}}"#;
         let event = parse_stream_line(line).unwrap();
-        assert!(matches!(event, StreamEvent::Unknown));
+        match event {
+            StreamEvent::User { message } => {
+                assert_eq!(message.content.len(), 1);
+                match &message.content[0] {
+                    UserContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                    } => {
+                        assert_eq!(tool_use_id, "tu_01");
+                        assert_eq!(content.as_str().unwrap(), "ok");
+                    }
+                    _ => panic!("Expected ToolResult"),
+                }
+            }
+            _ => panic!("Expected User event"),
+        }
     }
 
     #[test]

@@ -62,6 +62,81 @@ pub struct ActiveTurn {
     pub pid: u32,
 }
 
+/// A single tool use activity tracked during an agent turn.
+#[derive(Debug, Clone)]
+pub struct ToolActivity {
+    pub tool_use_id: String,
+    pub tool_name: String,
+    pub input_json: String,
+    pub result_text: String,
+    pub collapsed: bool,
+}
+
+impl ToolActivity {
+    /// Returns a short summary derived from the tool name and input JSON.
+    pub fn summary(&self) -> String {
+        let desc = self.extract_description();
+        if desc.is_empty() {
+            self.tool_name.clone()
+        } else {
+            format!("{} {}", self.tool_name, desc)
+        }
+    }
+
+    fn extract_description(&self) -> String {
+        if self.input_json.is_empty() {
+            return String::new();
+        }
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&self.input_json) else {
+            return String::new();
+        };
+        let obj = val.as_object();
+        match self.tool_name.as_str() {
+            "Read" => obj
+                .and_then(|o| o.get("file_path"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            "Edit" | "Write" => obj
+                .and_then(|o| o.get("file_path"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            "Bash" => obj
+                .and_then(|o| o.get("command"))
+                .and_then(|v| v.as_str())
+                .map(|s| truncate_str(s, 80))
+                .unwrap_or_default(),
+            "Grep" => obj
+                .and_then(|o| o.get("pattern"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            "Glob" => obj
+                .and_then(|o| o.get("pattern"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            _ => {
+                let s = self.input_json.chars().take(80).collect::<String>();
+                if self.input_json.len() > 80 {
+                    format!("{s}...")
+                } else {
+                    s
+                }
+            }
+        }
+    }
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max])
+    }
+}
+
 /// Per-workspace agent session stored on App.
 struct AgentSession {
     session_id: String,
@@ -69,6 +144,10 @@ struct AgentSession {
     active_turn: Option<ActiveTurn>,
     streaming_content: String,
     turn_started_at: Option<std::time::Instant>,
+    /// Tool activities accumulated during the current turn.
+    tool_activities: Vec<ToolActivity>,
+    /// Maps content_block index to tool_activities index for in-progress tool uses.
+    active_tool_blocks: HashMap<usize, usize>,
 }
 
 pub struct App {
@@ -1132,6 +1211,8 @@ impl App {
                         active_turn: None,
                         streaming_content: String::new(),
                         turn_started_at: None,
+                        tool_activities: Vec::new(),
+                        active_tool_blocks: HashMap::new(),
                     },
                 );
 
@@ -1754,6 +1835,13 @@ impl App {
             Message::DividerDragEnd => {
                 self.dragging_divider = None;
             }
+            Message::ToggleToolActivity(ws_id, idx) => {
+                if let Some(state) = self.agents.get_mut(&ws_id)
+                    && let Some(activity) = state.tool_activities.get_mut(idx)
+                {
+                    activity.collapsed = !activity.collapsed;
+                }
+            }
             Message::Tick => {
                 // No-op: the tick just triggers a view refresh for the processing timer
             }
@@ -1763,6 +1851,58 @@ impl App {
 
     fn handle_stream_event(&mut self, ws_id: &str, event: StreamEvent) -> Task<Message> {
         match event {
+            // --- Tool use tracking: content_block_start with tool_use ---
+            StreamEvent::Stream {
+                event:
+                    agent::InnerStreamEvent::ContentBlockStart {
+                        index,
+                        content_block: Some(agent::StartContentBlock::ToolUse { id, name }),
+                    },
+            } => {
+                if let Some(state) = self.agents.get_mut(ws_id) {
+                    let activity = ToolActivity {
+                        tool_use_id: id,
+                        tool_name: name,
+                        input_json: String::new(),
+                        result_text: String::new(),
+                        collapsed: true,
+                    };
+                    let idx = state.tool_activities.len();
+                    state.tool_activities.push(activity);
+                    state.active_tool_blocks.insert(index, idx);
+                }
+            }
+
+            // --- Tool use tracking: accumulate input JSON ---
+            StreamEvent::Stream {
+                event:
+                    agent::InnerStreamEvent::ContentBlockDelta {
+                        index,
+                        delta:
+                            agent::Delta::InputJson {
+                                partial_json: Some(json),
+                            },
+                    },
+            }
+            | StreamEvent::Stream {
+                event:
+                    agent::InnerStreamEvent::ContentBlockDelta {
+                        index,
+                        delta:
+                            agent::Delta::ToolUse {
+                                partial_json: Some(json),
+                            },
+                    },
+            } => {
+                if let Some(state) = self.agents.get_mut(ws_id)
+                    && let Some(&activity_idx) = state.active_tool_blocks.get(&index)
+                    && let Some(activity) = state.tool_activities.get_mut(activity_idx)
+                {
+                    activity.input_json.push_str(&json);
+                }
+            }
+
+            // --- Streaming text delta ---
             StreamEvent::Stream {
                 event:
                     agent::InnerStreamEvent::ContentBlockDelta {
@@ -1774,36 +1914,53 @@ impl App {
                     state.streaming_content.push_str(&text);
                 }
             }
+
+            // --- Tool result from user event ---
+            StreamEvent::User { message } => {
+                if let Some(state) = self.agents.get_mut(ws_id) {
+                    for block in message.content {
+                        if let agent::UserContentBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                        } = block
+                        {
+                            // Find the matching tool activity by ID
+                            if let Some(activity) = state
+                                .tool_activities
+                                .iter_mut()
+                                .rev()
+                                .find(|a| a.tool_use_id == tool_use_id)
+                            {
+                                activity.result_text = match &content {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Null => String::new(),
+                                    other => other.to_string(),
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Complete assistant message ---
             StreamEvent::Assistant { message } => {
-                // Complete assistant message — persist and add to chat
                 let mut text_parts = Vec::new();
-                let mut tool_names = Vec::new();
 
                 for block in &message.content {
-                    match block {
-                        agent::ContentBlock::Text { text } => text_parts.push(text.as_str()),
-                        agent::ContentBlock::ToolUse { name, .. } => tool_names.push(name.as_str()),
-                        _ => {}
+                    if let agent::ContentBlock::Text { text } = block {
+                        text_parts.push(text.as_str());
                     }
                 }
 
-                let mut full_text = text_parts.join("\n");
-
-                if !tool_names.is_empty() {
-                    let tool_info = format!("[Used: {}]", tool_names.join(", "));
-                    if full_text.is_empty() {
-                        full_text = tool_info;
-                    } else {
-                        full_text = format!("{full_text}\n\n{tool_info}");
-                    }
-                }
+                let full_text = text_parts.join("\n");
 
                 // Clear streaming content
                 if let Some(state) = self.agents.get_mut(ws_id) {
                     state.streaming_content.clear();
+                    state.active_tool_blocks.clear();
                 }
 
-                // Skip completely empty messages (no text, no tools)
+                // Skip completely empty messages (no text)
                 if full_text.is_empty() {
                     return Task::none();
                 }
@@ -1859,13 +2016,15 @@ impl App {
                     );
                 }
 
-                // Clear streaming
+                // Clear streaming and tool activities on completion
                 if let Some(state) = self.agents.get_mut(ws_id) {
                     state.streaming_content.clear();
+                    state.tool_activities.clear();
+                    state.active_tool_blocks.clear();
                 }
             }
             _ => {
-                // Other events (system init, message_start, etc.) — ignored for now
+                // Other events (system init, message_start/stop, etc.) — ignored
             }
         }
         Task::none()
@@ -1939,7 +2098,7 @@ impl App {
         }
 
         // Get chat data for selected workspace
-        let (msgs, md_items, streaming, turn_elapsed) =
+        let (msgs, md_items, streaming, turn_elapsed, tool_activities) =
             if let Some(ws_id) = &self.selected_workspace {
                 let msgs = self
                     .chat_messages
@@ -1954,13 +2113,15 @@ impl App {
                 let session = self.agents.get(ws_id);
                 let streaming = session.map(|s| s.streaming_content.as_str()).unwrap_or("");
                 let elapsed = session.and_then(|s| s.turn_started_at).map(|t| t.elapsed());
-                (msgs, md, streaming, elapsed)
+                let tools = session.map(|s| s.tool_activities.as_slice()).unwrap_or(&[]);
+                (msgs, md, streaming, elapsed, tools)
             } else {
                 (
                     &[] as &[ChatMessage],
                     &[] as &[Vec<markdown::Item>],
                     "",
                     None,
+                    &[] as &[ToolActivity],
                 )
             };
 
@@ -1985,6 +2146,7 @@ impl App {
             streaming,
             md_items,
             turn_elapsed,
+            tool_activities,
             &self.diff_files,
             self.diff_selected_file.as_deref(),
             self.diff_content.as_ref(),

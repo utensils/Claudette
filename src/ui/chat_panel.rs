@@ -3,6 +3,7 @@ use std::time::Duration;
 use iced::widget::{Space, button, column, container, markdown, row, scrollable, text, text_input};
 use iced::{Background, Border, Element, Fill, Length, Theme};
 
+use crate::app::ToolActivity;
 use crate::message::Message;
 use crate::model::{ChatMessage, ChatRole, Repository, Workspace};
 use crate::ui::style;
@@ -23,6 +24,7 @@ pub fn view_chat_panel<'a>(
     markdown_items: &'a [Vec<markdown::Item>],
     is_agent_running: bool,
     turn_elapsed: Option<Duration>,
+    tool_activities: &'a [ToolActivity],
 ) -> Element<'a, Message> {
     let repo_name = repositories
         .iter()
@@ -109,6 +111,11 @@ pub fn view_chat_panel<'a>(
             ChatRole::System => view_system_message(&msg.content),
         };
         messages_col = messages_col.push(bubble);
+    }
+
+    // Tool activities (shown during active turn)
+    if !tool_activities.is_empty() {
+        messages_col = messages_col.push(view_tool_activities(tool_activities, &ws.id));
     }
 
     // Streaming content (agent is currently responding)
@@ -281,4 +288,68 @@ fn view_processing_indicator(elapsed: Duration) -> Element<'static, Message> {
         .padding([6, 14])
         .width(Fill)
         .into()
+}
+
+fn view_tool_activities<'a>(
+    activities: &'a [ToolActivity],
+    ws_id: &'a str,
+) -> Element<'a, Message> {
+    let mut col = column![].spacing(2);
+
+    for (i, activity) in activities.iter().enumerate() {
+        let arrow = if activity.collapsed {
+            "\u{25B8}"
+        } else {
+            "\u{25BE}"
+        }; // ▸ or ▾
+        let summary = activity.summary();
+        let header_text = format!("{arrow} {summary}");
+
+        let ws_id_owned = ws_id.to_string();
+        let header_btn = button(text(header_text).size(12).color(style::DIM))
+            .on_press(Message::ToggleToolActivity(ws_id_owned, i))
+            .style(|theme: &Theme, status| {
+                let mut s = button::text(theme, status);
+                s.text_color = style::DIM;
+                s
+            })
+            .padding([2, 4]);
+
+        if activity.collapsed {
+            col = col.push(header_btn);
+        } else {
+            let result_preview = if activity.result_text.is_empty() {
+                "...".to_string()
+            } else {
+                // Show first few lines, truncated
+                activity
+                    .result_text
+                    .lines()
+                    .take(8)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+
+            let detail = container(
+                text(result_preview)
+                    .size(11)
+                    .color(style::FAINT)
+                    .font(iced::Font::MONOSPACE),
+            )
+            .padding([4, 8])
+            .width(Fill)
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Background::Color(style::CHAT_SYSTEM_BG)),
+                border: Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+
+            col = col.push(column![header_btn, detail].spacing(2));
+        }
+    }
+
+    container(col).padding([4, 14]).width(Fill).into()
 }

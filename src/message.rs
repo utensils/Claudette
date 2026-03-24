@@ -169,6 +169,9 @@ pub enum Message {
     DividerDragUpdate(f32, f32), // cursor_x, cursor_y
     DividerDragEnd,
 
+    // --- Tool activity ---
+    ToggleToolActivity(String, usize), // (workspace_id, activity_index)
+
     // --- Timer tick for processing indicator ---
     Tick,
 }
