@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use iced::widget::{Column, Space, center, column, container, markdown, text};
 use iced::{Element, Fill};
@@ -18,6 +19,7 @@ pub fn view_main_content<'a>(
     chat_input: &str,
     streaming_text: &'a str,
     markdown_items: &'a [Vec<markdown::Item>],
+    turn_elapsed: Option<Duration>,
     // Diff state
     diff_files: &'a [DiffFile],
     diff_selected_file: Option<&'a str>,
@@ -54,6 +56,7 @@ pub fn view_main_content<'a>(
                     streaming_text,
                     markdown_items,
                     is_running,
+                    turn_elapsed,
                 )
             };
 

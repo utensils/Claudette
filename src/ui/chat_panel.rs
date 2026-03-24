@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use iced::widget::{Space, button, column, container, markdown, row, scrollable, text, text_input};
 use iced::{Background, Border, Element, Fill, Length, Theme};
 
@@ -11,6 +13,7 @@ pub fn chat_input_id() -> iced::widget::Id {
 }
 
 /// Renders the full chat panel for a selected workspace.
+#[allow(clippy::too_many_arguments)]
 pub fn view_chat_panel<'a>(
     ws: &'a Workspace,
     repositories: &'a [Repository],
@@ -19,6 +22,7 @@ pub fn view_chat_panel<'a>(
     streaming_text: &'a str,
     markdown_items: &'a [Vec<markdown::Item>],
     is_agent_running: bool,
+    turn_elapsed: Option<Duration>,
 ) -> Element<'a, Message> {
     let repo_name = repositories
         .iter()
@@ -110,6 +114,11 @@ pub fn view_chat_panel<'a>(
     // Streaming content (agent is currently responding)
     if !streaming_text.is_empty() {
         messages_col = messages_col.push(view_streaming_indicator(streaming_text));
+    }
+
+    // Processing indicator (turn is active)
+    if let Some(elapsed) = turn_elapsed {
+        messages_col = messages_col.push(view_processing_indicator(elapsed));
     }
 
     let chat_area = scrollable(messages_col)
@@ -246,4 +255,30 @@ fn view_streaming_indicator(content: &str) -> Element<'_, Message> {
     .padding([10, 14])
     .width(Fill)
     .into()
+}
+
+fn view_processing_indicator(elapsed: Duration) -> Element<'static, Message> {
+    const BRAILLE_FRAMES: &[&str] = &[
+        "\u{280B}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283C}", "\u{2834}", "\u{2826}",
+        "\u{2827}", "\u{2807}", "\u{280F}",
+    ];
+
+    let total_tenths = (elapsed.as_millis() / 100) as u64;
+    let frame_idx = (total_tenths as usize) % BRAILLE_FRAMES.len();
+    let spinner = BRAILLE_FRAMES[frame_idx];
+
+    let total_secs = elapsed.as_secs();
+    let tenths = (elapsed.as_millis() / 100 % 10) as u64;
+    let minutes = total_secs / 60;
+    let secs = total_secs % 60;
+    let time_str = if minutes > 0 {
+        format!("{spinner} {minutes}m, {secs}.{tenths}s")
+    } else {
+        format!("{spinner} {secs}.{tenths}s")
+    };
+
+    container(text(time_str).size(13).color(style::STATUS_RUNNING))
+        .padding([6, 14])
+        .width(Fill)
+        .into()
 }

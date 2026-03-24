@@ -12,7 +12,7 @@ use iced::widget::{Row, markdown};
 use iced::{Element, Subscription, Task, Theme};
 use tokio::sync::Mutex;
 
-use crate::agent::{self, StreamEvent};
+use crate::agent::{self, AgentEvent, StreamEvent};
 use crate::db::Database;
 use crate::message::{Message, SidebarFilter};
 use crate::model::diff::{DiffFile, DiffViewMode, FileDiff};
@@ -21,11 +21,11 @@ use crate::model::{
 };
 use crate::{diff, git, terminal, ui};
 
-/// Subscription data for an agent stream — hashes only by ws_id for dedup.
+/// Subscription data for an agent turn stream — hashes only by ws_id for dedup.
 #[derive(Clone)]
 struct AgentSubData {
     ws_id: String,
-    event_rx: Arc<Mutex<Option<tokio::sync::mpsc::Receiver<StreamEvent>>>>,
+    event_rx: Arc<Mutex<Option<tokio::sync::mpsc::Receiver<AgentEvent>>>>,
 }
 
 impl Hash for AgentSubData {
@@ -40,31 +40,35 @@ fn agent_stream(data: &AgentSubData) -> Pin<Box<dyn futures::Stream<Item = Messa
     Box::pin(futures::stream::unfold(
         (rx, ws_id),
         |(rx, ws_id)| async move {
-            // Take receiver out so we don't hold the mutex across recv().await
             let mut receiver = rx.lock().await.take()?;
             let event = receiver.recv().await;
-            // Put receiver back for the next iteration
             *rx.lock().await = Some(receiver);
             let event = event?;
-            Some((Message::AgentStreamEvent(ws_id.clone(), event), (rx, ws_id)))
+            let msg = match event {
+                AgentEvent::Stream(stream_event) => {
+                    Message::AgentStreamEvent(ws_id.clone(), stream_event)
+                }
+                AgentEvent::ProcessExited(code) => Message::AgentProcessExited(ws_id.clone(), code),
+            };
+            Some((msg, (rx, ws_id)))
         },
     ))
 }
 
-/// Handle returned when an agent is spawned — stored on App for communication.
+/// Active turn handle — stored on AgentSession while a turn is in progress.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct AgentHandle {
-    pub stdin_tx: tokio::sync::mpsc::Sender<String>,
-    pub event_rx: Arc<Mutex<Option<tokio::sync::mpsc::Receiver<StreamEvent>>>>,
-    pub session_id: String,
+pub struct ActiveTurn {
+    pub event_rx: Arc<Mutex<Option<tokio::sync::mpsc::Receiver<AgentEvent>>>>,
     pub pid: u32,
 }
 
-/// Per-workspace agent state stored on App.
-struct AgentState {
-    handle: AgentHandle,
+/// Per-workspace agent session stored on App.
+struct AgentSession {
+    session_id: String,
+    turn_count: u32,
+    active_turn: Option<ActiveTurn>,
     streaming_content: String,
+    turn_started_at: Option<std::time::Instant>,
 }
 
 pub struct App {
@@ -121,8 +125,8 @@ pub struct App {
     fuzzy_query: String,
     fuzzy_selected_index: usize,
 
-    // Agent state per workspace
-    agents: HashMap<String, AgentState>,
+    // Agent sessions per workspace
+    agents: HashMap<String, AgentSession>,
 
     // Chat state
     chat_messages: HashMap<String, Vec<ChatMessage>>,
@@ -331,9 +335,21 @@ impl App {
                     tasks.push(Task::done(Message::TerminalCreate(id.clone())));
                 }
 
-                if !tasks.is_empty() {
-                    return Task::batch(tasks);
+                // Auto-start agent session if not already active
+                if !self.agents.contains_key(&id)
+                    && let Some(ws) = self.workspaces.iter().find(|w| w.id == id)
+                    && ws.worktree_path.is_some()
+                    && ws.status == WorkspaceStatus::Active
+                {
+                    tasks.push(Task::done(Message::AgentStart(id.clone())));
                 }
+
+                // Focus chat input to unfocus terminal's default is_focused state
+                tasks.push(iced::widget::operation::focus(iced::widget::Id::new(
+                    "chat_input",
+                )));
+
+                return Task::batch(tasks);
             }
             Message::ToggleRepoCollapsed(id) => {
                 let collapsed = self.repo_collapsed.entry(id).or_insert(false);
@@ -461,11 +477,8 @@ impl App {
                     .collect();
 
                 for ws_id in &ws_ids {
-                    if let Some(state) = self.agents.remove(ws_id) {
-                        let pid = state.handle.pid;
-                        tokio::spawn(async move {
-                            let _ = agent::stop_agent(pid).await;
-                        });
+                    if let Some(session) = self.agents.remove(ws_id) {
+                        self.kill_active_turn(session.active_turn);
                     }
                 }
 
@@ -512,11 +525,8 @@ impl App {
 
                 // Drain any agents (catches late spawns that arrived after Confirm)
                 for ws_id in &ws_ids {
-                    if let Some(state) = self.agents.remove(ws_id) {
-                        let pid = state.handle.pid;
-                        tokio::spawn(async move {
-                            let _ = agent::stop_agent(pid).await;
-                        });
+                    if let Some(session) = self.agents.remove(ws_id) {
+                        self.kill_active_turn(session.active_turn);
                     }
                 }
 
@@ -738,16 +748,12 @@ impl App {
                 }
                 self.active_terminal_tab.remove(&ws_id);
 
-                // Stop agent first if running
-                if self.agents.contains_key(&ws_id) {
-                    let pid = self.agents[&ws_id].handle.pid;
-                    self.agents.remove(&ws_id);
+                // Stop agent session if active
+                if let Some(session) = self.agents.remove(&ws_id) {
+                    self.kill_active_turn(session.active_turn);
                     if let Some(ws) = self.workspaces.iter_mut().find(|w| w.id == ws_id) {
                         ws.agent_status = AgentStatus::Idle;
                     }
-                    tokio::spawn(async move {
-                        let _ = agent::stop_agent(pid).await;
-                    });
                 }
 
                 let ws = self.workspaces.iter().find(|w| w.id == ws_id).cloned();
@@ -857,12 +863,9 @@ impl App {
                     return Task::none();
                 };
 
-                // Stop agent if running
-                if let Some(state) = self.agents.remove(&ws_id) {
-                    let pid = state.handle.pid;
-                    tokio::spawn(async move {
-                        let _ = agent::stop_agent(pid).await;
-                    });
+                // Stop agent session if active
+                if let Some(session) = self.agents.remove(&ws_id) {
+                    self.kill_active_turn(session.active_turn);
                 }
 
                 let ws = self.workspaces.iter().find(|w| w.id == ws_id).cloned();
@@ -1104,67 +1107,52 @@ impl App {
 
             // --- Agent Lifecycle ---
             Message::AgentStart(ws_id) => {
-                let ws = self.workspaces.iter().find(|w| w.id == ws_id).cloned();
+                // Don't start if session already exists
+                if self.agents.contains_key(&ws_id) {
+                    return Task::none();
+                }
+                let ws = self.workspaces.iter().find(|w| w.id == ws_id);
                 let Some(ws) = ws else {
                     return Task::none();
                 };
-                let Some(worktree_path) = ws.worktree_path.clone() else {
+                if ws.worktree_path.is_none() {
                     return Task::none();
-                };
+                }
 
                 if let Some(w) = self.workspaces.iter_mut().find(|w| w.id == ws_id) {
                     w.agent_status = AgentStatus::Running;
                 }
 
                 let session_id = uuid::Uuid::new_v4().to_string();
-
-                return Task::perform(
-                    async move {
-                        let spawned =
-                            agent::spawn_agent(std::path::Path::new(&worktree_path), &session_id)
-                                .await?;
-
-                        let handle = AgentHandle {
-                            stdin_tx: spawned.stdin_tx,
-                            event_rx: Arc::new(Mutex::new(Some(spawned.event_rx))),
-                            session_id: spawned.session_id,
-                            pid: spawned.pid,
-                        };
-
-                        Ok((ws_id, handle))
+                self.agents.insert(
+                    ws_id.clone(),
+                    AgentSession {
+                        session_id,
+                        turn_count: 0,
+                        active_turn: None,
+                        streaming_content: String::new(),
+                        turn_started_at: None,
                     },
-                    Message::AgentSpawned,
                 );
-            }
-            Message::AgentSpawned(Ok((ws_id, handle))) => {
-                // Guard: if the workspace was removed while spawning, kill the orphan
-                if !self.workspaces.iter().any(|w| w.id == ws_id) {
-                    let pid = handle.pid;
-                    tokio::spawn(async move {
-                        let _ = agent::stop_agent(pid).await;
-                    });
-                    return Task::none();
-                }
 
                 // Add system message
                 let sys_msg = ChatMessage {
                     id: uuid::Uuid::new_v4().to_string(),
                     workspace_id: ws_id.clone(),
                     role: ChatRole::System,
-                    content: "Agent started".into(),
+                    content: "Agent session started".into(),
                     cost_usd: None,
                     duration_ms: None,
                     created_at: String::new(),
                 };
                 self.chat_messages
-                    .entry(ws_id.clone())
+                    .entry(ws_id)
                     .or_default()
                     .push(sys_msg.clone());
-                self.rebuild_markdown_cache(&ws_id);
+                self.rebuild_markdown_cache(&sys_msg.workspace_id);
 
-                // Persist system message
                 let db_path = self.db_path.clone();
-                let persist_task = Task::perform(
+                return Task::perform(
                     async move {
                         let db = Database::open(&db_path).map_err(|e| e.to_string())?;
                         db.insert_chat_message(&sys_msg)
@@ -1173,35 +1161,23 @@ impl App {
                     },
                     Message::ChatMessageSaved,
                 );
-
-                self.agents.insert(
-                    ws_id,
-                    AgentState {
-                        handle,
-                        streaming_content: String::new(),
-                    },
-                );
-
-                return persist_task;
             }
-            Message::AgentSpawned(Err(e)) => {
-                eprintln!("Failed to spawn agent: {e}");
-                // Reset any workspaces still marked as Running back to Error
-                let running: Vec<_> = self
-                    .workspaces
-                    .iter()
-                    .filter(|w| matches!(w.agent_status, AgentStatus::Running))
-                    .map(|w| w.id.clone())
-                    .collect();
-                for ws_id in &running {
-                    if let Some(ws) = self.workspaces.iter_mut().find(|w| &w.id == ws_id) {
-                        ws.agent_status = AgentStatus::Error(e.clone());
-                    }
+            Message::AgentTurnStarted(Ok((ws_id, turn))) => {
+                if let Some(session) = self.agents.get_mut(&ws_id) {
+                    session.active_turn = Some(turn);
+                    session.turn_count += 1;
+                    session.turn_started_at = Some(std::time::Instant::now());
+                }
+            }
+            Message::AgentTurnStarted(Err(e)) => {
+                eprintln!("Failed to start agent turn: {e}");
+                // Find the workspace that was trying to start a turn and show error
+                if let Some(ws_id) = self.selected_workspace.clone() {
                     let sys_msg = ChatMessage {
                         id: uuid::Uuid::new_v4().to_string(),
                         workspace_id: ws_id.clone(),
                         role: ChatRole::System,
-                        content: format!("Failed to start agent: {e}"),
+                        content: format!("Failed to send message: {e}"),
                         cost_usd: None,
                         duration_ms: None,
                         created_at: String::new(),
@@ -1210,13 +1186,12 @@ impl App {
                         .entry(ws_id.clone())
                         .or_default()
                         .push(sys_msg);
-                    self.rebuild_markdown_cache(ws_id);
+                    self.rebuild_markdown_cache(&ws_id);
                 }
             }
 
             Message::AgentStop(ws_id) => {
-                if let Some(state) = self.agents.remove(&ws_id) {
-                    let pid = state.handle.pid;
+                if let Some(session) = self.agents.remove(&ws_id) {
                     if let Some(ws) = self.workspaces.iter_mut().find(|w| w.id == ws_id) {
                         ws.agent_status = AgentStatus::Idle;
                     }
@@ -1237,21 +1212,29 @@ impl App {
                         .push(sys_msg.clone());
                     self.rebuild_markdown_cache(&ws_id);
 
+                    let mut tasks = vec![];
+
+                    // Kill active turn process if any
+                    if let Some(turn) = session.active_turn {
+                        let pid = turn.pid;
+                        tasks.push(Task::perform(
+                            async move { agent::stop_agent(pid).await },
+                            move |result| Message::AgentStopped(result.map(|()| ws_id.clone())),
+                        ));
+                    }
+
                     let db_path = self.db_path.clone();
-                    return Task::batch([
-                        Task::perform(async move { agent::stop_agent(pid).await }, move |result| {
-                            Message::AgentStopped(result.map(|()| ws_id.clone()))
-                        }),
-                        Task::perform(
-                            async move {
-                                let db = Database::open(&db_path).map_err(|e| e.to_string())?;
-                                db.insert_chat_message(&sys_msg)
-                                    .map_err(|e| e.to_string())?;
-                                Ok(sys_msg)
-                            },
-                            Message::ChatMessageSaved,
-                        ),
-                    ]);
+                    tasks.push(Task::perform(
+                        async move {
+                            let db = Database::open(&db_path).map_err(|e| e.to_string())?;
+                            db.insert_chat_message(&sys_msg)
+                                .map_err(|e| e.to_string())?;
+                            Ok(sys_msg)
+                        },
+                        Message::ChatMessageSaved,
+                    ));
+
+                    return Task::batch(tasks);
                 }
             }
             Message::AgentStopped(Ok(_ws_id)) => {
@@ -1264,6 +1247,31 @@ impl App {
             // --- Agent Stream Events ---
             Message::AgentStreamEvent(ws_id, event) => {
                 return self.handle_stream_event(&ws_id, event);
+            }
+            Message::AgentProcessExited(ws_id, exit_code) => {
+                if let Some(session) = self.agents.get_mut(&ws_id) {
+                    session.active_turn = None;
+                    session.streaming_content.clear();
+                    session.turn_started_at = None;
+                }
+                if let Some(code) = exit_code
+                    && code != 0
+                {
+                    let sys_msg = ChatMessage {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        workspace_id: ws_id.clone(),
+                        role: ChatRole::System,
+                        content: format!("Agent process exited with code {code}"),
+                        cost_usd: None,
+                        duration_ms: None,
+                        created_at: String::new(),
+                    };
+                    self.chat_messages
+                        .entry(ws_id.clone())
+                        .or_default()
+                        .push(sys_msg);
+                    self.rebuild_markdown_cache(&ws_id);
+                }
             }
 
             // --- Chat ---
@@ -1746,6 +1754,9 @@ impl App {
             Message::DividerDragEnd => {
                 self.dragging_divider = None;
             }
+            Message::Tick => {
+                // No-op: the tick just triggers a view refresh for the processing timer
+            }
         }
         Task::none()
     }
@@ -1765,19 +1776,36 @@ impl App {
             }
             StreamEvent::Assistant { message } => {
                 // Complete assistant message — persist and add to chat
-                let full_text: String = message
-                    .content
-                    .iter()
-                    .filter_map(|block| match block {
-                        agent::ContentBlock::Text { text } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let mut text_parts = Vec::new();
+                let mut tool_names = Vec::new();
+
+                for block in &message.content {
+                    match block {
+                        agent::ContentBlock::Text { text } => text_parts.push(text.as_str()),
+                        agent::ContentBlock::ToolUse { name, .. } => tool_names.push(name.as_str()),
+                        _ => {}
+                    }
+                }
+
+                let mut full_text = text_parts.join("\n");
+
+                if !tool_names.is_empty() {
+                    let tool_info = format!("[Used: {}]", tool_names.join(", "));
+                    if full_text.is_empty() {
+                        full_text = tool_info;
+                    } else {
+                        full_text = format!("{full_text}\n\n{tool_info}");
+                    }
+                }
 
                 // Clear streaming content
                 if let Some(state) = self.agents.get_mut(ws_id) {
                     state.streaming_content.clear();
+                }
+
+                // Skip completely empty messages (no text, no tools)
+                if full_text.is_empty() {
+                    return Task::none();
                 }
 
                 let assistant_msg = ChatMessage {
@@ -1843,6 +1871,16 @@ impl App {
         Task::none()
     }
 
+    /// Kill an active turn's process in the background, if present.
+    fn kill_active_turn(&self, turn: Option<ActiveTurn>) {
+        if let Some(turn) = turn {
+            let pid = turn.pid;
+            tokio::spawn(async move {
+                let _ = agent::stop_agent(pid).await;
+            });
+        }
+    }
+
     /// Build an async task that loads changed files for the currently selected workspace.
     /// Returns `None` if no workspace is selected or the workspace has no worktree.
     fn load_diff_files_task(&self) -> Option<Task<Message>> {
@@ -1901,26 +1939,30 @@ impl App {
         }
 
         // Get chat data for selected workspace
-        let (msgs, md_items, streaming) = if let Some(ws_id) = &self.selected_workspace {
-            let msgs = self
-                .chat_messages
-                .get(ws_id)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
-            let md = self
-                .markdown_cache
-                .get(ws_id)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
-            let streaming = self
-                .agents
-                .get(ws_id)
-                .map(|s| s.streaming_content.as_str())
-                .unwrap_or("");
-            (msgs, md, streaming)
-        } else {
-            (&[] as &[ChatMessage], &[] as &[Vec<markdown::Item>], "")
-        };
+        let (msgs, md_items, streaming, turn_elapsed) =
+            if let Some(ws_id) = &self.selected_workspace {
+                let msgs = self
+                    .chat_messages
+                    .get(ws_id)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+                let md = self
+                    .markdown_cache
+                    .get(ws_id)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+                let session = self.agents.get(ws_id);
+                let streaming = session.map(|s| s.streaming_content.as_str()).unwrap_or("");
+                let elapsed = session.and_then(|s| s.turn_started_at).map(|t| t.elapsed());
+                (msgs, md, streaming, elapsed)
+            } else {
+                (
+                    &[] as &[ChatMessage],
+                    &[] as &[Vec<markdown::Item>],
+                    "",
+                    None,
+                )
+            };
 
         let (term_tabs, active_term) = if let Some(ws_id) = &self.selected_workspace {
             let tabs = self
@@ -1942,6 +1984,7 @@ impl App {
             &self.chat_input,
             streaming,
             md_items,
+            turn_elapsed,
             &self.diff_files,
             self.diff_selected_file.as_deref(),
             self.diff_content.as_ref(),
@@ -2151,16 +2194,17 @@ impl App {
             _ => None,
         });
 
-        // Agent streaming subscriptions — one per active agent
+        // Agent streaming subscriptions — one per active turn
         let agent_subs: Vec<Subscription<Message>> = self
             .agents
             .iter()
-            .map(|(ws_id, state)| {
+            .filter_map(|(ws_id, session)| {
+                let turn = session.active_turn.as_ref()?;
                 let data = AgentSubData {
                     ws_id: ws_id.clone(),
-                    event_rx: state.handle.event_rx.clone(),
+                    event_rx: turn.event_rx.clone(),
                 };
-                Subscription::run_with(data, agent_stream)
+                Some(Subscription::run_with(data, agent_stream))
             })
             .collect();
 
@@ -2174,6 +2218,15 @@ impl App {
         let mut subs = vec![input_sub];
         subs.extend(agent_subs);
         subs.extend(terminal_subs);
+
+        // Tick subscription for processing indicator timer (10Hz when any turn is active)
+        let has_active_turn = self.agents.values().any(|s| s.turn_started_at.is_some());
+        if has_active_turn {
+            subs.push(
+                iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::Tick),
+            );
+        }
+
         Subscription::batch(subs)
     }
 

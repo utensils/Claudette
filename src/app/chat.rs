@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
+
 use iced::Task;
 use iced::widget::markdown;
 
 use crate::agent;
+use crate::app::ActiveTurn;
 use crate::db::Database;
 use crate::message::Message;
 use crate::model::{ChatMessage, ChatRole};
@@ -23,12 +28,28 @@ impl App {
         if content.is_empty() {
             return Task::none();
         }
-        if !self.agents.contains_key(&ws_id) {
+        let Some(session) = self.agents.get(&ws_id) else {
+            return Task::none();
+        };
+        // Don't send if a turn is already in progress
+        if session.active_turn.is_some() {
             return Task::none();
         }
+        let session_id = session.session_id.clone();
+        let is_resume = session.turn_count > 0;
         self.chat_input.clear();
         self.chat_history_index = None;
         self.chat_history_draft.clear();
+
+        // Get worktree path for spawning the turn
+        let worktree_path = self
+            .workspaces
+            .iter()
+            .find(|w| w.id == ws_id)
+            .and_then(|w| w.worktree_path.clone());
+        let Some(worktree_path) = worktree_path else {
+            return Task::none();
+        };
 
         // Create user message
         let user_msg = ChatMessage {
@@ -47,17 +68,27 @@ impl App {
             .push(user_msg.clone());
         self.rebuild_markdown_cache(&ws_id);
 
-        // Send to agent via stdin
+        // Spawn per-turn agent process
         let mut tasks = vec![];
-        if let Some(state) = self.agents.get(&ws_id) {
-            let stdin_tx = state.handle.stdin_tx.clone();
-            tasks.push(Task::perform(
-                async move {
-                    agent::send_user_message(&stdin_tx, &content).await.ok();
-                },
-                |()| Message::Noop,
-            ));
-        }
+        tasks.push(Task::perform(
+            async move {
+                let turn_handle = agent::run_turn(
+                    std::path::Path::new(&worktree_path),
+                    &session_id,
+                    &content,
+                    is_resume,
+                )
+                .await?;
+
+                let active_turn = ActiveTurn {
+                    event_rx: Arc::new(Mutex::new(Some(turn_handle.event_rx))),
+                    pid: turn_handle.pid,
+                };
+
+                Ok((ws_id.clone(), active_turn))
+            },
+            Message::AgentTurnStarted,
+        ));
 
         // Persist user message
         let db_path = self.db_path.clone();

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use serde::Deserialize;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
@@ -38,6 +38,9 @@ pub enum StreamEvent {
         #[serde(default)]
         duration_ms: Option<i64>,
     },
+
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +57,9 @@ pub enum InnerStreamEvent {
 
     #[serde(rename = "content_block_stop")]
     ContentBlockStop { index: usize },
+
+    #[serde(rename = "message_delta")]
+    MessageDelta {},
 
     #[serde(rename = "message_stop")]
     MessageStop {},
@@ -102,34 +108,63 @@ pub fn parse_stream_line(line: &str) -> Result<StreamEvent, serde_json::Error> {
 }
 
 // ---------------------------------------------------------------------------
-// Agent process manager
+// Agent events — wrapper for all events from a turn
 // ---------------------------------------------------------------------------
 
-/// Result of spawning an agent process — individual parts for flexible storage.
-pub struct SpawnedAgent {
-    pub stdin_tx: mpsc::Sender<String>,
-    pub event_rx: mpsc::Receiver<StreamEvent>,
-    pub session_id: String,
+/// Events emitted by an agent turn (stream events + process lifecycle).
+#[derive(Debug, Clone)]
+pub enum AgentEvent {
+    /// A parsed stream event from stdout.
+    Stream(StreamEvent),
+    /// The agent process has exited.
+    ProcessExited(Option<i32>),
+}
+
+// ---------------------------------------------------------------------------
+// Per-turn agent process
+// ---------------------------------------------------------------------------
+
+/// Handle for an active agent turn — holds the event receiver and process ID.
+pub struct TurnHandle {
+    pub event_rx: mpsc::Receiver<AgentEvent>,
     pub pid: u32,
 }
 
-/// Spawn a Claude Code CLI process with bidirectional JSON streaming.
-pub async fn spawn_agent(working_dir: &Path, session_id: &str) -> Result<SpawnedAgent, String> {
+/// Run a single agent turn by spawning `claude -p` with the given prompt.
+///
+/// For the first turn, uses `--session-id` to establish the session.
+/// For subsequent turns, uses `--resume` to continue the conversation.
+pub async fn run_turn(
+    working_dir: &Path,
+    session_id: &str,
+    prompt: &str,
+    is_resume: bool,
+) -> Result<TurnHandle, String> {
+    let mut args = vec![
+        "--print".to_string(),
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+        "--verbose".to_string(),
+        "--include-partial-messages".to_string(),
+    ];
+
+    if is_resume {
+        args.push("--resume".to_string());
+        args.push(session_id.to_string());
+    } else {
+        args.push("--session-id".to_string());
+        args.push(session_id.to_string());
+    }
+
+    // Prompt as positional argument
+    args.push(prompt.to_string());
+
     let mut child = Command::new("claude")
-        .args([
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--input-format",
-            "stream-json",
-            "--verbose",
-            "--session-id",
-            session_id,
-        ])
+        .args(&args)
         .current_dir(working_dir)
-        .stdin(std::process::Stdio::piped())
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn claude: {e}"))?;
 
@@ -137,34 +172,19 @@ pub async fn spawn_agent(working_dir: &Path, session_id: &str) -> Result<Spawned
         .id()
         .ok_or_else(|| "Process exited immediately".to_string())?;
 
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Failed to capture stdin".to_string())?;
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture stderr".to_string())?;
 
-    // Stdin writer task
-    let (stdin_tx, mut stdin_rx) = mpsc::channel::<String>(32);
-    tokio::spawn(async move {
-        let mut stdin = stdin;
-        while let Some(msg) = stdin_rx.recv().await {
-            if stdin.write_all(msg.as_bytes()).await.is_err() {
-                break;
-            }
-            if stdin.write_all(b"\n").await.is_err() {
-                break;
-            }
-            if stdin.flush().await.is_err() {
-                break;
-            }
-        }
-    });
+    let (event_tx, event_rx) = mpsc::channel::<AgentEvent>(128);
 
-    // Stdout reader task
-    let (event_tx, event_rx) = mpsc::channel::<StreamEvent>(128);
+    // Stdout reader task — parse stream-json events
+    let tx_stdout = event_tx.clone();
     tokio::spawn(async move {
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
@@ -174,7 +194,7 @@ pub async fn spawn_agent(working_dir: &Path, session_id: &str) -> Result<Spawned
             }
             match parse_stream_line(&line) {
                 Ok(event) => {
-                    if event_tx.send(event).await.is_err() {
+                    if tx_stdout.send(AgentEvent::Stream(event)).await.is_err() {
                         break;
                     }
                 }
@@ -185,34 +205,25 @@ pub async fn spawn_agent(working_dir: &Path, session_id: &str) -> Result<Spawned
         }
     });
 
-    // Wait for process exit in background, let the event channel close naturally
+    // Stderr reader task — log stderr lines
     tokio::spawn(async move {
-        let _ = child.wait().await;
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                eprintln!("[agent stderr] {line}");
+            }
+        }
     });
 
-    Ok(SpawnedAgent {
-        stdin_tx,
-        event_rx,
-        session_id: session_id.to_string(),
-        pid,
-    })
-}
+    // Process exit watcher — sends ProcessExited when the child terminates
+    let tx_exit = event_tx;
+    tokio::spawn(async move {
+        let status = child.wait().await.ok().and_then(|s| s.code());
+        let _ = tx_exit.send(AgentEvent::ProcessExited(status)).await;
+    });
 
-/// Send a user message to the agent via its stdin channel.
-pub async fn send_user_message(
-    stdin_tx: &mpsc::Sender<String>,
-    content: &str,
-) -> Result<(), String> {
-    let msg = serde_json::json!({
-        "type": "user",
-        "content": content,
-    })
-    .to_string();
-
-    stdin_tx
-        .send(msg)
-        .await
-        .map_err(|e| format!("Failed to send message: {e}"))
+    Ok(TurnHandle { event_rx, pid })
 }
 
 /// Stop an agent process by killing it.
@@ -292,6 +303,18 @@ mod tests {
         match event {
             StreamEvent::Stream { event } => {
                 assert!(matches!(event, InnerStreamEvent::MessageStop {}));
+            }
+            _ => panic!("Expected Stream event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_message_delta() {
+        let line = r#"{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{}}}"#;
+        let event = parse_stream_line(line).unwrap();
+        match event {
+            StreamEvent::Stream { event } => {
+                assert!(matches!(event, InnerStreamEvent::MessageDelta {}));
             }
             _ => panic!("Expected Stream event"),
         }
@@ -488,6 +511,13 @@ mod tests {
     fn test_parse_invalid_json_returns_error() {
         let result = parse_stream_line("not json at all");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_user_event_as_unknown() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_01","content":"ok"}]}}"#;
+        let event = parse_stream_line(line).unwrap();
+        assert!(matches!(event, StreamEvent::Unknown));
     }
 
     #[test]

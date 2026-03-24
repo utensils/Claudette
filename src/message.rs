@@ -1,4 +1,5 @@
 use crate::agent::StreamEvent;
+use crate::app::ActiveTurn;
 use crate::model::diff::{DiffFile, DiffViewMode, FileDiff};
 use crate::model::{ChatMessage, Repository, TerminalTab, Workspace};
 
@@ -116,11 +117,12 @@ pub enum Message {
     EscapePressed,
 
     // --- Agent lifecycle ---
-    AgentStart(String), // workspace_id
-    AgentStop(String),  // workspace_id
-    AgentSpawned(Result<(String, crate::app::AgentHandle), String>), // Ok((ws_id, handle))
-    AgentStopped(Result<String, String>), // Ok(ws_id)
-    AgentStreamEvent(String, StreamEvent), // workspace_id, event
+    AgentStart(String),                                     // workspace_id
+    AgentStop(String),                                      // workspace_id
+    AgentTurnStarted(Result<(String, ActiveTurn), String>), // Ok((ws_id, turn))
+    AgentStopped(Result<String, String>),                   // Ok(ws_id)
+    AgentStreamEvent(String, StreamEvent),                  // workspace_id, event
+    AgentProcessExited(String, Option<i32>),                // workspace_id, exit_code
 
     // --- Chat ---
     ChatInputChanged(String),
@@ -166,4 +168,7 @@ pub enum Message {
     DividerDragStart(DividerDrag),
     DividerDragUpdate(f32, f32), // cursor_x, cursor_y
     DividerDragEnd,
+
+    // --- Timer tick for processing indicator ---
+    Tick,
 }
