@@ -1359,6 +1359,8 @@ impl App {
             Message::ChatInputChanged(text) => {
                 self.terminal_focused = false;
                 self.handle_chat_input_changed(text);
+                // Focus chat input to unfocus terminal
+                return iced::widget::operation::focus(ui::chat_panel::chat_input_id());
             }
             Message::ChatSend => {
                 return self.handle_chat_send();
@@ -1584,7 +1586,10 @@ impl App {
                     }
                 }
             }
-            Message::TerminalCreated(Ok(_)) => {}
+            Message::TerminalCreated(Ok(_)) => {
+                // Unfocus terminal by focusing chat input — terminals default to is_focused: true
+                return iced::widget::operation::focus(iced::widget::Id::new("chat_input"));
+            }
             Message::TerminalCreated(Err(e)) => {
                 eprintln!("Failed to persist terminal tab: {e}");
             }
