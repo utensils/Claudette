@@ -49,7 +49,13 @@ claude --print \
 Strip inherited Claude Code env vars to avoid auth conflicts:
 
 ```rust
-cmd.env_remove("ANTHROPIC_API_KEY"); // only if not sk-ant-api* prefix
+// Only strip OAuth tokens inherited from a parent Claude Code session.
+// Preserve real API keys (sk-ant-api*) for users who authenticate that way.
+if let Ok(val) = std::env::var("ANTHROPIC_API_KEY") {
+    if !val.starts_with("sk-ant-api") {
+        cmd.env_remove("ANTHROPIC_API_KEY");
+    }
+}
 cmd.env_remove("CLAUDECODE");
 cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
 ```
@@ -502,6 +508,10 @@ pub struct SessionConfig {
     pub model: Option<String>,
     pub permission_mode: PermissionMode,
     pub allowed_tools: Vec<String>,
+    /// Note: The Claude CLI does not currently expose a `--disallowedTools` flag.
+    /// This field is a configuration-level constraint — the SDK should omit these
+    /// tools from `--allowedTools` and filter them from tool lists, rather than
+    /// passing them as a CLI argument.
     pub disallowed_tools: Vec<String>,
     pub max_turns: Option<u32>,
     pub include_partial_messages: bool,
