@@ -1681,10 +1681,15 @@ impl App {
 
             Message::TerminalEvent(event) => {
                 let iced_term::Event::BackendCall(id, cmd) = event;
-                // Drop keyboard input when terminal isn't focused.
-                // backend::Command is not pub, so we check via Debug format.
+                // Drop user input (Write/Scroll) when terminal isn't focused,
+                // but always allow Resize and ProcessAlacrittyEvent (output)
+                // through so the terminal initializes and displays correctly.
+                // backend::Command is not pub so we inspect via Debug.
                 if !self.terminal_focused {
-                    return Task::none();
+                    let dbg = format!("{cmd:?}");
+                    if dbg.starts_with("Write(") || dbg.starts_with("Scroll(") {
+                        return Task::none();
+                    }
                 }
                 if let Some(term) = self.terminals.get_mut(&id) {
                     let action = term.handle(iced_term::Command::ProxyToBackend(cmd));
