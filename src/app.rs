@@ -1850,6 +1850,49 @@ impl App {
             Message::Tick => {
                 // No-op: the tick just triggers a view refresh for the processing timer
             }
+
+            Message::RefreshBranches => {
+                // Check current branch for all active workspaces with valid worktree paths
+                let workspaces_to_check: Vec<_> = self
+                    .workspaces
+                    .iter()
+                    .filter(|ws| {
+                        ws.status == WorkspaceStatus::Active && ws.worktree_path.is_some()
+                    })
+                    .map(|ws| (ws.id.clone(), ws.worktree_path.clone().unwrap()))
+                    .collect();
+
+                if workspaces_to_check.is_empty() {
+                    return Task::none();
+                }
+
+                return Task::perform(
+                    async move {
+                        let mut updates = Vec::new();
+                        for (ws_id, worktree_path) in workspaces_to_check {
+                            if let Ok(current_branch) = git::current_branch(&worktree_path).await {
+                                updates.push((ws_id, current_branch));
+                            }
+                        }
+                        updates
+                    },
+                    Message::BranchesRefreshed,
+                );
+            }
+
+            Message::BranchesRefreshed(updates) => {
+                // Update branch names for workspaces where the branch has changed
+                for (ws_id, new_branch) in updates {
+                    if let Some(ws) = self.workspaces.iter_mut().find(|w| w.id == ws_id)
+                        && ws.branch_name != new_branch
+                    {
+                        ws.branch_name = new_branch;
+                        // Note: We're not updating the database here to avoid excessive writes.
+                        // The branch name in the DB is more of a "created with" record.
+                        // If needed, we could update the DB periodically or on workspace close.
+                    }
+                }
+            }
         }
         Task::none()
     }
@@ -2391,6 +2434,14 @@ impl App {
         if has_active_turn {
             subs.push(
                 iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::Tick),
+            );
+        }
+
+        // Branch refresh subscription (every 5 seconds for active workspaces)
+        if !self.workspaces.is_empty() {
+            subs.push(
+                iced::time::every(std::time::Duration::from_secs(5))
+                    .map(|_| Message::RefreshBranches),
             );
         }
 

@@ -139,3 +139,8 @@ pub async fn branch_delete(repo_path: &str, branch: &str) -> Result<(), GitError
     run_git(repo_path, &["branch", "-d", branch]).await?;
     Ok(())
 }
+
+/// Get the current branch name for a worktree or repository.
+pub async fn current_branch(repo_path: &str) -> Result<String, GitError> {
+    run_git(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]).await
+}

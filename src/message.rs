@@ -174,4 +174,8 @@ pub enum Message {
 
     // --- Timer tick for processing indicator ---
     Tick,
+
+    // --- Branch refresh ---
+    RefreshBranches,
+    BranchesRefreshed(Vec<(String, String)>), // Vec<(workspace_id, new_branch_name)>
 }
