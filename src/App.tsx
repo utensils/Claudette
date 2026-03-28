@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { AppProvider } from "./contexts/AppContext";
 import { Sidebar } from "./components/Sidebar";
 import { MainContent } from "./components/MainContent";
 import "./App.css";
@@ -8,7 +9,6 @@ function App() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // Cmd/Ctrl+B to toggle sidebar
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {
         e.preventDefault();
         setSidebarCollapsed((prev) => !prev);
@@ -19,13 +19,15 @@ function App() {
   }, []);
 
   return (
-    <div className="app-shell">
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((prev) => !prev)}
-      />
-      <MainContent />
-    </div>
+    <AppProvider>
+      <div className="app-shell">
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((prev) => !prev)}
+        />
+        <MainContent />
+      </div>
+    </AppProvider>
   );
 }
 

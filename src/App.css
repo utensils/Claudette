@@ -289,3 +289,214 @@ kbd {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+.btn-icon-sm {
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sidebar: repo groups & workspace items */
+.sidebar-repo-group {
+  margin-bottom: 4px;
+}
+
+.sidebar-repo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.sidebar-repo-header:hover .btn-icon-sm {
+  opacity: 1;
+}
+
+.sidebar-repo-header .btn-icon-sm {
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.sidebar-repo-name {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-empty-small {
+  padding: 4px 8px 8px 16px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.sidebar-workspace-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px 6px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.sidebar-workspace-item:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-workspace-item.active {
+  background: var(--bg-active);
+}
+
+.sidebar-ws-name {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-ws-branch {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.sidebar-add-repo-btn {
+  width: 100%;
+  margin-top: 8px;
+  font-size: var(--font-size-xs);
+}
+
+/* Main header extras */
+.main-header-branch {
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.main-header-repo {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.workspace-placeholder {
+  flex: 1;
+  display: flex;
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+}
+
+.modal-header h2 {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 0 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.modal-error {
+  font-size: var(--font-size-sm);
+  color: var(--status-error);
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+/* Forms */
+.form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.form-input {
+  padding: 8px 10px;
+  font-size: var(--font-size-base);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.form-input:focus {
+  border-color: var(--accent);
+}
+
+select.form-input {
+  cursor: pointer;
+}
+
+.form-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.form-hint code {
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
