@@ -157,7 +157,7 @@ tauri-build = "2"
 - `tauri-plugin-shell` 2.x
 - `portable-pty` 0.8 (replaces `iced_term` for PTY management)
 
-**NPM** (in `src/ui/`):
+**Bun** (in `src/ui/`):
 - `@tauri-apps/api` ^2, `@tauri-apps/plugin-dialog` ^2
 - `react`, `react-dom`, `typescript`, `vite`
 - `lucide-react` (tree-shakeable icon library, replaces `icons.rs`)
@@ -193,6 +193,7 @@ Business logic currently embedded in `app.rs`'s `update()` method (~20 operation
 | `restore_workspace(id)` | Restore worktree from existing branch |
 | `delete_workspace(id)` | Remove worktree + branch + DB record |
 | `generate_workspace_name()` | Random name via `names::NameGenerator` |
+| `refresh_branches()` | Check all active workspaces for branch name changes, returns `Vec<(workspace_id, branch_name)>` |
 
 **`commands/chat.rs`** — Chat + agent:
 | Command | Description |
@@ -323,7 +324,7 @@ Maps 1:1 to the current Iced UI modules:
 | `useAgentStream` | Listen to `agent:*` Tauri events, update Zustand chat/agent state |
 | `usePtyStream` | Listen to `pty:output` events, write to xterm.js instance |
 | `useKeyboardShortcuts` | Cmd+B (sidebar), Cmd+K (fuzzy finder), Cmd+D (right sidebar), Cmd+\` (terminal), Escape (dismiss modals) |
-| `useBranchRefresh` | Poll `refresh_branches()` every 5 seconds |
+| `useBranchRefresh` | Poll `refresh_branches()` every 5 seconds (see `commands/workspace.rs`) |
 
 ### 5.4 Theme
 
@@ -372,8 +373,8 @@ Dark theme matching existing Iced color palette, translated to CSS custom proper
 ### Phase 2: React Scaffolding
 **Goal**: Vite project initialized, component structure in place, types defined.
 
-1. Initialize Vite + React + TypeScript in `src/ui/`
-2. Install NPM dependencies
+1. Initialize Vite + React + TypeScript in `src/ui/` via `bun create vite . --template react-ts`
+2. Install dependencies via `bun install`
 3. Define TypeScript types matching Rust models
 4. Create Zustand store slices
 5. Scaffold all component files
@@ -394,23 +395,36 @@ Dark theme matching existing Iced color palette, translated to CSS custom proper
 ### Phase 4: Cleanup
 1. Remove any leftover Iced artifacts
 2. Update `.gitignore` (`node_modules/`, `src/ui/dist/`)
-3. Update `mise.toml` (add `node = "22"`)
+3. Update `mise.toml` (add `bun = "latest"`)
 4. Update `CLAUDE.md` with new architecture and build commands
-5. Update CI pipeline
+5. Update CI pipeline (add `bun install && bun run build` step before `cargo tauri build`)
 6. Release build optimizations (`strip = true`, `lto = true`)
 
 ## 7. Verification
 
 | Check | Command |
 |-------|---------|
-| Frontend dev server | `cd src/ui && npm run dev` |
-| Tauri dev mode | `cd src-tauri && cargo tauri dev` |
+| Frontend dev server | `cd src/ui && bun run dev` |
+| Tauri dev mode | `cargo tauri dev` (requires `beforeDevCommand` in `tauri.conf.json`, see below) |
 | Backend tests | `cargo test -p claudette-core` |
 | Rust lint | `cargo clippy --workspace` |
-| TypeScript check | `cd src/ui && npx tsc --noEmit` |
+| TypeScript check | `cd src/ui && bunx tsc --noEmit` |
 | Release build | `cargo tauri build` |
 | Binary size | Target < 30MB |
 | Cold start | Target < 2s to interactive UI |
+
+**Tauri dev server configuration**: `tauri.conf.json` must include `beforeDevCommand` and `beforeBuildCommand` so that `cargo tauri dev` automatically starts the Vite dev server:
+
+```json
+{
+  "build": {
+    "beforeDevCommand": "cd ../src/ui && bun run dev",
+    "beforeBuildCommand": "cd ../src/ui && bun run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../src/ui/dist"
+  }
+}
+```
 
 ## 8. Risks & Mitigations
 

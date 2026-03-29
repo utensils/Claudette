@@ -8,7 +8,7 @@ debug/
 
 # Node / Frontend
 node_modules/
-dist/
+src/ui/dist/
 
 # macOS
 .DS_Store
