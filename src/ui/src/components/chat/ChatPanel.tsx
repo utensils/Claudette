@@ -28,6 +28,11 @@ export function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Prompt history: stores past user inputs per workspace.
+  const historyRef = useRef<Record<string, string[]>>({});
+  const historyIndexRef = useRef(-1);
+  const draftRef = useRef("");
+
   useAgentStream();
 
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
@@ -43,13 +48,18 @@ export function ChatPanel() {
     : [];
   const isRunning = ws?.agent_status === "Running";
 
-  // Load chat history when workspace changes
+  // Load chat history when workspace changes, seed prompt history from it.
   useEffect(() => {
     if (!selectedWorkspaceId) return;
     setError(null);
+    historyIndexRef.current = -1;
+    draftRef.current = "";
     loadChatHistory(selectedWorkspaceId)
       .then((msgs) => {
         setChatMessages(selectedWorkspaceId, msgs);
+        historyRef.current[selectedWorkspaceId] = msgs
+          .filter((m) => m.role === "User")
+          .map((m) => m.content);
       })
       .catch((e) => console.error("Failed to load chat history:", e));
   }, [selectedWorkspaceId, setChatMessages]);
@@ -66,6 +76,13 @@ export function ChatPanel() {
     if (!content || !selectedWorkspaceId) return;
 
     setError(null);
+
+    // Push to prompt history.
+    const history = (historyRef.current[selectedWorkspaceId] ??= []);
+    history.push(content);
+    historyIndexRef.current = -1;
+    draftRef.current = "";
+
     setChatInput("");
     addChatMessage(selectedWorkspaceId, {
       id: crypto.randomUUID(),
@@ -102,6 +119,32 @@ export function ChatPanel() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+      return;
+    }
+
+    if (!selectedWorkspaceId) return;
+    const history = historyRef.current[selectedWorkspaceId] ?? [];
+    if (history.length === 0) return;
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (historyIndexRef.current === -1) {
+        draftRef.current = chatInput;
+        historyIndexRef.current = history.length - 1;
+      } else if (historyIndexRef.current > 0) {
+        historyIndexRef.current -= 1;
+      }
+      setChatInput(history[historyIndexRef.current]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (historyIndexRef.current === -1) return;
+      if (historyIndexRef.current < history.length - 1) {
+        historyIndexRef.current += 1;
+        setChatInput(history[historyIndexRef.current]);
+      } else {
+        historyIndexRef.current = -1;
+        setChatInput(draftRef.current);
+      }
     }
   };
 
