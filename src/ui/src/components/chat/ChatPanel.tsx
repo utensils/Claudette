@@ -50,7 +50,7 @@ export function ChatPanel() {
     : [];
   const permissionLevel = useAppStore((s) =>
     selectedWorkspaceId
-      ? s.permissionLevel[selectedWorkspaceId] || "readonly"
+      ? s.permissionLevel[selectedWorkspaceId] || "full"
       : "readonly"
   );
   const setPermissionLevel = useAppStore((s) => s.setPermissionLevel);

@@ -93,7 +93,7 @@ pub async fn send_chat_message(
         .map_err(|e| e.to_string())?;
 
     // Resolve allowed tools from permission level.
-    let level = permission_level.as_deref().unwrap_or("readonly");
+    let level = permission_level.as_deref().unwrap_or("full");
     if !matches!(level, "readonly" | "standard" | "full") {
         eprintln!("[chat] Unknown permission level {level:?}, falling back to readonly");
     }
