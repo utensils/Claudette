@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   archiveWorkspace,
@@ -21,11 +22,21 @@ export function Sidebar() {
   const openModal = useAppStore((s) => s.openModal);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
 
+  const creatingRef = useRef(false);
+
   const handleCreateWorkspace = async (repoId: string) => {
-    const name = await generateWorkspaceName();
-    const ws = await createWorkspace(repoId, name);
-    addWorkspace(ws);
-    selectWorkspace(ws.id);
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    try {
+      const name = await generateWorkspaceName();
+      const ws = await createWorkspace(repoId, name);
+      addWorkspace(ws);
+      selectWorkspace(ws.id);
+    } catch (e) {
+      console.error("Failed to create workspace:", e);
+    } finally {
+      creatingRef.current = false;
+    }
   };
 
   const filteredWorkspaces = workspaces.filter((ws) => {

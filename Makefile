@@ -1,10 +1,10 @@
-SHELL := /bin/bash
 .PHONY: setup run
 
 setup:
-	mise trust && eval "$$(mise activate bash)" && \
-		cd src/ui && bun install && \
-		cd ../.. && cargo fetch
+	mise trust
+	mise install
+	cd src/ui && mise exec -- bun install
+	mise exec -- cargo fetch
 
 run:
-	cargo tauri dev
+	mise exec -- cargo tauri dev
