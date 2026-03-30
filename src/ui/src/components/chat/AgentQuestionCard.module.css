@@ -1,0 +1,147 @@
+.card {
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.questionBlock {
+  margin-bottom: 12px;
+}
+
+.header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.question {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.option {
+  padding: 10px 12px;
+  background: var(--chat-input-bg);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  transition: border-color 0.15s;
+}
+
+.option:hover {
+  border-color: var(--text-dim);
+  background: var(--hover-bg);
+}
+
+.optionLabel {
+  font-weight: 500;
+}
+
+.optionSelected {
+  border-color: var(--status-running);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.confirmBtn {
+  display: block;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.confirmBtn:hover {
+  background: var(--hover-bg);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--divider);
+}
+
+.freeformRow {
+  display: flex;
+  gap: 8px;
+}
+
+.freeformInput {
+  flex: 1;
+  background: var(--chat-input-bg);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  resize: none;
+  min-height: 36px;
+}
+
+.freeformInput:focus {
+  border-color: var(--text-dim);
+}
+
+.freeformInput::placeholder {
+  color: var(--text-dim);
+}
+
+.submitBtn {
+  background: var(--selected-bg);
+  border: 1px solid var(--divider);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  align-self: flex-end;
+}
+
+.submitBtn:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.submitBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

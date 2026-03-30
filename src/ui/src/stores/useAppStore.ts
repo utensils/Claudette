@@ -19,6 +19,19 @@ export interface ToolActivity {
   collapsed: boolean;
 }
 
+export interface AgentQuestionItem {
+  header?: string;
+  question: string;
+  options: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
+export interface AgentQuestion {
+  workspaceId: string;
+  toolUseId: string;
+  questions: AgentQuestionItem[];
+}
+
 interface AppState {
   // -- Repositories --
   repositories: Repository[];
@@ -54,6 +67,15 @@ interface AppState {
     updates: Partial<ToolActivity>
   ) => void;
   toggleToolActivityCollapsed: (wsId: string, index: number) => void;
+  appendToolActivityInput: (
+    wsId: string,
+    toolUseId: string,
+    partialJson: string
+  ) => void;
+
+  // -- Agent Questions --
+  agentQuestion: AgentQuestion | null;
+  setAgentQuestion: (q: AgentQuestion | null) => void;
 
   // -- Permissions --
   permissionLevel: Record<string, PermissionLevel>;
@@ -209,6 +231,21 @@ export const useAppStore = create<AppState>((set) => ({
         ),
       },
     })),
+  appendToolActivityInput: (wsId, toolUseId, partialJson) =>
+    set((s) => ({
+      toolActivities: {
+        ...s.toolActivities,
+        [wsId]: (s.toolActivities[wsId] || []).map((a) =>
+          a.toolUseId === toolUseId
+            ? { ...a, inputJson: a.inputJson + partialJson }
+            : a
+        ),
+      },
+    })),
+
+  // -- Agent Questions --
+  agentQuestion: null,
+  setAgentQuestion: (q) => set({ agentQuestion: q }),
 
   // -- Permissions --
   permissionLevel: {},

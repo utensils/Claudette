@@ -1,7 +1,63 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "../stores/useAppStore";
+import type { AgentQuestionItem } from "../stores/useAppStore";
 import type { AgentStreamPayload } from "../types/agent-events";
+
+const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
+
+/**
+ * Parse AskUserQuestion tool input JSON into question items.
+ * Supports two formats:
+ * - Single: { question: "...", options: [...] }
+ * - Multi:  { questions: [{ header?, question, options, multiSelect? }] }
+ *
+ * Options can be strings or objects with label/description fields.
+ */
+function parseAskUserQuestion(
+  parsed: Record<string, unknown>
+): AgentQuestionItem[] {
+  // Multi-question format
+  if (Array.isArray(parsed.questions)) {
+    return parsed.questions.map((q: Record<string, unknown>) => ({
+      header: typeof q.header === "string" ? q.header : undefined,
+      question: typeof q.question === "string" ? q.question : "",
+      options: parseOptions(q.options),
+      multiSelect: q.multiSelect === true,
+    }));
+  }
+
+  // Single-question format
+  if (typeof parsed.question === "string") {
+    return [
+      {
+        question: parsed.question,
+        options: parseOptions(parsed.options),
+        multiSelect: false,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function parseOptions(
+  raw: unknown
+): Array<{ label: string; description?: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((opt: unknown) => {
+    if (typeof opt === "string") return { label: opt };
+    if (typeof opt === "object" && opt !== null) {
+      const o = opt as Record<string, unknown>;
+      return {
+        label: typeof o.label === "string" ? o.label : String(o.label ?? ""),
+        description:
+          typeof o.description === "string" ? o.description : undefined,
+      };
+    }
+    return { label: String(opt) };
+  });
+}
 
 export function useAgentStream() {
   const appendStreamingContent = useAppStore((s) => s.appendStreamingContent);
@@ -9,7 +65,17 @@ export function useAgentStream() {
   const addChatMessage = useAppStore((s) => s.addChatMessage);
   const addToolActivity = useAppStore((s) => s.addToolActivity);
   const updateToolActivity = useAppStore((s) => s.updateToolActivity);
+  const appendToolActivityInput = useAppStore(
+    (s) => s.appendToolActivityInput
+  );
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
+  const setAgentQuestion = useAppStore((s) => s.setAgentQuestion);
+
+  // Map content block index → { toolUseId, toolName } for the current turn.
+  // Reset on process exit.
+  const blockToolMapRef = useRef<
+    Record<number, { toolUseId: string; toolName: string }>
+  >({});
 
   useEffect(() => {
     const unlisten = listen<AgentStreamPayload>("agent-stream", (event) => {
@@ -18,6 +84,12 @@ export function useAgentStream() {
       if ("ProcessExited" in agentEvent) {
         updateWorkspace(wsId, { agent_status: "Idle" });
         setStreamingContent(wsId, "");
+        blockToolMapRef.current = {};
+        // Clear pending question for this workspace
+        const currentQuestion = useAppStore.getState().agentQuestion;
+        if (currentQuestion?.workspaceId === wsId) {
+          setAgentQuestion(null);
+        }
         return;
       }
 
@@ -41,7 +113,28 @@ export function useAgentStream() {
                     delta.type === "input_json_delta" &&
                     delta.partial_json
                   ) {
-                    // Append to the last tool activity's input
+                    const entry = blockToolMapRef.current[inner.index];
+                    if (entry) {
+                      appendToolActivityInput(
+                        wsId,
+                        entry.toolUseId,
+                        delta.partial_json
+                      );
+                    }
+                  }
+                  if (
+                    "type" in delta &&
+                    delta.type === "tool_use_delta" &&
+                    delta.partial_json
+                  ) {
+                    const entry = blockToolMapRef.current[inner.index];
+                    if (entry) {
+                      appendToolActivityInput(
+                        wsId,
+                        entry.toolUseId,
+                        delta.partial_json
+                      );
+                    }
                   }
                   break;
                 }
@@ -51,6 +144,10 @@ export function useAgentStream() {
                     "type" in inner.content_block &&
                     inner.content_block.type === "tool_use"
                   ) {
+                    blockToolMapRef.current[inner.index] = {
+                      toolUseId: inner.content_block.id,
+                      toolName: inner.content_block.name,
+                    };
                     addToolActivity(wsId, {
                       toolUseId: inner.content_block.id,
                       toolName: inner.content_block.name,
@@ -58,6 +155,33 @@ export function useAgentStream() {
                       resultText: "",
                       collapsed: true,
                     });
+                  }
+                  break;
+                }
+                case "content_block_stop": {
+                  const entry = blockToolMapRef.current[inner.index];
+                  if (entry?.toolName === ASK_USER_QUESTION_TOOL) {
+                    // Read accumulated input JSON from the tool activity
+                    const activities =
+                      useAppStore.getState().toolActivities[wsId] || [];
+                    const activity = activities.find(
+                      (a) => a.toolUseId === entry.toolUseId
+                    );
+                    if (activity?.inputJson) {
+                      try {
+                        const parsed = JSON.parse(activity.inputJson);
+                        const questions = parseAskUserQuestion(parsed);
+                        if (questions.length > 0) {
+                          setAgentQuestion({
+                            workspaceId: wsId,
+                            toolUseId: entry.toolUseId,
+                            questions,
+                          });
+                        }
+                      } catch {
+                        // Malformed JSON — ignore, question won't show
+                      }
+                    }
                   }
                   break;
                 }
@@ -119,6 +243,8 @@ export function useAgentStream() {
     addChatMessage,
     addToolActivity,
     updateToolActivity,
+    appendToolActivityInput,
     updateWorkspace,
+    setAgentQuestion,
   ]);
 }

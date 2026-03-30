@@ -10,6 +10,7 @@ import {
   setAppSetting,
 } from "../../services/tauri";
 import { useAgentStream } from "../../hooks/useAgentStream";
+import { AgentQuestionCard } from "./AgentQuestionCard";
 import styles from "./ChatPanel.module.css";
 
 export function ChatPanel() {
@@ -54,7 +55,11 @@ export function ChatPanel() {
       : "readonly"
   );
   const setPermissionLevel = useAppStore((s) => s.setPermissionLevel);
+  const agentQuestion = useAppStore((s) => s.agentQuestion);
+  const setAgentQuestion = useAppStore((s) => s.setAgentQuestion);
   const isRunning = ws?.agent_status === "Running";
+  const pendingQuestion =
+    agentQuestion?.workspaceId === selectedWorkspaceId ? agentQuestion : null;
 
   // Load persisted permission level when workspace changes.
   useEffect(() => {
@@ -98,8 +103,8 @@ export function ChatPanel() {
 
   if (!ws) return null;
 
-  const handleSend = async () => {
-    const content = chatInput.trim();
+  const handleSend = async (messageOverride?: string) => {
+    const content = (messageOverride ?? chatInput).trim();
     if (!content || !selectedWorkspaceId) return;
 
     setError(null);
@@ -305,8 +310,18 @@ export function ChatPanel() {
               </div>
             )}
 
-            {isRunning && !streaming && (
+            {isRunning && !streaming && !pendingQuestion && (
               <div className={styles.processing}>Processing...</div>
+            )}
+
+            {pendingQuestion && (
+              <AgentQuestionCard
+                question={pendingQuestion}
+                onRespond={(response) => {
+                  setAgentQuestion(null);
+                  handleSend(response);
+                }}
+              />
             )}
           </>
         )}
@@ -324,7 +339,7 @@ export function ChatPanel() {
         />
         <button
           className={styles.sendBtn}
-          onClick={handleSend}
+          onClick={() => handleSend()}
           disabled={!chatInput.trim()}
         >
           Send
