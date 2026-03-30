@@ -13,10 +13,14 @@ export function AddRepoModal() {
   const [loading, setLoading] = useState(false);
 
   const handleBrowse = async () => {
-    const selected = await open({ directory: true, multiple: false });
-    if (selected) {
-      setPath(selected);
-      setError(null);
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (selected) {
+        setPath(selected);
+        setError(null);
+      }
+    } catch (e) {
+      setError(String(e));
     }
   };
 
