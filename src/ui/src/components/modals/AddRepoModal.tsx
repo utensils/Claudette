@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/useAppStore";
 import { addRepository } from "../../services/tauri";
 import { Modal } from "./Modal";
@@ -10,6 +11,18 @@ export function AddRepoModal() {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const handleBrowse = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (selected) {
+        setPath(selected);
+        setError(null);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
   const handleSubmit = async () => {
     if (!path.trim()) return;
@@ -30,14 +43,19 @@ export function AddRepoModal() {
     <Modal title="Add Repository" onClose={closeModal}>
       <div className={shared.field}>
         <label className={shared.label}>Repository path</label>
-        <input
-          className={shared.input}
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          placeholder="/path/to/repository"
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-          autoFocus
-        />
+        <div className={shared.inputRow}>
+          <input
+            className={shared.input}
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            placeholder="/path/to/repository"
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            autoFocus
+          />
+          <button className={shared.btn} onClick={handleBrowse}>
+            Browse
+          </button>
+        </div>
         {error && <div className={shared.error}>{error}</div>}
       </div>
       <div className={shared.actions}>
