@@ -238,6 +238,8 @@ export function useAgentStream() {
             break;
           }
           case "result": {
+            finalizeTurn(wsId, turnMessageCountRef.current[wsId] || 0);
+            turnMessageCountRef.current[wsId] = 0;
             updateWorkspace(wsId, { agent_status: "Idle" });
             break;
           }

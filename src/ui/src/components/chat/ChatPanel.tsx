@@ -93,8 +93,12 @@ export function ChatPanel() {
     draftRef.current = "";
     loadChatHistory(selectedWorkspaceId)
       .then((msgs) => {
-        setChatMessages(selectedWorkspaceId, msgs);
-        historyRef.current[selectedWorkspaceId] = msgs
+        // Filter out empty assistant messages (legacy data).
+        const filtered = msgs.filter(
+          (m) => m.role !== "Assistant" || m.content.trim() !== ""
+        );
+        setChatMessages(selectedWorkspaceId, filtered);
+        historyRef.current[selectedWorkspaceId] = filtered
           .filter((m) => m.role === "User")
           .map((m) => m.content);
       })
@@ -284,16 +288,17 @@ export function ChatPanel() {
             ))}
 
             {completedTurns.map((turn, ti) => (
-              <div key={turn.id} className={styles.turnSummary}>
-                <button
-                  className={styles.turnHeader}
-                  onClick={() =>
-                    selectedWorkspaceId &&
-                    toggleCompletedTurn(selectedWorkspaceId, ti)
-                  }
-                >
+              <div
+                key={turn.id}
+                className={styles.turnSummary}
+                onClick={() =>
+                  selectedWorkspaceId &&
+                  toggleCompletedTurn(selectedWorkspaceId, ti)
+                }
+              >
+                <div className={styles.turnHeader}>
                   <span className={styles.toolChevron}>
-                    {turn.collapsed ? ">" : "v"}
+                    {turn.collapsed ? "›" : "⌄"}
                   </span>
                   <span className={styles.turnLabel}>
                     {turn.activities.length} tool call
@@ -301,7 +306,7 @@ export function ChatPanel() {
                     {turn.messageCount > 0 &&
                       `, ${turn.messageCount} message${turn.messageCount !== 1 ? "s" : ""}`}
                   </span>
-                </button>
+                </div>
                 {!turn.collapsed && (
                   <div className={styles.turnActivities}>
                     {turn.activities.map((act) => (

@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use claudette::agent::{self, AgentEvent, StreamEvent};
 use claudette::db::Database;
@@ -131,7 +131,22 @@ pub async fn send_chat_message(
     let db_path = state.db_path.clone();
     tokio::spawn(async move {
         let mut rx = turn_handle.event_rx;
+        let mut got_init = false;
         while let Some(event) = rx.recv().await {
+            // Track whether the CLI initialized successfully.
+            if let AgentEvent::Stream(StreamEvent::System { .. }) = &event {
+                got_init = true;
+            }
+
+            // If the process exits without ever initializing, reset the session
+            // so the next attempt starts fresh instead of trying --resume.
+            if let AgentEvent::ProcessExited(code) = &event
+                && (!got_init || *code != Some(0))
+            {
+                let app_state = app.state::<AppState>();
+                let mut agents = app_state.agents.write().await;
+                agents.remove(&ws_id);
+            }
             // Persist assistant messages to DB on completion.
             if let AgentEvent::Stream(StreamEvent::Assistant { ref message }) = event {
                 let full_text: String = message
@@ -147,7 +162,9 @@ pub async fn send_chat_message(
                     .collect::<Vec<_>>()
                     .join("");
 
-                if let Ok(db) = Database::open(&db_path) {
+                if !full_text.trim().is_empty()
+                    && let Ok(db) = Database::open(&db_path)
+                {
                     let msg = ChatMessage {
                         id: uuid::Uuid::new_v4().to_string(),
                         workspace_id: ws_id.clone(),

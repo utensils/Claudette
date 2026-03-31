@@ -210,31 +210,27 @@
 
 .turnSummary {
   border: 1px solid var(--divider);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 4px;
+  border-radius: 6px;
+  margin: 4px 0;
+  cursor: pointer;
 }
 
 .turnHeader {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
   font-size: 12px;
-  text-align: left;
 }
 
-.turnHeader:hover {
+.turnSummary:hover > .turnHeader {
   background: var(--hover-bg);
 }
 
 .turnLabel {
-  color: var(--text-dim);
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .turnActivities {
