@@ -67,8 +67,8 @@ pub struct Scripts {
 pub fn load_config(repo_path: &Path) -> Result<Option<ClaudetteConfig>, String>
 ```
 
-- `#[serde(default)]` on all fields ensures unknown/missing keys don't cause errors
-- `#[serde(deny_unknown_fields)]` is NOT used — unknown keys are silently ignored
+- `#[serde(default)]` ensures missing fields deserialize cleanly (e.g. absent `scripts`/`setup` are treated as `None` rather than errors)
+- `#[serde(deny_unknown_fields)]` is NOT used — Serde's default behavior is to ignore unknown keys, so extra keys are silently ignored
 - File not found → `Ok(None)` (not an error)
 - Invalid JSON → `Err("Failed to parse .claudette.json: <serde error>")`
 
@@ -85,9 +85,10 @@ PRAGMA user_version = 5;
 
 ### 4.3 Database: Methods
 
-Update `list_repositories` SELECT to include `setup_script`:
+Update `list_repositories` SELECT to include `setup_script` (preserving existing `ORDER BY`):
 ```sql
-SELECT id, path, name, icon, path_slug, created_at, setup_script FROM repositories
+SELECT id, path, name, icon, path_slug, created_at, setup_script
+FROM repositories ORDER BY name
 ```
 
 New method:
@@ -145,29 +146,39 @@ pub struct SetupResult {
     pub script: String,
     /// Combined stdout + stderr output
     pub output: String,
-    /// Process exit code
-    pub exit_code: i32,
+    /// Process exit code (None if timed out or failed to spawn)
+    pub exit_code: Option<i32>,
     /// Whether the script succeeded (exit code 0)
     pub success: bool,
+    /// Whether the script was killed due to timeout
+    pub timed_out: bool,
 }
 ```
 
-**Execution details**:
-- Use `tokio::process::Command::new("sh").arg("-c").arg(&script).current_dir(&worktree_path)`
-- Capture both stdout and stderr via `.output()`
-- Apply 5-minute timeout via `tokio::time::timeout`
-- Non-zero exit → return `SetupResult { success: false, ... }` (do NOT rollback workspace)
-- Timeout → return `SetupResult { success: false, output: "Setup script timed out after 5 minutes", exit_code: -1 }`
+**Platform support**: macOS and Linux only (the project's target platforms). Uses `sh -c` for execution. Windows is not a target platform for this project.
 
-### 4.6 New Tauri commands
+**Execution details**:
+- Spawn via `tokio::process::Command::new("sh").arg("-c").arg(&script).current_dir(&worktree_path)`
+- Explicitly pipe output: `.stdout(Stdio::piped()).stderr(Stdio::piped())`
+- Use `.spawn()` to get a `Child` handle (NOT `.output()`, which doesn't yield a handle for killing on timeout)
+- Apply 5-minute timeout via `tokio::time::timeout(Duration::from_secs(300), child.wait_with_output())`
+- **On timeout**: explicitly kill the child process via `child.kill().await` to prevent leaked background processes
+- Non-zero exit → return `SetupResult { success: false, ... }` (do NOT rollback workspace)
+- Timeout → return `SetupResult { success: false, output: "Setup script timed out after 5 minutes", exit_code: None, timed_out: true }`
+
+### 4.6 New and updated Tauri commands
 
 **`commands/repository.rs`**:
 
+**Extend `update_repository_settings`** to accept `setup_script` alongside name and icon. This keeps a single atomic save for the modal — one round-trip, no partial save risk:
+
 ```rust
 #[tauri::command]
-pub async fn update_repository_setup_script(
+pub async fn update_repository_settings(
     id: String,
-    script: Option<String>,
+    name: String,
+    icon: Option<String>,
+    setup_script: Option<String>,  // NEW
     state: State<'_, AppState>,
 ) -> Result<(), String>
 ```
@@ -175,9 +186,12 @@ pub async fn update_repository_setup_script(
 ```rust
 #[tauri::command]
 pub async fn get_repo_config(
-    repo_path: String,
+    repo_id: String,
+    state: State<'_, AppState>,
 ) -> Result<RepoConfigInfo, String>
 ```
+
+This command looks up the repo by ID in the database to get its path, rather than accepting an arbitrary path. This prevents reading `.claudette.json` from untrusted locations.
 
 Where `RepoConfigInfo` contains:
 ```rust
@@ -207,8 +221,9 @@ export interface SetupResult {
   source: string;
   script: string;
   output: string;
-  exit_code: number;
+  exit_code: number | null;
   success: boolean;
+  timed_out: boolean;
 }
 
 export interface CreateWorkspaceResult {
@@ -228,15 +243,12 @@ export interface RepoConfigInfo {
 **`src/ui/src/services/tauri.ts`**:
 
 ```typescript
-export function updateRepositorySetupScript(
-  id: string,
-  script: string | null
-): Promise<void>
-
 export function getRepoConfig(
-  repoPath: string
+  repoId: string
 ): Promise<RepoConfigInfo>
 ```
+
+`updateRepositorySetupScript` is not needed as a separate function — the setup script is saved atomically via the extended `updateRepositorySettings` command.
 
 Update `createWorkspace` return type from `Promise<Workspace>` to `Promise<CreateWorkspaceResult>`.
 
@@ -251,7 +263,7 @@ Add a "Setup Script" section to `RepoSettingsModal.tsx`:
 3. **Parse error**: If `.claudette.json` is malformed, show the error message
 4. **No `.claudette.json`**: Just show the textarea with no indicator
 
-Load `.claudette.json` info on modal open via `getRepoConfig(repo.path)`.
+Load `.claudette.json` info on modal open via `getRepoConfig(repo.id)`. Save the setup script via the extended `updateRepositorySettings` command (single Save button, atomic write of name + icon + setup_script).
 
 ### 4.10 Frontend: Workspace creation feedback
 
@@ -269,11 +281,11 @@ In `Sidebar.tsx` `handleCreateWorkspace`:
 | `src/db.rs` | Migration 5, `update_repository_setup_script`, update `list_repositories` |
 | `src/model/repository.rs` | Add `setup_script: Option<String>` |
 | `src-tauri/src/commands/workspace.rs` | Setup script resolution + execution in `create_workspace` |
-| `src-tauri/src/commands/repository.rs` | `update_repository_setup_script`, `get_repo_config` commands |
+| `src-tauri/src/commands/repository.rs` | Extend `update_repository_settings` with `setup_script`, add `get_repo_config` command |
 | `src-tauri/src/main.rs` | Register new commands |
 | `src/ui/src/types/repository.ts` | Add `setup_script` field |
 | `src/ui/src/types/index.ts` | Export new types |
-| `src/ui/src/services/tauri.ts` | New service functions, update `createWorkspace` return |
+| `src/ui/src/services/tauri.ts` | Add `getRepoConfig`, update `createWorkspace` return type, extend `updateRepositorySettings` |
 | `src/ui/src/components/modals/RepoSettingsModal.tsx` | Setup script section + `.claudette.json` indicator |
 | `src/ui/src/components/sidebar/Sidebar.tsx` | Handle `CreateWorkspaceResult`, show setup feedback |
 
