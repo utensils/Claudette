@@ -39,15 +39,18 @@ pub async fn load_initial_data(state: State<'_, AppState>) -> Result<InitialData
         })
         .collect();
 
-    // Resolve default branch for each valid repo (best-effort).
-    let mut default_branches = HashMap::new();
-    for repo in &repositories {
-        if repo.path_valid
-            && let Ok(branch) = git::default_branch(&repo.path).await
-        {
-            default_branches.insert(repo.id.clone(), branch);
-        }
-    }
+    // Resolve default branch for each valid repo concurrently (best-effort).
+    let branch_futures: Vec<_> = repositories
+        .iter()
+        .filter(|r| r.path_valid)
+        .map(|r| {
+            let id = r.id.clone();
+            let path = r.path.clone();
+            async move { git::default_branch(&path).await.ok().map(|b| (id, b)) }
+        })
+        .collect();
+    let branch_results = futures::future::join_all(branch_futures).await;
+    let default_branches: HashMap<String, String> = branch_results.into_iter().flatten().collect();
 
     Ok(InitialData {
         repositories,

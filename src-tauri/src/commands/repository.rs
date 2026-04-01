@@ -156,6 +156,25 @@ pub async fn get_repo_config(
     }
 }
 
+/// Get the default branch for a repository (e.g., "main" or "master").
+#[tauri::command]
+pub async fn get_default_branch(
+    repo_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let repos = db.list_repositories().map_err(|e| e.to_string())?;
+    let repo = repos
+        .iter()
+        .find(|r| r.id == repo_id)
+        .ok_or("Repository not found")?;
+
+    match git::default_branch(&repo.path).await {
+        Ok(branch) => Ok(Some(branch)),
+        Err(_) => Ok(None),
+    }
+}
+
 fn slug_from_path(path: &str) -> String {
     Path::new(path)
         .file_name()

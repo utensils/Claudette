@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../stores/useAppStore";
-import { addRepository } from "../../services/tauri";
+import { addRepository, getDefaultBranch } from "../../services/tauri";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
 
 export function AddRepoModal() {
   const closeModal = useAppStore((s) => s.closeModal);
   const addRepo = useAppStore((s) => s.addRepository);
+  const setDefaultBranches = useAppStore((s) => s.setDefaultBranches);
+  const defaultBranches = useAppStore((s) => s.defaultBranches);
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,6 +33,12 @@ export function AddRepoModal() {
     try {
       const repo = await addRepository(path.trim());
       addRepo(repo);
+      // Fetch default branch for the new repo.
+      getDefaultBranch(repo.id).then((branch) => {
+        if (branch) {
+          setDefaultBranches({ ...defaultBranches, [repo.id]: branch });
+        }
+      });
       closeModal();
     } catch (e) {
       setError(String(e));

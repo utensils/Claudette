@@ -52,6 +52,10 @@ export function getRepoConfig(repoId: string): Promise<RepoConfigInfo> {
   return invoke("get_repo_config", { repoId });
 }
 
+export function getDefaultBranch(repoId: string): Promise<string | null> {
+  return invoke("get_default_branch", { repoId });
+}
+
 // -- Workspace --
 
 export function createWorkspace(
