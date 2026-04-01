@@ -27,6 +27,8 @@ export function extractToolSummary(
         return input.query ?? "";
       case "NotebookEdit":
         return input.notebook_path ?? "";
+      case "Agent":
+        return truncate(input.description ?? input.prompt ?? "", 80);
       case "LSP":
         return input.action ?? "";
       case "TodoWrite":
