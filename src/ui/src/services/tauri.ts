@@ -18,6 +18,7 @@ export interface InitialData {
   repositories: Repository[];
   workspaces: Workspace[];
   worktree_base_dir: string;
+  default_branches: Record<string, string>;
 }
 
 export function loadInitialData(): Promise<InitialData> {

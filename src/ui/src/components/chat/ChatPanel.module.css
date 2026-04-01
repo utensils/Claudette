@@ -25,14 +25,45 @@
   gap: 8px;
 }
 
-.wsName {
-  font-weight: 600;
-  font-size: 14px;
+.branchInfo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-family: monospace;
+  min-width: 0;
 }
 
 .repoName {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.branchSep {
+  color: var(--text-faint);
+}
+
+.branchIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.branchName {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branchArrow {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.baseBranch {
   color: var(--text-dim);
-  font-size: 12px;
+  white-space: nowrap;
 }
 
 .permissionSelect {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { GitBranch } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   loadChatHistory,
@@ -41,6 +42,8 @@ export function ChatPanel() {
 
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
   const repo = repositories.find((r) => r.id === ws?.repository_id);
+  const defaultBranchesMap = useAppStore((s) => s.defaultBranches);
+  const defaultBranch = repo ? defaultBranchesMap[repo.id] : undefined;
   const messages = selectedWorkspaceId
     ? chatMessages[selectedWorkspaceId] || []
     : [];
@@ -206,8 +209,20 @@ export function ChatPanel() {
     <div className={styles.panel}>
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <span className={styles.wsName}>{ws.name}</span>
-          {repo && <span className={styles.repoName}>{repo.name}</span>}
+          {repo && (
+            <span className={styles.branchInfo}>
+              <span className={styles.repoName}>{repo.name}</span>
+              <span className={styles.branchSep}>/</span>
+              <GitBranch size={12} className={styles.branchIcon} />
+              <span className={styles.branchName}>{ws.branch_name}</span>
+              {defaultBranch && (
+                <>
+                  <span className={styles.branchArrow}>{'>'}</span>
+                  <span className={styles.baseBranch}>{defaultBranch}</span>
+                </>
+              )}
+            </span>
+          )}
         </div>
         <div className={styles.headerRight}>
           <WorkspaceActions

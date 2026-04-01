@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 use tauri::State;
 
 use claudette::db::Database;
+use claudette::git;
 use claudette::model::{Repository, Workspace};
 
 use crate::state::AppState;
@@ -11,6 +14,8 @@ pub struct InitialData {
     pub repositories: Vec<Repository>,
     pub workspaces: Vec<Workspace>,
     pub worktree_base_dir: String,
+    /// Maps repo ID → default branch name (e.g., "main", "master").
+    pub default_branches: HashMap<String, String>,
 }
 
 #[tauri::command]
@@ -26,7 +31,7 @@ pub async fn load_initial_data(state: State<'_, AppState>) -> Result<InitialData
     };
 
     // Check which repo paths are still valid on disk.
-    let repositories = repositories
+    let repositories: Vec<Repository> = repositories
         .into_iter()
         .map(|mut r| {
             r.path_valid = std::path::Path::new(&r.path).is_dir();
@@ -34,9 +39,20 @@ pub async fn load_initial_data(state: State<'_, AppState>) -> Result<InitialData
         })
         .collect();
 
+    // Resolve default branch for each valid repo (best-effort).
+    let mut default_branches = HashMap::new();
+    for repo in &repositories {
+        if repo.path_valid
+            && let Ok(branch) = git::default_branch(&repo.path).await
+        {
+            default_branches.insert(repo.id.clone(), branch);
+        }
+    }
+
     Ok(InitialData {
         repositories,
         workspaces,
         worktree_base_dir,
+        default_branches,
     })
 }

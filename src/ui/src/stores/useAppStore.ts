@@ -145,6 +145,8 @@ interface AppState {
   // -- Settings --
   worktreeBaseDir: string;
   setWorktreeBaseDir: (dir: string) => void;
+  defaultBranches: Record<string, string>;
+  setDefaultBranches: (branches: Record<string, string>) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -392,4 +394,6 @@ export const useAppStore = create<AppState>((set) => ({
   // -- Settings --
   worktreeBaseDir: "",
   setWorktreeBaseDir: (dir) => set({ worktreeBaseDir: dir }),
+  defaultBranches: {},
+  setDefaultBranches: (branches) => set({ defaultBranches: branches }),
 }));
