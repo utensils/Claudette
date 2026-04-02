@@ -147,6 +147,8 @@ interface AppState {
   setWorktreeBaseDir: (dir: string) => void;
   defaultBranches: Record<string, string>;
   setDefaultBranches: (branches: Record<string, string>) => void;
+  terminalFontSize: number;
+  setTerminalFontSize: (size: number) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -396,4 +398,6 @@ export const useAppStore = create<AppState>((set) => ({
   setWorktreeBaseDir: (dir) => set({ worktreeBaseDir: dir }),
   defaultBranches: {},
   setDefaultBranches: (branches) => set({ defaultBranches: branches }),
+  terminalFontSize: 11,
+  setTerminalFontSize: (size) => set({ terminalFontSize: size }),
 }));

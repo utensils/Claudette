@@ -8,8 +8,11 @@ export function AppSettingsModal() {
   const closeModal = useAppStore((s) => s.closeModal);
   const worktreeBaseDir = useAppStore((s) => s.worktreeBaseDir);
   const setWorktreeBaseDir = useAppStore((s) => s.setWorktreeBaseDir);
+  const terminalFontSize = useAppStore((s) => s.terminalFontSize);
+  const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);
 
   const [path, setPath] = useState(worktreeBaseDir);
+  const [fontSize, setFontSize] = useState(String(terminalFontSize));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -20,6 +23,13 @@ export function AppSettingsModal() {
     try {
       await setAppSetting("worktree_base_dir", path.trim());
       setWorktreeBaseDir(path.trim());
+
+      const size = parseInt(fontSize, 10);
+      if (size >= 8 && size <= 24) {
+        await setAppSetting("terminal_font_size", String(size));
+        setTerminalFontSize(size);
+      }
+
       closeModal();
     } catch (e) {
       setError(String(e));
@@ -39,11 +49,38 @@ export function AppSettingsModal() {
           placeholder="~/.claudette/workspaces"
           autoFocus
         />
-        <div className={shared.hint}>
-          Default: ~/.claudette/workspaces
-        </div>
-        {error && <div className={shared.error}>{error}</div>}
+        <div className={shared.hint}>Default: ~/.claudette/workspaces</div>
       </div>
+
+      <div
+        style={{
+          borderTop: "1px solid var(--divider)",
+          marginTop: 16,
+          paddingTop: 12,
+        }}
+      >
+        <div
+          className={shared.label}
+          style={{ marginBottom: 8, fontWeight: 600 }}
+        >
+          Appearance
+        </div>
+        <div className={shared.field}>
+          <label className={shared.label}>Terminal Font Size</label>
+          <input
+            className={shared.input}
+            type="number"
+            min={8}
+            max={24}
+            value={fontSize}
+            onChange={(e) => setFontSize(e.target.value)}
+            style={{ width: 80 }}
+          />
+          <div className={shared.hint}>8–24px (default: 11)</div>
+        </div>
+      </div>
+
+      {error && <div className={shared.error}>{error}</div>}
       <div className={shared.actions}>
         <button className={shared.btn} onClick={closeModal}>
           Cancel

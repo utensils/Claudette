@@ -31,6 +31,7 @@ export function TerminalPanel() {
   const removeTerminalTab = useAppStore((s) => s.removeTerminalTab);
   const setActiveTerminalTab = useAppStore((s) => s.setActiveTerminalTab);
   const toggleTerminalPanel = useAppStore((s) => s.toggleTerminalPanel);
+  const terminalFontSize = useAppStore((s) => s.terminalFontSize);
 
   const autoCreatedRef = useRef<string | null>(null);
   const termRef = useRef<HTMLDivElement>(null);
@@ -75,7 +76,7 @@ export function TerminalPanel() {
     if (!termRef.current || !ws?.worktree_path || !activeTerminalTabId) return;
 
     const term = new Terminal({
-      fontSize: 13,
+      fontSize: terminalFontSize,
       fontFamily: "monospace",
       theme: {
         background: "#121216",
@@ -141,7 +142,7 @@ export function TerminalPanel() {
         ptyIdRef.current = null;
       }
     };
-  }, [activeTerminalTabId, ws?.worktree_path]);
+  }, [activeTerminalTabId, ws?.worktree_path, terminalFontSize]);
 
   const handleCreateTab = useCallback(async () => {
     if (!selectedWorkspaceId) return;

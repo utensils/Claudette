@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore } from "./stores/useAppStore";
-import { loadInitialData } from "./services/tauri";
+import { loadInitialData, getAppSetting } from "./services/tauri";
 import { AppLayout } from "./components/layout/AppLayout";
 import "./styles/theme.css";
 
@@ -9,6 +9,7 @@ function App() {
   const setWorkspaces = useAppStore((s) => s.setWorkspaces);
   const setWorktreeBaseDir = useAppStore((s) => s.setWorktreeBaseDir);
   const setDefaultBranches = useAppStore((s) => s.setDefaultBranches);
+  const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);
 
   useEffect(() => {
     loadInitialData().then((data) => {
@@ -17,7 +18,13 @@ function App() {
       setWorktreeBaseDir(data.worktree_base_dir);
       setDefaultBranches(data.default_branches);
     });
-  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches]);
+    getAppSetting("terminal_font_size").then((val) => {
+      if (val) {
+        const size = parseInt(val, 10);
+        if (size >= 8 && size <= 24) setTerminalFontSize(size);
+      }
+    });
+  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize]);
 
   return <AppLayout />;
 }
