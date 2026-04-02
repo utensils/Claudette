@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::model::{ChatMessage, Repository, TerminalTab, Workspace, WorkspaceStatus};
 
@@ -163,6 +163,28 @@ impl Database {
             })
         })?;
         rows.collect()
+    }
+
+    pub fn get_repository(&self, id: &str) -> Result<Option<Repository>, rusqlite::Error> {
+        self.conn.query_row(
+            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions
+             FROM repositories WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(Repository {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    icon: row.get(3)?,
+                    path_slug: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    created_at: row.get(5)?,
+                    setup_script: row.get(6)?,
+                    custom_instructions: row.get(7)?,
+                    path_valid: true,
+                })
+            },
+        )
+        .optional()
     }
 
     pub fn update_repository_path(&self, id: &str, path: &str) -> Result<(), rusqlite::Error> {

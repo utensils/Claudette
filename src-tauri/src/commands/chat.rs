@@ -100,31 +100,37 @@ pub async fn send_chat_message(
     let allowed_tools = tools_for_level(level);
 
     // Resolve custom instructions: .claudette.json > repo settings > none.
-    let repos = db.list_repositories().map_err(|e| e.to_string())?;
-    let repo = repos.iter().find(|r| r.id == ws.repository_id);
-    let custom_instructions = {
-        let from_config = repo
-            .and_then(|r| {
-                claudette::config::load_config(std::path::Path::new(&r.path))
+    // Only resolved on the first turn — cached in the session for subsequent turns.
+    let repo = db
+        .get_repository(&ws.repository_id)
+        .map_err(|e| e.to_string())?;
+
+    // Get or create agent session. Custom instructions are resolved once on
+    // the first turn and cached for the session lifetime.
+    let mut agents = state.agents.write().await;
+    let session = agents.entry(workspace_id.clone()).or_insert_with(|| {
+        // First turn: resolve instructions from .claudette.json > repo settings.
+        let instructions = {
+            let from_config = repo.as_ref().and_then(|r| {
+                let path = r.path.clone();
+                claudette::config::load_config(std::path::Path::new(&path))
                     .ok()
                     .flatten()
-            })
-            .and_then(|c| c.instructions);
-        from_config.or_else(|| repo.and_then(|r| r.custom_instructions.clone()))
-    };
-
-    // Get or create agent session.
-    let mut agents = state.agents.write().await;
-    let session = agents
-        .entry(workspace_id.clone())
-        .or_insert_with(|| AgentSessionState {
+                    .and_then(|c| c.instructions)
+            });
+            from_config.or_else(|| repo.as_ref().and_then(|r| r.custom_instructions.clone()))
+        };
+        AgentSessionState {
             session_id: uuid::Uuid::new_v4().to_string(),
             turn_count: 0,
             active_pid: None,
-        });
+            custom_instructions: instructions,
+        }
+    });
 
     let is_resume = session.turn_count > 0;
     let session_id = session.session_id.clone();
+    let custom_instructions = session.custom_instructions.clone();
     session.turn_count += 1;
 
     // Spawn the agent turn.

@@ -39,6 +39,8 @@ export function RepoSettingsModal() {
 
   const repoScriptOverrides =
     repoConfig?.has_config_file && repoConfig.setup_script != null;
+  const repoInstructionsOverrides =
+    repoConfig?.has_config_file && repoConfig.instructions != null;
 
   const handleSave = async () => {
     setLoading(true);
@@ -158,6 +160,41 @@ export function RepoSettingsModal() {
         }}
       >
         <label className={shared.label}>Custom Instructions</label>
+        {repoInstructionsOverrides && (
+          <div className={shared.hint} style={{ marginBottom: 8 }}>
+            This repo includes a <code>.claudette.json</code> that defines
+            custom instructions. Repo-level instructions take precedence over
+            your personal instructions.
+          </div>
+        )}
+        {repoConfig?.has_config_file && repoConfig.instructions && (
+          <div style={{ marginBottom: 8 }}>
+            <div
+              className={shared.label}
+              style={{ fontSize: 11, marginBottom: 2 }}
+            >
+              From .claudette.json (read-only):
+            </div>
+            <pre
+              style={{
+                background: "var(--chat-input-bg)",
+                border: "1px solid var(--divider)",
+                borderRadius: 4,
+                padding: "6px 8px",
+                fontSize: 12,
+                color: "var(--text-dim)",
+                margin: 0,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {repoConfig.instructions}
+            </pre>
+          </div>
+        )}
+        <div className={shared.label} style={{ fontSize: 11, marginBottom: 2 }}>
+          Personal instructions{repoInstructionsOverrides ? " (overridden)" : ""}:
+        </div>
         <textarea
           className={shared.input}
           value={customInstructions}
@@ -168,12 +205,11 @@ export function RepoSettingsModal() {
             fontFamily: "monospace",
             fontSize: 12,
             resize: "vertical",
+            opacity: repoInstructionsOverrides ? 0.5 : 1,
           }}
         />
         <div className={shared.hint}>
           Appended to the agent's system prompt at the start of every chat.
-          Can also be set in <code>.claudette.json</code> (repo-level takes
-          precedence).
         </div>
       </div>
 

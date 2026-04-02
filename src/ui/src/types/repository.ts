@@ -27,5 +27,6 @@ export interface CreateWorkspaceResult {
 export interface RepoConfigInfo {
   has_config_file: boolean;
   setup_script: string | null;
+  instructions: string | null;
   parse_error: string | null;
 }

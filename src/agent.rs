@@ -200,8 +200,11 @@ pub fn build_claude_args(
         args.push(allowed_tools.join(","));
     }
 
-    if let Some(instructions) = custom_instructions
-        && !instructions.is_empty()
+    // Only append custom instructions on the first turn — resumed sessions
+    // already have the system prompt set from the initial turn.
+    if !is_resume
+        && let Some(instructions) = custom_instructions
+        && !instructions.trim().is_empty()
     {
         args.push("--append-system-prompt".to_string());
         args.push(instructions.to_string());
@@ -705,5 +708,18 @@ mod tests {
     fn test_build_args_empty_instructions_skipped() {
         let args = build_claude_args("sess-1", "hello", false, &[], Some(""));
         assert!(!args.contains(&"--append-system-prompt".to_string()));
+    }
+
+    #[test]
+    fn test_build_args_whitespace_instructions_skipped() {
+        let args = build_claude_args("sess-1", "hello", false, &[], Some("   "));
+        assert!(!args.contains(&"--append-system-prompt".to_string()));
+    }
+
+    #[test]
+    fn test_build_args_resume_skips_instructions() {
+        let args = build_claude_args("sess-1", "hello", true, &[], Some("Always use TypeScript"));
+        assert!(!args.contains(&"--append-system-prompt".to_string()));
+        assert!(args.contains(&"--resume".to_string()));
     }
 }
