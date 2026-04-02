@@ -21,6 +21,15 @@ interface PtyOutputPayload {
   data: number[];
 }
 
+interface TermInstance {
+  term: Terminal;
+  fit: FitAddon;
+  ptyId: number;
+  unlisten: (() => void) | null;
+  container: HTMLDivElement;
+  resizeObserver: ResizeObserver;
+}
+
 export function TerminalPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -34,10 +43,9 @@ export function TerminalPanel() {
   const terminalFontSize = useAppStore((s) => s.terminalFontSize);
 
   const autoCreatedRef = useRef<string | null>(null);
-  const termRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const ptyIdRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Map of tab ID → terminal instance. Persists across tab switches.
+  const instancesRef = useRef<Map<number, TermInstance>>(new Map());
 
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
   const tabs = selectedWorkspaceId
@@ -71,9 +79,21 @@ export function TerminalPanel() {
     activeTerminalTabId,
   ]);
 
-  // Initialize xterm and PTY
+  // Create a terminal instance for a tab if it doesn't exist yet.
   useEffect(() => {
-    if (!termRef.current || !ws?.worktree_path || !activeTerminalTabId) return;
+    if (
+      !containerRef.current ||
+      !ws?.worktree_path ||
+      !activeTerminalTabId ||
+      instancesRef.current.has(activeTerminalTabId)
+    ) {
+      return;
+    }
+
+    const tabContainer = document.createElement("div");
+    tabContainer.style.height = "100%";
+    tabContainer.style.width = "100%";
+    containerRef.current.appendChild(tabContainer);
 
     const term = new Terminal({
       fontSize: terminalFontSize,
@@ -88,69 +108,89 @@ export function TerminalPanel() {
     const links = new WebLinksAddon();
     term.loadAddon(fit);
     term.loadAddon(links);
-    term.open(termRef.current);
+    term.open(tabContainer);
     fit.fit();
 
-    xtermRef.current = term;
-    fitRef.current = fit;
+    const instance: TermInstance = {
+      term,
+      fit,
+      ptyId: -1,
+      unlisten: null,
+      container: tabContainer,
+      resizeObserver: new ResizeObserver(() => fit.fit()),
+    };
+    instance.resizeObserver.observe(tabContainer);
+    instancesRef.current.set(activeTerminalTabId, instance);
 
-    let ptyId: number | null = null;
-    let unlisten: (() => void) | null = null;
+    const currentTabId = activeTerminalTabId;
+    const worktreePath = ws.worktree_path!;
 
     (async () => {
-      ptyId = await spawnPty(ws.worktree_path!);
-      ptyIdRef.current = ptyId;
+      const ptyId = await spawnPty(worktreePath);
+      const inst = instancesRef.current.get(currentTabId);
+      if (!inst) {
+        closePty(ptyId);
+        return;
+      }
+      inst.ptyId = ptyId;
 
-      const currentPtyId = ptyId;
       const unlistenFn = await listen<PtyOutputPayload>(
         "pty-output",
         (event) => {
-          if (event.payload.pty_id === currentPtyId) {
+          if (event.payload.pty_id === ptyId) {
             term.write(new Uint8Array(event.payload.data));
           }
         }
       );
-      unlisten = unlistenFn;
+      inst.unlisten = unlistenFn;
 
       term.onData((data) => {
         const bytes = Array.from(new TextEncoder().encode(data));
-        writePty(currentPtyId, bytes);
+        writePty(ptyId, bytes);
       });
 
       term.onResize(({ cols, rows }) => {
-        resizePty(currentPtyId, cols, rows);
+        resizePty(ptyId, cols, rows);
       });
 
-      // Initial resize after PTY is ready
       fit.fit();
-      resizePty(currentPtyId, term.cols, term.rows);
+      resizePty(ptyId, term.cols, term.rows);
     })();
-
-    const resizeObserver = new ResizeObserver(() => {
-      fit.fit();
-    });
-    resizeObserver.observe(termRef.current);
-
-    return () => {
-      resizeObserver.disconnect();
-      term.dispose();
-      xtermRef.current = null;
-      fitRef.current = null;
-      if (unlisten) unlisten();
-      if (ptyId !== null) {
-        closePty(ptyId);
-        ptyIdRef.current = null;
-      }
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTerminalTabId, ws?.worktree_path]);
 
-  // Update font size without destroying the terminal/PTY.
+  // Show/hide terminal containers based on active tab.
   useEffect(() => {
-    if (xtermRef.current) {
-      xtermRef.current.options.fontSize = terminalFontSize;
-      fitRef.current?.fit();
+    for (const [tabId, inst] of instancesRef.current) {
+      const isActive = tabId === activeTerminalTabId;
+      inst.container.style.display = isActive ? "block" : "none";
+      if (isActive) {
+        inst.fit.fit();
+        inst.term.focus();
+      }
+    }
+  }, [activeTerminalTabId]);
+
+  // Update font size on all instances without destroying them.
+  useEffect(() => {
+    for (const inst of instancesRef.current.values()) {
+      inst.term.options.fontSize = terminalFontSize;
+      inst.fit.fit();
     }
   }, [terminalFontSize]);
+
+  // Cleanup all instances on workspace change.
+  useEffect(() => {
+    return () => {
+      for (const inst of instancesRef.current.values()) {
+        inst.resizeObserver.disconnect();
+        inst.term.dispose();
+        if (inst.unlisten) inst.unlisten();
+        if (inst.ptyId >= 0) closePty(inst.ptyId);
+      }
+      instancesRef.current.clear();
+    };
+  }, [selectedWorkspaceId]);
 
   const handleCreateTab = useCallback(async () => {
     if (!selectedWorkspaceId) return;
@@ -165,6 +205,16 @@ export function TerminalPanel() {
   const handleCloseTab = useCallback(
     async (tabId: number) => {
       if (!selectedWorkspaceId) return;
+      // Destroy the instance for this tab.
+      const inst = instancesRef.current.get(tabId);
+      if (inst) {
+        inst.resizeObserver.disconnect();
+        inst.term.dispose();
+        if (inst.unlisten) inst.unlisten();
+        if (inst.ptyId >= 0) closePty(inst.ptyId);
+        inst.container.remove();
+        instancesRef.current.delete(tabId);
+      }
       try {
         await deleteTerminalTab(tabId);
         removeTerminalTab(selectedWorkspaceId, tabId);
@@ -204,7 +254,7 @@ export function TerminalPanel() {
           −
         </button>
       </div>
-      <div className={styles.termContainer} ref={termRef} />
+      <div className={styles.termContainer} ref={containerRef} />
     </div>
   );
 }

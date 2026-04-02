@@ -23,7 +23,7 @@ pub async fn create_terminal_tab(
     let tab = TerminalTab {
         id: new_id,
         workspace_id,
-        title: format!("Terminal {new_id}"),
+        title: format!("Terminal {}", existing.len() + 1),
         is_script_output: false,
         sort_order,
         created_at: now_iso(),
