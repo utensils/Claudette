@@ -11,7 +11,10 @@ import styles from "./Sidebar.module.css";
 
 function RepoIcon({ icon }: { icon: string }) {
   const pascalName = icon
+    .trim()
+    .toLowerCase()
     .split("-")
+    .filter(Boolean)
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join("");
   const LucideIcon = icons[pascalName as keyof typeof icons];

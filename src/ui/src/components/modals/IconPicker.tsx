@@ -71,7 +71,11 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
     <div className={styles.wrapper}>
       <div className={styles.preview}>
         <div className={styles.previewIcon}>
-          {SelectedIcon ? <SelectedIcon size={18} /> : null}
+          {SelectedIcon ? (
+            <SelectedIcon size={18} />
+          ) : value ? (
+            <span>{value}</span>
+          ) : null}
         </div>
         <span className={styles.previewLabel}>
           {value || "No icon selected"}
@@ -108,6 +112,8 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
               onClick={() => onChange(name)}
               title={name}
               type="button"
+              aria-label={name}
+              aria-pressed={isSelected}
             >
               <Icon size={16} />
             </button>
