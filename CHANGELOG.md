@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/utensils/Claudette/compare/claudette-v0.2.0...claudette-v0.3.0) (2026-04-02)
+
+
+### Features
+
+* dashboard navigation and shared repo icons ([#66](https://github.com/utensils/Claudette/issues/66)) ([95c5aa5](https://github.com/utensils/Claudette/commit/95c5aa5e9912ae13373c1285538bc45f3a36be1c))
+
 ## [0.2.0](https://github.com/utensils/Claudette/compare/claudette-v0.1.0...claudette-v0.2.0) (2026-04-02)
 
 
