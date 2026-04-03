@@ -5,15 +5,15 @@
 }
 
 .header {
-  padding: 12px 16px 8px;
+  padding: 14px 16px 8px;
 }
 
 .title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-muted);
-  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
 }
 
 .filters {
@@ -27,18 +27,20 @@
   border: none;
   color: var(--text-dim);
   font-size: 12px;
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: 4px;
   cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .filterBtn:hover {
   background: var(--hover-bg);
+  color: var(--text-muted);
 }
 
 .filterActive {
-  color: var(--text-primary);
-  background: var(--selected-bg);
+  color: var(--accent-primary);
+  background: var(--accent-bg);
 }
 
 .list {
@@ -54,10 +56,11 @@
 .repoHeader {
   display: flex;
   align-items: center;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 5px 8px;
+  border-radius: 6px;
   cursor: pointer;
   gap: 6px;
+  transition: background var(--transition-fast);
 }
 
 .repoHeader:hover {
@@ -69,12 +72,16 @@
   color: var(--text-dim);
   width: 12px;
   font-family: var(--font-mono);
+  transition: transform var(--transition-fast);
 }
 
 .repoName {
   flex: 1;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .iconBtn {
@@ -85,9 +92,10 @@
   padding: 2px 4px;
   line-height: 1;
   opacity: 0;
-  transition: opacity 0.1s;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
   display: flex;
   align-items: center;
+  border-radius: 4px;
 }
 
 .repoHeader:hover .iconBtn,
@@ -96,7 +104,8 @@
 }
 
 .iconBtn:hover {
-  color: var(--text-primary);
+  color: var(--accent-primary);
+  background: var(--accent-bg);
 }
 
 .invalidBadge {
@@ -106,19 +115,33 @@
 }
 
 .repoIcon {
-  margin-right: 4px;
+  margin-right: 2px;
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
 }
 
+/* Running count badge next to repo name */
+.runningBadge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: var(--accent-bg);
+  padding: 0 5px;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Workspace items */
 .wsItem {
   display: flex;
   align-items: center;
   padding: 6px 8px 6px 28px;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   gap: 8px;
+  position: relative;
+  transition: background var(--transition-fast);
 }
 
 .wsItem:hover {
@@ -129,11 +152,26 @@
   background: var(--selected-bg);
 }
 
+.wsSelected::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent-primary);
+}
+
 .statusDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.statusDotRunning {
+  animation: pulse-dot 2s ease-in-out infinite;
 }
 
 .wsActions {
@@ -163,6 +201,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-mono);
 }
 
 .footer {
@@ -181,10 +220,11 @@
   padding: 4px 0;
   flex: 1;
   text-align: left;
+  transition: color var(--transition-fast);
 }
 
 .addRepoBtn:hover {
-  color: var(--text-primary);
+  color: var(--accent-primary);
 }
 
 .settingsBtn {
@@ -195,8 +235,11 @@
   padding: 4px;
   display: flex;
   align-items: center;
+  border-radius: 4px;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .settingsBtn:hover {
-  color: var(--text-primary);
+  color: var(--accent-primary);
+  background: var(--accent-bg);
 }

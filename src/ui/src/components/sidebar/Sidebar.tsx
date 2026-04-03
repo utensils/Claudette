@@ -109,6 +109,9 @@ export function Sidebar() {
           const repoWorkspaces = filteredWorkspaces.filter(
             (ws) => ws.repository_id === repo.id
           );
+          const runningCount = repoWorkspaces.filter(
+            (ws) => ws.agent_status === "Running"
+          ).length;
 
           return (
             <div key={repo.id} className={styles.repoGroup}>
@@ -122,6 +125,9 @@ export function Sidebar() {
                 <span className={styles.repoName}>
                   {repo.icon && <RepoIcon icon={repo.icon} className={styles.repoIcon} />}
                   {repo.name}
+                  {runningCount > 0 && (
+                    <span className={styles.runningBadge}>{runningCount}</span>
+                  )}
                 </span>
                 {!repo.path_valid && (
                   <span className={styles.invalidBadge}>!</span>
@@ -189,7 +195,7 @@ export function Sidebar() {
                     onClick={() => selectWorkspace(ws.id)}
                   >
                     <span
-                      className={styles.statusDot}
+                      className={`${styles.statusDot} ${ws.agent_status === "Running" ? styles.statusDotRunning : ""}`}
                       style={{
                         background:
                           ws.agent_status === "Running"
