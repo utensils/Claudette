@@ -1,20 +1,24 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  animation: fadeIn 0.15s ease;
 }
 
 .card {
   background: var(--app-bg);
   border: 1px solid var(--sidebar-border);
-  border-radius: var(--border-radius);
+  border-radius: 10px;
   width: 420px;
   max-height: 80vh;
   overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  animation: scaleIn 0.2s ease;
 }
 
 .header {

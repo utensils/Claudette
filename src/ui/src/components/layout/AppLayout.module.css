@@ -50,6 +50,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  color: var(--text-dim);
   font-size: 14px;
 }

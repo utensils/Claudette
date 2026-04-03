@@ -8,28 +8,47 @@ export function StatusBar() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const toggleTerminalPanel = useAppStore((s) => s.toggleTerminalPanel);
   const toggleRightSidebar = useAppStore((s) => s.toggleRightSidebar);
+  const workspaces = useAppStore((s) => s.workspaces);
+
+  const runningCount = workspaces.filter(
+    (ws) => ws.agent_status === "Running"
+  ).length;
+  const activeCount = workspaces.filter(
+    (ws) => ws.status === "Active"
+  ).length;
 
   return (
     <div className={styles.bar}>
+      <div className={styles.stats}>
+        {runningCount > 0 && (
+          <span className={styles.statRunning}>
+            <span className={styles.statDot} />
+            {runningCount} running
+          </span>
+        )}
+        <span className={styles.statMuted}>
+          {activeCount} workspace{activeCount !== 1 ? "s" : ""}
+        </span>
+      </div>
       <div className={styles.spacer} />
       <button
         className={`${styles.toggle} ${sidebarVisible ? styles.active : ""}`}
         onClick={toggleSidebar}
-        title="Toggle sidebar"
+        title="Toggle sidebar (⌘B)"
       >
         sidebar
       </button>
       <button
         className={`${styles.toggle} ${terminalPanelVisible ? styles.active : ""}`}
         onClick={toggleTerminalPanel}
-        title="Toggle terminal"
+        title="Toggle terminal (⌘`)"
       >
         terminal
       </button>
       <button
         className={`${styles.toggle} ${rightSidebarVisible ? styles.active : ""}`}
         onClick={toggleRightSidebar}
-        title="Toggle changes"
+        title="Toggle changes (⌘D)"
       >
         changes
       </button>

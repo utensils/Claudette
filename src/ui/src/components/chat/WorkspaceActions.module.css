@@ -11,6 +11,7 @@
   padding: 2px 20px 2px 6px;
   cursor: pointer;
   outline: none;
+  transition: border-color var(--transition-fast);
 }
 
 .select:hover:not(:disabled) {

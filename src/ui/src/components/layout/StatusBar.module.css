@@ -1,11 +1,39 @@
 .bar {
   display: flex;
   align-items: center;
-  height: 24px;
-  padding: 0 8px;
+  height: 26px;
+  padding: 0 10px;
   background: var(--sidebar-bg);
   border-top: 1px solid var(--sidebar-border);
-  gap: 4px;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.statRunning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.statDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.statMuted {
+  color: var(--text-dim);
 }
 
 .spacer {
@@ -14,19 +42,22 @@
 
 .toggle {
   background: none;
-  border: 1px solid var(--divider);
+  border: 1px solid transparent;
   color: var(--text-dim);
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 4px;
   cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .toggle:hover {
   background: var(--hover-bg);
+  color: var(--text-muted);
 }
 
 .toggle.active {
-  color: var(--text-primary);
-  background: var(--selected-bg);
+  color: var(--accent-primary);
+  background: var(--accent-bg);
+  border-color: rgba(0, 229, 204, 0.1);
 }

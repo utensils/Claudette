@@ -1,22 +1,26 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   justify-content: center;
   padding-top: 80px;
   z-index: 100;
+  animation: fadeIn 0.1s ease;
 }
 
 .card {
   background: var(--app-bg);
   border: 1px solid var(--sidebar-border);
-  border-radius: var(--border-radius);
-  width: 500px;
+  border-radius: 10px;
+  width: 520px;
   max-height: 400px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  animation: scaleIn 0.15s ease;
 }
 
 .input {
@@ -24,9 +28,10 @@
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--divider);
-  padding: 12px 16px;
+  padding: 14px 18px;
   color: var(--text-primary);
   font-size: 14px;
+  font-family: var(--font-sans);
   outline: none;
 }
 
@@ -41,16 +46,17 @@
 }
 
 .empty {
-  padding: 16px;
+  padding: 20px;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text-dim);
   font-size: 13px;
 }
 
 .result {
-  padding: 8px 12px;
-  border-radius: 4px;
+  padding: 8px 14px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: background var(--transition-fast);
 }
 
 .result:hover {
@@ -70,4 +76,5 @@
   font-size: 12px;
   color: var(--text-dim);
   margin-top: 2px;
+  font-family: var(--font-mono);
 }

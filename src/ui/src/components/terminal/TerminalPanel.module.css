@@ -24,19 +24,25 @@
   cursor: pointer;
   font-size: 12px;
   color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .tab:hover {
   background: var(--hover-bg);
+  color: var(--text-muted);
 }
 
 .tabActive {
-  background: var(--terminal-tab-active-bg);
   color: var(--text-primary);
+  border-bottom-color: var(--accent-primary);
+  background: transparent;
 }
 
 .tabTitle {
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .tabClose {
@@ -47,10 +53,13 @@
   font-size: 14px;
   line-height: 1;
   padding: 0 2px;
+  border-radius: 3px;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .tabClose:hover {
   color: var(--text-primary);
+  background: var(--hover-bg);
 }
 
 .addTab {
@@ -60,10 +69,12 @@
   cursor: pointer;
   font-size: 16px;
   padding: 0 6px;
+  border-radius: 4px;
+  transition: color var(--transition-fast);
 }
 
 .addTab:hover {
-  color: var(--text-primary);
+  color: var(--accent-primary);
 }
 
 .spacer {
@@ -77,6 +88,7 @@
   cursor: pointer;
   font-size: 18px;
   padding: 0 6px;
+  transition: color var(--transition-fast);
 }
 
 .hideBtn:hover {
@@ -86,5 +98,5 @@
 .termContainer {
   flex: 1;
   overflow: hidden;
-  background: #121216;
+  background: var(--app-bg);
 }

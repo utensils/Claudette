@@ -13,9 +13,11 @@
 }
 
 .title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .controls {
@@ -31,10 +33,12 @@
   border-radius: 3px;
   cursor: pointer;
   font-size: 14px;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .modeBtn:hover {
   background: var(--hover-bg);
+  color: var(--text-muted);
 }
 
 .list {
@@ -46,7 +50,7 @@
 .empty {
   padding: 16px;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text-dim);
   font-size: 12px;
 }
 
@@ -54,11 +58,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 5px 8px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
   font-family: var(--font-mono);
+  transition: background var(--transition-fast);
 }
 
 .file:hover {
@@ -74,6 +79,7 @@
   width: 14px;
   text-align: center;
   flex-shrink: 0;
+  font-size: 11px;
 }
 
 .path {

@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  animation: fadeIn 0.15s ease;
 }
 
 .header {
@@ -19,10 +20,14 @@
   color: var(--text-muted);
   cursor: pointer;
   font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 .backBtn:hover {
-  color: var(--text-primary);
+  color: var(--accent-primary);
+  background: var(--accent-bg);
 }
 
 .fileName {
@@ -51,16 +56,19 @@
 }
 
 .hunkHeader {
-  background: rgba(102, 153, 230, 0.1);
+  background: rgba(100, 160, 240, 0.08);
   color: var(--diff-hunk-header);
-  padding: 2px 12px;
+  padding: 4px 12px;
   font-size: 12px;
+  border-top: 1px solid rgba(100, 160, 240, 0.1);
+  border-bottom: 1px solid rgba(100, 160, 240, 0.1);
 }
 
 .line {
   display: flex;
   min-height: 20px;
   padding: 0 4px;
+  transition: background var(--transition-fast);
 }
 
 .lineAdded {
@@ -78,6 +86,7 @@
   color: var(--diff-line-number);
   flex-shrink: 0;
   user-select: none;
+  border-right: 1px solid var(--divider);
 }
 
 .linePrefix {
@@ -89,14 +98,17 @@
 
 .lineAdded .linePrefix {
   color: var(--diff-added-text);
+  font-weight: 600;
 }
 
 .lineRemoved .linePrefix {
   color: var(--diff-removed-text);
+  font-weight: 600;
 }
 
 .lineContent {
   flex: 1;
   white-space: pre;
   overflow-x: auto;
+  padding-left: 4px;
 }
