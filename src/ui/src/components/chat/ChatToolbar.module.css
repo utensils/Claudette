@@ -1,0 +1,47 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.chip:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chipActive {
+  background: var(--toolbar-active);
+  color: var(--toolbar-active-text);
+}
+
+.chipActive:hover:not(:disabled) {
+  background: var(--toolbar-active);
+  color: var(--toolbar-active-text);
+  filter: brightness(1.1);
+}
+
+.chipLabel {
+  font-size: 12px;
+  line-height: 1;
+}

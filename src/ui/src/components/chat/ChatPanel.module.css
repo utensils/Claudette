@@ -435,10 +435,19 @@
 /* Input area */
 .inputArea {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 0;
   padding: 12px 16px;
   border-top: 1px solid var(--sidebar-border);
   background: var(--chat-header-bg);
+}
+
+.inputControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .input {

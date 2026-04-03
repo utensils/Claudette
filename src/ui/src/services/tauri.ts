@@ -106,17 +106,29 @@ export function loadChatHistory(workspaceId: string): Promise<ChatMessage[]> {
 export function sendChatMessage(
   workspaceId: string,
   content: string,
-  permissionLevel?: string
+  permissionLevel?: string,
+  model?: string,
+  fastMode?: boolean,
+  thinkingEnabled?: boolean,
+  planMode?: boolean
 ): Promise<void> {
   return invoke("send_chat_message", {
     workspaceId,
     content,
     permissionLevel: permissionLevel ?? null,
+    model: model ?? null,
+    fastMode: fastMode ?? null,
+    thinkingEnabled: thinkingEnabled ?? null,
+    planMode: planMode ?? null,
   });
 }
 
 export function stopAgent(workspaceId: string): Promise<void> {
   return invoke("stop_agent", { workspaceId });
+}
+
+export function resetAgentSession(workspaceId: string): Promise<void> {
+  return invoke("reset_agent_session", { workspaceId });
 }
 
 // -- Diff --

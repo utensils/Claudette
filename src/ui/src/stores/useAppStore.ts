@@ -92,6 +92,18 @@ interface AppState {
   permissionLevel: Record<string, PermissionLevel>;
   setPermissionLevel: (wsId: string, level: PermissionLevel) => void;
 
+  // -- Toolbar --
+  selectedModel: Record<string, string>;
+  fastMode: Record<string, boolean>;
+  thinkingEnabled: Record<string, boolean>;
+  planMode: Record<string, boolean>;
+  modelSelectorOpen: boolean;
+  setSelectedModel: (wsId: string, model: string) => void;
+  setFastMode: (wsId: string, enabled: boolean) => void;
+  setThinkingEnabled: (wsId: string, enabled: boolean) => void;
+  setPlanMode: (wsId: string, enabled: boolean) => void;
+  setModelSelectorOpen: (open: boolean) => void;
+
   // -- Diff --
   diffFiles: DiffFile[];
   diffMergeBase: string | null;
@@ -306,6 +318,30 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({
       permissionLevel: { ...s.permissionLevel, [wsId]: level },
     })),
+
+  // -- Toolbar --
+  selectedModel: {},
+  fastMode: {},
+  thinkingEnabled: {},
+  planMode: {},
+  modelSelectorOpen: false,
+  setSelectedModel: (wsId, model) =>
+    set((s) => ({
+      selectedModel: { ...s.selectedModel, [wsId]: model },
+    })),
+  setFastMode: (wsId, enabled) =>
+    set((s) => ({
+      fastMode: { ...s.fastMode, [wsId]: enabled },
+    })),
+  setThinkingEnabled: (wsId, enabled) =>
+    set((s) => ({
+      thinkingEnabled: { ...s.thinkingEnabled, [wsId]: enabled },
+    })),
+  setPlanMode: (wsId, enabled) =>
+    set((s) => ({
+      planMode: { ...s.planMode, [wsId]: enabled },
+    })),
+  setModelSelectorOpen: (open) => set({ modelSelectorOpen: open }),
 
   // -- Diff --
   diffFiles: [],

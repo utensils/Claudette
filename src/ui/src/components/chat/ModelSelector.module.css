@@ -1,0 +1,70 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  min-width: 200px;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.groupLabel {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.item:hover {
+  background: var(--hover-bg);
+}
+
+.itemSelected {
+  color: var(--toolbar-active-text);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-running);
+  flex-shrink: 0;
+}
+
+.check {
+  margin-left: auto;
+  color: var(--toolbar-active-text);
+  font-size: 14px;
+}
+
+.shortcut {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+}

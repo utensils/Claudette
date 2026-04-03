@@ -12,6 +12,7 @@ import {
 } from "../../services/tauri";
 import { useAgentStream } from "../../hooks/useAgentStream";
 import { AgentQuestionCard } from "./AgentQuestionCard";
+import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
 import styles from "./ChatPanel.module.css";
 
@@ -176,7 +177,20 @@ export function ChatPanel() {
     updateWorkspace(selectedWorkspaceId, { agent_status: "Running" });
 
     try {
-      await sendChatMessage(selectedWorkspaceId, content, permissionLevel);
+      const state = useAppStore.getState();
+      const model = state.selectedModel[selectedWorkspaceId] || undefined;
+      const fastMode = state.fastMode[selectedWorkspaceId] || false;
+      const thinkingEnabled = state.thinkingEnabled[selectedWorkspaceId] || false;
+      const planMode = state.planMode[selectedWorkspaceId] || false;
+      await sendChatMessage(
+        selectedWorkspaceId,
+        content,
+        permissionLevel,
+        model,
+        fastMode || undefined,
+        thinkingEnabled || undefined,
+        planMode || undefined,
+      );
     } catch (e) {
       const errMsg = String(e);
       console.error("sendChatMessage failed:", errMsg);
@@ -478,13 +492,19 @@ export function ChatPanel() {
           placeholder="Send a message..."
           rows={1}
         />
-        <button
-          className={styles.sendBtn}
-          onClick={() => handleSend()}
-          disabled={!chatInput.trim()}
-        >
-          Send
-        </button>
+        <div className={styles.inputControls}>
+          <ChatToolbar
+            workspaceId={selectedWorkspaceId!}
+            disabled={isRunning}
+          />
+          <button
+            className={styles.sendBtn}
+            onClick={() => handleSend()}
+            disabled={!chatInput.trim()}
+          >
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );

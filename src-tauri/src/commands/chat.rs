@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use claudette::agent::{self, AgentEvent, StreamEvent};
+use claudette::agent::{self, AgentEvent, AgentSettings, StreamEvent};
 use claudette::db::Database;
 use claudette::model::{ChatMessage, ChatRole};
 
@@ -58,10 +58,15 @@ pub async fn load_chat_history(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn send_chat_message(
     workspace_id: String,
     content: String,
     permission_level: Option<String>,
+    model: Option<String>,
+    fast_mode: Option<bool>,
+    thinking_enabled: Option<bool>,
+    plan_mode: Option<bool>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -133,6 +138,14 @@ pub async fn send_chat_message(
     let custom_instructions = session.custom_instructions.clone();
     session.turn_count += 1;
 
+    // Build agent settings from frontend params.
+    let agent_settings = AgentSettings {
+        model: if !is_resume { model } else { None },
+        fast_mode: fast_mode.unwrap_or(false),
+        thinking_enabled: thinking_enabled.unwrap_or(false),
+        plan_mode: plan_mode.unwrap_or(false),
+    };
+
     // Spawn the agent turn.
     let turn_handle = agent::run_turn(
         std::path::Path::new(&worktree_path),
@@ -141,6 +154,7 @@ pub async fn send_chat_message(
         is_resume,
         &allowed_tools,
         custom_instructions.as_deref(),
+        &agent_settings,
     )
     .await?;
 
@@ -248,6 +262,16 @@ pub async fn stop_agent(workspace_id: String, state: State<'_, AppState>) -> Res
     };
     db.insert_chat_message(&msg).map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reset_agent_session(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut agents = state.agents.write().await;
+    agents.remove(&workspace_id);
     Ok(())
 }
 

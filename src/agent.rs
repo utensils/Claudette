@@ -170,6 +170,25 @@ pub enum AgentEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Per-turn agent settings
+// ---------------------------------------------------------------------------
+
+/// Per-turn settings that control CLI flags for the agent subprocess.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentSettings {
+    /// Model alias (e.g. "opus", "sonnet") or full model ID. Session-level: only
+    /// applied on the first turn.
+    pub model: Option<String>,
+    /// Enable fast mode via `--settings`.
+    pub fast_mode: bool,
+    /// Enable extended thinking via `--settings`.
+    pub thinking_enabled: bool,
+    /// Start session in plan permission mode. Session-level: only applied on
+    /// the first turn.
+    pub plan_mode: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Per-turn agent process
 // ---------------------------------------------------------------------------
 
@@ -186,6 +205,7 @@ pub fn build_claude_args(
     is_resume: bool,
     allowed_tools: &[String],
     custom_instructions: Option<&str>,
+    settings: &AgentSettings,
 ) -> Vec<String> {
     let mut args = vec![
         "--print".to_string(),
@@ -194,6 +214,34 @@ pub fn build_claude_args(
         "--verbose".to_string(),
         "--include-partial-messages".to_string(),
     ];
+
+    // Session-level flags — only on first turn.
+    if !is_resume {
+        if let Some(ref model) = settings.model {
+            args.push("--model".to_string());
+            args.push(model.clone());
+        }
+        if settings.plan_mode {
+            args.push("--permission-mode".to_string());
+            args.push("plan".to_string());
+        }
+    }
+
+    // Per-turn settings via --settings JSON.
+    if settings.fast_mode || settings.thinking_enabled {
+        let mut obj = serde_json::Map::new();
+        if settings.fast_mode {
+            obj.insert("fastMode".to_string(), serde_json::Value::Bool(true));
+        }
+        if settings.thinking_enabled {
+            obj.insert(
+                "alwaysThinkingEnabled".to_string(),
+                serde_json::Value::Bool(true),
+            );
+        }
+        args.push("--settings".to_string());
+        args.push(serde_json::Value::Object(obj).to_string());
+    }
 
     if !allowed_tools.is_empty() {
         args.push("--allowedTools".to_string());
@@ -236,6 +284,7 @@ pub async fn run_turn(
     is_resume: bool,
     allowed_tools: &[String],
     custom_instructions: Option<&str>,
+    settings: &AgentSettings,
 ) -> Result<TurnHandle, String> {
     let args = build_claude_args(
         session_id,
@@ -243,6 +292,7 @@ pub async fn run_turn(
         is_resume,
         allowed_tools,
         custom_instructions,
+        settings,
     );
 
     let mut cmd = Command::new("claude");
@@ -669,7 +719,14 @@ mod tests {
 
     #[test]
     fn test_build_args_first_turn_no_tools() {
-        let args = build_claude_args("sess-1", "hello", false, &[], None);
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            false,
+            &[],
+            None,
+            &AgentSettings::default(),
+        );
         assert!(args.contains(&"--print".to_string()));
         assert!(args.contains(&"--session-id".to_string()));
         assert!(args.contains(&"sess-1".to_string()));
@@ -681,7 +738,14 @@ mod tests {
 
     #[test]
     fn test_build_args_resume() {
-        let args = build_claude_args("sess-1", "continue", true, &[], None);
+        let args = build_claude_args(
+            "sess-1",
+            "continue",
+            true,
+            &[],
+            None,
+            &AgentSettings::default(),
+        );
         assert!(args.contains(&"--resume".to_string()));
         assert!(!args.contains(&"--session-id".to_string()));
     }
@@ -689,14 +753,28 @@ mod tests {
     #[test]
     fn test_build_args_with_allowed_tools() {
         let tools = vec!["Bash".to_string(), "Read".to_string(), "Edit".to_string()];
-        let args = build_claude_args("sess-1", "hello", false, &tools, None);
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            false,
+            &tools,
+            None,
+            &AgentSettings::default(),
+        );
         let idx = args.iter().position(|a| a == "--allowedTools").unwrap();
         assert_eq!(args[idx + 1], "Bash,Read,Edit");
     }
 
     #[test]
     fn test_build_args_with_custom_instructions() {
-        let args = build_claude_args("sess-1", "hello", false, &[], Some("Always use TypeScript"));
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            false,
+            &[],
+            Some("Always use TypeScript"),
+            &AgentSettings::default(),
+        );
         let idx = args
             .iter()
             .position(|a| a == "--append-system-prompt")
@@ -706,20 +784,122 @@ mod tests {
 
     #[test]
     fn test_build_args_empty_instructions_skipped() {
-        let args = build_claude_args("sess-1", "hello", false, &[], Some(""));
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            false,
+            &[],
+            Some(""),
+            &AgentSettings::default(),
+        );
         assert!(!args.contains(&"--append-system-prompt".to_string()));
     }
 
     #[test]
     fn test_build_args_whitespace_instructions_skipped() {
-        let args = build_claude_args("sess-1", "hello", false, &[], Some("   "));
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            false,
+            &[],
+            Some("   "),
+            &AgentSettings::default(),
+        );
         assert!(!args.contains(&"--append-system-prompt".to_string()));
     }
 
     #[test]
     fn test_build_args_resume_skips_instructions() {
-        let args = build_claude_args("sess-1", "hello", true, &[], Some("Always use TypeScript"));
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            true,
+            &[],
+            Some("Always use TypeScript"),
+            &AgentSettings::default(),
+        );
         assert!(!args.contains(&"--append-system-prompt".to_string()));
         assert!(args.contains(&"--resume".to_string()));
+    }
+
+    #[test]
+    fn test_build_args_with_model() {
+        let settings = AgentSettings {
+            model: Some("opus".to_string()),
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", false, &[], None, &settings);
+        let idx = args.iter().position(|a| a == "--model").unwrap();
+        assert_eq!(args[idx + 1], "opus");
+    }
+
+    #[test]
+    fn test_build_args_model_skipped_on_resume() {
+        let settings = AgentSettings {
+            model: Some("opus".to_string()),
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", true, &[], None, &settings);
+        assert!(!args.contains(&"--model".to_string()));
+    }
+
+    #[test]
+    fn test_build_args_plan_mode() {
+        let settings = AgentSettings {
+            plan_mode: true,
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", false, &[], None, &settings);
+        let idx = args.iter().position(|a| a == "--permission-mode").unwrap();
+        assert_eq!(args[idx + 1], "plan");
+    }
+
+    #[test]
+    fn test_build_args_plan_mode_skipped_on_resume() {
+        let settings = AgentSettings {
+            plan_mode: true,
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", true, &[], None, &settings);
+        assert!(!args.contains(&"--permission-mode".to_string()));
+    }
+
+    #[test]
+    fn test_build_args_with_settings_json() {
+        let settings = AgentSettings {
+            fast_mode: true,
+            thinking_enabled: true,
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", false, &[], None, &settings);
+        let idx = args.iter().position(|a| a == "--settings").unwrap();
+        let json: serde_json::Value = serde_json::from_str(&args[idx + 1]).unwrap();
+        assert_eq!(json["fastMode"], true);
+        assert_eq!(json["alwaysThinkingEnabled"], true);
+    }
+
+    #[test]
+    fn test_build_args_fast_mode_only() {
+        let settings = AgentSettings {
+            fast_mode: true,
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", false, &[], None, &settings);
+        let idx = args.iter().position(|a| a == "--settings").unwrap();
+        let json: serde_json::Value = serde_json::from_str(&args[idx + 1]).unwrap();
+        assert_eq!(json["fastMode"], true);
+        assert!(json.get("alwaysThinkingEnabled").is_none());
+    }
+
+    #[test]
+    fn test_build_args_settings_on_resume() {
+        let settings = AgentSettings {
+            fast_mode: true,
+            thinking_enabled: true,
+            ..Default::default()
+        };
+        // --settings should still be passed on resume (per-turn flag)
+        let args = build_claude_args("sess-1", "hello", true, &[], None, &settings);
+        assert!(args.contains(&"--settings".to_string()));
     }
 }

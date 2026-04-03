@@ -72,6 +72,7 @@ export function useAgentStream() {
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const setAgentQuestion = useAppStore((s) => s.setAgentQuestion);
   const finalizeTurn = useAppStore((s) => s.finalizeTurn);
+  const setPlanMode = useAppStore((s) => s.setPlanMode);
 
   // Map content block index → { toolUseId, toolName } for the current turn.
   // Reset on process exit.
@@ -162,6 +163,12 @@ export function useAgentStream() {
                       collapsed: true,
                       summary: "",
                     });
+                    // Detect plan mode changes from agent tool calls.
+                    if (inner.content_block.name === "EnterPlanMode") {
+                      setPlanMode(wsId, true);
+                    } else if (inner.content_block.name === "ExitPlanMode") {
+                      setPlanMode(wsId, false);
+                    }
                   }
                   break;
                 }
@@ -273,5 +280,6 @@ export function useAgentStream() {
     updateWorkspace,
     setAgentQuestion,
     finalizeTurn,
+    setPlanMode,
   ]);
 }
