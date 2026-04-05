@@ -70,7 +70,67 @@ src-tauri/
     commands/           # #[tauri::command] handlers
     state.rs            # Managed application state
     pty.rs              # Terminal PTY management
+    transport/          # Remote transport trait + WebSocket client
+    remote.rs           # Remote connection manager
+    mdns.rs             # mDNS service browser
+src-server/
+  Cargo.toml            # Headless server binary crate
+  src/
+    main.rs             # CLI entry point (clap)
+    ws.rs               # WebSocket accept loop + per-connection handler
+    handler.rs          # JSON-RPC command dispatcher
+    tls.rs              # Self-signed TLS certificate management
+    auth.rs             # Pairing token + session token auth
+    mdns.rs             # mDNS service advertisement
 ```
+
+## Remote access
+
+Claudette can connect to workspaces on another machine. The remote machine runs `claudette-server`, a headless backend that communicates over an encrypted WebSocket connection. The local Claudette app discovers or connects to it and displays remote repos, agents, and terminals alongside local ones.
+
+### Setting up the remote server
+
+```sh
+# Build and install the server binary
+cargo install --path src-server
+
+# Start it (generates a TLS certificate and pairing token on first run)
+claudette-server
+```
+
+On startup the server prints a connection string:
+
+```
+claudette-server v0.1.0 listening on wss://0.0.0.0:7683
+Name: Work Laptop
+
+Connection string (paste into Claudette):
+  claudette://work-laptop.local:7683/aBcDeFgH1234...
+```
+
+### Connecting from the local app
+
+**Automatic (LAN):** If both machines are on the same network, the server appears automatically in the sidebar under **Nearby**. Click **Connect** and enter the pairing token when prompted.
+
+**Manual:** Click **+ Add remote** in the sidebar footer and paste the full connection string. Claudette authenticates, stores a session token, and reconnects automatically on future launches.
+
+### Server management
+
+```sh
+# Regenerate the pairing token (revokes all existing sessions)
+claudette-server regenerate-token
+
+# Print the current connection string
+claudette-server show-connection-string
+
+# Bind to a specific interface or port
+claudette-server --bind 192.168.1.50 --port 9000
+
+# Disable mDNS advertisement
+claudette-server --no-mdns
+```
+
+All traffic is encrypted with TLS. The local app pins the server's certificate fingerprint on first connection (trust-on-first-use), similar to SSH's `known_hosts`.
 
 ## Development notes
 
