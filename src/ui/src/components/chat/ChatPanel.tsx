@@ -562,7 +562,9 @@ function ChatInputArea({
         if (cmd) {
           onSend("/" + cmd.name);
           setChatInput("");
-          recordSlashCommandUsage(selectedWorkspaceId, cmd.name).then(refreshSlashCommands);
+          recordSlashCommandUsage(selectedWorkspaceId, cmd.name)
+            .then(refreshSlashCommands)
+            .catch((e) => console.error("Failed to record slash command usage:", e));
         }
         return;
       }
@@ -623,7 +625,9 @@ function ChatInputArea({
           onSelect={(cmd) => {
             onSend("/" + cmd.name);
             setChatInput("");
-            recordSlashCommandUsage(selectedWorkspaceId, cmd.name).then(refreshSlashCommands);
+            recordSlashCommandUsage(selectedWorkspaceId, cmd.name)
+            .then(refreshSlashCommands)
+            .catch((e) => console.error("Failed to record slash command usage:", e));
           }}
           onHover={setSlashPickerIndex}
         />
