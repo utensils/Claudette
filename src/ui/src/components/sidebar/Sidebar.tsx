@@ -7,6 +7,7 @@ import {
   createWorkspace,
   connectRemote,
   disconnectRemote,
+  removeRemoteConnection,
   pairWithServer,
   startLocalServer,
 } from "../../services/tauri";
@@ -296,6 +297,7 @@ function RemoteSections() {
   const addRemote = useAppStore((s) => s.addRemoteConnection);
   const addActiveId = useAppStore((s) => s.addActiveRemoteId);
   const removeActiveId = useAppStore((s) => s.removeActiveRemoteId);
+  const removeRemote = useAppStore((s) => s.removeRemoteConnection);
   const mergeRemoteData = useAppStore((s) => s.mergeRemoteData);
   const clearRemoteData = useAppStore((s) => s.clearRemoteData);
   const unpaired = discoveredServers.filter((s) => !s.is_paired);
@@ -331,6 +333,16 @@ function RemoteSections() {
       clearRemoteData(id);
     } catch (e) {
       console.error("Failed to disconnect:", e);
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    try {
+      await removeRemoteConnection(id);
+      removeRemote(id);
+      clearRemoteData(id);
+    } catch (e) {
+      console.error("Failed to remove remote connection:", e);
     }
   };
 
@@ -398,6 +410,7 @@ function RemoteSections() {
                 isConnecting={isConnecting}
                 onConnect={() => handleConnect(conn.id)}
                 onDisconnect={() => handleDisconnect(conn.id)}
+                onRemove={() => handleRemove(conn.id)}
               />
             );
           })}
@@ -413,12 +426,14 @@ function RemoteConnectionGroup({
   isConnecting,
   onConnect,
   onDisconnect,
+  onRemove,
 }: {
   conn: import("../../types/remote").RemoteConnectionInfo;
   isActive: boolean;
   isConnecting: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  onRemove: () => void;
 }) {
   const repositories = useAppStore((s) => s.repositories);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -452,6 +467,16 @@ function RemoteConnectionGroup({
         <span className={styles.repoName} style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px" }}>
           {conn.name}
         </span>
+        {!isActive && !isConnecting && (
+          <button
+            className={styles.iconBtn}
+            onClick={onRemove}
+            title="Remove"
+            style={{ fontSize: 11, opacity: 0.5 }}
+          >
+            <X size={12} />
+          </button>
+        )}
         <button
           className={styles.iconBtn}
           onClick={() => (isActive ? onDisconnect() : onConnect())}
