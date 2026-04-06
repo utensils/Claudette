@@ -523,8 +523,16 @@ function ChatInputArea({
   }, [projectPath, selectedWorkspaceId]);
 
   useEffect(() => {
-    refreshSlashCommands();
-  }, [refreshSlashCommands]);
+    let cancelled = false;
+    listSlashCommands(projectPath, selectedWorkspaceId)
+      .then((cmds) => {
+        if (!cancelled) setSlashCommands(cmds);
+      })
+      .catch((e) => console.error("Failed to load slash commands:", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath, selectedWorkspaceId]);
 
   const slashQuery = chatInput.startsWith("/") ? chatInput.slice(1) : null;
   const slashResults = useMemo(
