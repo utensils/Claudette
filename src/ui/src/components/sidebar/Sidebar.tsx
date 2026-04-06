@@ -297,13 +297,25 @@ function RemoteSections() {
   const addActiveId = useAppStore((s) => s.addActiveRemoteId);
   const removeActiveId = useAppStore((s) => s.removeActiveRemoteId);
   const unpaired = discoveredServers.filter((s) => !s.is_paired);
+  const [connectingIds, setConnectingIds] = useState<Set<string>>(new Set());
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const handleConnect = async (id: string) => {
+    setConnectError(null);
+    setConnectingIds((prev) => new Set(prev).add(id));
     try {
       await connectRemote(id);
       addActiveId(id);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setConnectError(msg);
       console.error("Failed to connect:", e);
+    } finally {
+      setConnectingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -366,13 +378,19 @@ function RemoteSections() {
               Remote
             </span>
           </div>
+          {connectError && (
+            <div style={{ padding: "4px 12px", fontSize: 11, color: "var(--status-error, #f55)", lineHeight: 1.3 }}>
+              {connectError}
+            </div>
+          )}
           {remoteConnections.map((conn) => {
             const isActive = activeRemoteIds.includes(conn.id);
+            const isConnecting = connectingIds.has(conn.id);
             return (
               <div key={conn.id} className={styles.wsItem}>
                 <span
                   className={styles.statusDot}
-                  style={{ background: isActive ? "var(--status-running)" : "var(--status-stopped)" }}
+                  style={{ background: isConnecting ? "var(--status-idle)" : isActive ? "var(--status-running)" : "var(--status-stopped)" }}
                 />
                 <div className={styles.wsInfo}>
                   <span className={styles.wsName}>{conn.name}</span>
@@ -381,10 +399,11 @@ function RemoteSections() {
                 <button
                   className={styles.iconBtn}
                   onClick={() => isActive ? handleDisconnect(conn.id) : handleConnect(conn.id)}
-                  title={isActive ? "Disconnect" : "Connect"}
-                  style={{ fontSize: 11 }}
+                  disabled={isConnecting}
+                  title={isConnecting ? "Connecting…" : isActive ? "Disconnect" : "Connect"}
+                  style={{ fontSize: 11, opacity: isConnecting ? 0.5 : 1 }}
                 >
-                  {isActive ? "×" : "→"}
+                  {isConnecting ? "…" : isActive ? "×" : "→"}
                 </button>
               </div>
             );
