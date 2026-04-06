@@ -67,7 +67,8 @@ pub async fn send_message(writer: &Writer, value: &serde_json::Value) {
 /// Accept a TLS connection and upgrade it to WebSocket.
 pub async fn handle_tls_connection(
     state: std::sync::Arc<ServerState>,
-    mut config: ServerConfig,
+    config: std::sync::Arc<tokio::sync::Mutex<ServerConfig>>,
+    config_path: std::sync::Arc<PathBuf>,
     tls_stream: TlsStream<TcpStream>,
     addr: SocketAddr,
 ) {
@@ -130,23 +131,22 @@ pub async fn handle_tls_connection(
         let params = request.get("params").cloned().unwrap_or_default();
 
         // Try session token first, then pairing token.
-        if let Some(session_token) = params.get("session_token").and_then(|t| t.as_str())
-            && config.validate_session(session_token)
-        {
-            // Persist last_seen update.
-            let config_path = dirs::config_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("claudette-server")
-                .join("server.toml");
-            let _ = config.save(&config_path);
+        if let Some(session_token) = params.get("session_token").and_then(|t| t.as_str()) {
+            let mut cfg = config.lock().await;
+            if cfg.validate_session(session_token) {
+                let _ = cfg.save(&config_path);
+                let server_name = cfg.server.name.clone();
+                drop(cfg);
 
-            let resp = serde_json::json!({
-                "id": id,
-                "result": {"server_name": config.server.name}
-            });
-            send_message(&writer, &resp).await;
-            authenticated = true;
-            break;
+                let resp = serde_json::json!({
+                    "id": id,
+                    "result": {"server_name": server_name}
+                });
+                send_message(&writer, &resp).await;
+                authenticated = true;
+                break;
+            }
+            drop(cfg);
         }
 
         if let Some(pairing_token) = params.get("pairing_token").and_then(|t| t.as_str()) {
@@ -155,25 +155,24 @@ pub async fn handle_tls_connection(
                 .and_then(|n| n.as_str())
                 .unwrap_or("Unknown client");
 
-            if let Some(session_token) = config.pair(pairing_token, client_name) {
-                // Persist the new session.
-                let config_path = dirs::config_dir()
-                    .unwrap_or_else(|| PathBuf::from("."))
-                    .join("claudette-server")
-                    .join("server.toml");
-                let _ = config.save(&config_path);
+            let mut cfg = config.lock().await;
+            if let Some(session_token) = cfg.pair(pairing_token, client_name) {
+                let _ = cfg.save(&config_path);
+                let server_name = cfg.server.name.clone();
+                drop(cfg);
 
                 let resp = serde_json::json!({
                     "id": id,
                     "result": {
                         "session_token": session_token,
-                        "server_name": config.server.name
+                        "server_name": server_name
                     }
                 });
                 send_message(&writer, &resp).await;
                 authenticated = true;
                 break;
             }
+            drop(cfg);
         }
 
         auth_attempts += 1;

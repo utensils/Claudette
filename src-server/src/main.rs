@@ -134,6 +134,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Certificate fingerprint: {fingerprint}");
     println!();
 
+    // Wrap config in shared state so all connections see session mutations.
+    let config = Arc::new(tokio::sync::Mutex::new(config));
+    let config_path = Arc::new(config_path);
+
     // Set up database.
     let db_path = db_path();
     let _ = claudette::db::Database::open(&db_path);
@@ -159,7 +163,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start mDNS advertisement.
     if !cli.no_mdns {
         let short_fp = &fingerprint[..fingerprint.len().min(16)];
-        let _mdns = mdns::advertise(&config.server.name, cli.port, short_fp)?;
+        let config_guard = config.lock().await;
+        let server_name = config_guard.server.name.clone();
+        drop(config_guard);
+        let _mdns = mdns::advertise(&server_name, cli.port, short_fp)?;
         println!("mDNS: advertising as _claudette._tcp on port {}", cli.port);
     }
 
@@ -174,12 +181,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (stream, peer_addr) = listener.accept().await?;
         let acceptor = acceptor.clone();
         let state = Arc::clone(&state);
-        let config = config.clone();
+        let config = Arc::clone(&config);
+        let config_path = Arc::clone(&config_path);
 
         tokio::spawn(async move {
             match acceptor.accept(stream).await {
                 Ok(tls_stream) => {
-                    ws::handle_tls_connection(state, config, tls_stream, peer_addr).await;
+                    ws::handle_tls_connection(state, config, config_path, tls_stream, peer_addr)
+                        .await;
                 }
                 Err(e) => {
                     eprintln!("[tls] handshake failed from {peer_addr}: {e}");

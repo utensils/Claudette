@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use futures_util::{SinkExt, StreamExt};
+use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -45,29 +46,35 @@ impl WebSocketTransport {
     ) -> Result<ConnectionResult, String> {
         let url = format!("wss://{host}:{port}");
 
+        // Shared slot to capture the cert fingerprint from the TLS verifier callback.
+        let fingerprint_slot: Arc<std::sync::Mutex<Option<String>>> =
+            Arc::new(std::sync::Mutex::new(None));
+
         // Build a TLS config that accepts self-signed certificates.
         // We do our own fingerprint verification (TOFU).
         let tls_config = rustls::ClientConfig::builder()
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(AcceptAllVerifier))
+            .with_custom_certificate_verifier(Arc::new(FingerprintCapturingVerifier {
+                fingerprint: Arc::clone(&fingerprint_slot),
+            }))
             .with_no_client_auth();
 
         let connector = tokio_tungstenite::Connector::Rustls(Arc::new(tls_config));
 
-        let (ws_stream, response) =
+        let (ws_stream, _response) =
             tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(connector))
                 .await
                 .map_err(|e| format!("WebSocket connection failed: {e}"))?;
 
-        // Extract certificate fingerprint from the TLS session.
-        // For now, compute from the response headers or use a placeholder.
-        // In practice, the fingerprint comes from the TLS peer certificate.
-        let _ = response;
-        let cert_fingerprint = "unknown".to_string(); // TODO: extract from TLS session
+        // Read the fingerprint captured during the TLS handshake.
+        let cert_fingerprint = fingerprint_slot
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone())
+            .ok_or_else(|| "Failed to capture server certificate fingerprint".to_string())?;
 
-        // Verify fingerprint if expected.
+        // Verify fingerprint if expected (TOFU).
         if let Some(expected) = expected_fingerprint
-            && cert_fingerprint != "unknown"
             && cert_fingerprint != expected
         {
             return Err(format!(
@@ -264,20 +271,28 @@ impl Transport for WebSocketTransport {
     }
 }
 
-/// TLS certificate verifier that accepts all certificates (for TOFU model).
-/// Certificate fingerprint verification happens at the application layer.
+/// TLS certificate verifier that accepts all certificates but captures the
+/// server's certificate fingerprint (SHA-256) for TOFU verification.
 #[derive(Debug)]
-struct AcceptAllVerifier;
+struct FingerprintCapturingVerifier {
+    fingerprint: Arc<std::sync::Mutex<Option<String>>>,
+}
 
-impl rustls::client::danger::ServerCertVerifier for AcceptAllVerifier {
+impl rustls::client::danger::ServerCertVerifier for FingerprintCapturingVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
         _intermediates: &[rustls::pki_types::CertificateDer<'_>],
         _server_name: &rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
         _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        let mut hasher = Sha256::new();
+        hasher.update(end_entity.as_ref());
+        let fp = hex::encode(hasher.finalize());
+        if let Ok(mut slot) = self.fingerprint.lock() {
+            *slot = Some(fp);
+        }
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
 
