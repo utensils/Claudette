@@ -273,6 +273,7 @@ pub async fn start_local_server(state: State<'_, AppState>) -> Result<LocalServe
     let mut child = tokio::process::Command::new(&server_bin)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit()) // inherit stderr to avoid pipe deadlock
+        .kill_on_drop(true) // Automatically kill server when Child handle is dropped
         .spawn()
         .map_err(|e| format!("Failed to start claudette-server: {e}"))?;
 

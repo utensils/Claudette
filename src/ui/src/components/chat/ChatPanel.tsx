@@ -25,8 +25,6 @@ export function ChatPanel() {
   const workspaces = useAppStore((s) => s.workspaces);
   const repositories = useAppStore((s) => s.repositories);
   const chatMessages = useAppStore((s) => s.chatMessages);
-  // Use local state for input to avoid re-rendering entire component on every keystroke
-  const [chatInput, setChatInput] = useState("");
   const setChatMessages = useAppStore((s) => s.setChatMessages);
   const addChatMessage = useAppStore((s) => s.addChatMessage);
   const streamingContent = useAppStore((s) => s.streamingContent);
@@ -162,24 +160,22 @@ export function ChatPanel() {
 
   if (!ws) return null;
 
-  const handleSend = async (messageOverride?: string) => {
-    const content = (messageOverride ?? chatInput).trim();
-    if (!content || !selectedWorkspaceId) return;
+  const handleSend = async (content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed || !selectedWorkspaceId) return;
 
     setError(null);
 
     // Push to prompt history.
     const history = (historyRef.current[selectedWorkspaceId] ??= []);
-    history.push(content);
+    history.push(trimmed);
     historyIndexRef.current = -1;
     draftRef.current = "";
-
-    setChatInput("");
     addChatMessage(selectedWorkspaceId, {
       id: crypto.randomUUID(),
       workspace_id: selectedWorkspaceId,
       role: "User",
-      content,
+      content: trimmed,
       cost_usd: null,
       duration_ms: null,
       created_at: new Date().toISOString(),
@@ -192,7 +188,7 @@ export function ChatPanel() {
         const state = useAppStore.getState();
         await sendRemoteCommand(ws.remote_connection_id, "send_chat_message", {
           workspace_id: selectedWorkspaceId,
-          content,
+          content: trimmed,
           permission_level: permissionLevel,
           model: state.selectedModel[selectedWorkspaceId] || null,
           fast_mode: state.fastMode[selectedWorkspaceId] || false,
@@ -207,7 +203,7 @@ export function ChatPanel() {
         const planMode = state.planMode[selectedWorkspaceId] || false;
         await sendChatMessage(
           selectedWorkspaceId,
-          content,
+          trimmed,
           permissionLevel,
           model,
           fastMode || undefined,
@@ -236,39 +232,6 @@ export function ChatPanel() {
       updateWorkspace(selectedWorkspaceId, { agent_status: "Stopped" });
     } catch (e) {
       console.error("stopAgent failed:", e);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-      return;
-    }
-
-    if (!selectedWorkspaceId) return;
-    const history = historyRef.current[selectedWorkspaceId] ?? [];
-    if (history.length === 0) return;
-
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (historyIndexRef.current === -1) {
-        draftRef.current = chatInput;
-        historyIndexRef.current = history.length - 1;
-      } else if (historyIndexRef.current > 0) {
-        historyIndexRef.current -= 1;
-      }
-      setChatInput(history[historyIndexRef.current]);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (historyIndexRef.current === -1) return;
-      if (historyIndexRef.current < history.length - 1) {
-        historyIndexRef.current += 1;
-        setChatInput(history[historyIndexRef.current]);
-      } else {
-        historyIndexRef.current = -1;
-        setChatInput(draftRef.current);
-      }
     }
   };
 
@@ -513,28 +476,96 @@ export function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className={styles.inputArea}>
-        <textarea
-          className={styles.input}
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Send a message..."
-          rows={1}
+      <ChatInputArea
+        onSend={handleSend}
+        isRunning={isRunning}
+        selectedWorkspaceId={selectedWorkspaceId!}
+        historyRef={historyRef}
+        historyIndexRef={historyIndexRef}
+        draftRef={draftRef}
+      />
+    </div>
+  );
+}
+
+// Separate component for input area to prevent full ChatPanel re-renders on every keystroke
+function ChatInputArea({
+  onSend,
+  isRunning,
+  selectedWorkspaceId,
+  historyRef,
+  historyIndexRef,
+  draftRef,
+}: {
+  onSend: (content: string) => Promise<void>;
+  isRunning: boolean;
+  selectedWorkspaceId: string;
+  historyRef: React.MutableRefObject<Record<string, string[]>>;
+  historyIndexRef: React.MutableRefObject<number>;
+  draftRef: React.MutableRefObject<string>;
+}) {
+  const [chatInput, setChatInput] = useState("");
+
+  const handleSend = () => {
+    onSend(chatInput);
+    setChatInput("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+      return;
+    }
+
+    // History navigation with arrow keys
+    const history = historyRef.current[selectedWorkspaceId] ?? [];
+    if (history.length === 0) return;
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (historyIndexRef.current === -1) {
+        draftRef.current = chatInput;
+        historyIndexRef.current = history.length - 1;
+      } else if (historyIndexRef.current > 0) {
+        historyIndexRef.current -= 1;
+      }
+      setChatInput(history[historyIndexRef.current]);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (historyIndexRef.current === -1) return;
+      if (historyIndexRef.current < history.length - 1) {
+        historyIndexRef.current += 1;
+        setChatInput(history[historyIndexRef.current]);
+      } else {
+        historyIndexRef.current = -1;
+        setChatInput(draftRef.current);
+      }
+    }
+  };
+
+  return (
+    <div className={styles.inputArea}>
+      <textarea
+        className={styles.input}
+        value={chatInput}
+        onChange={(e) => setChatInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Send a message..."
+        rows={1}
+      />
+      <div className={styles.inputControls}>
+        <ChatToolbar
+          workspaceId={selectedWorkspaceId}
+          disabled={isRunning}
         />
-        <div className={styles.inputControls}>
-          <ChatToolbar
-            workspaceId={selectedWorkspaceId!}
-            disabled={isRunning}
-          />
-          <button
-            className={styles.sendBtn}
-            onClick={() => handleSend()}
-            disabled={!chatInput.trim()}
-          >
-            Send
-          </button>
-        </div>
+        <button
+          className={styles.sendBtn}
+          onClick={handleSend}
+          disabled={!chatInput.trim()}
+        >
+          Send
+        </button>
       </div>
     </div>
   );
