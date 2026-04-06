@@ -553,6 +553,7 @@ function ChatInputArea({
         onKeyDown={handleKeyDown}
         placeholder="Send a message..."
         rows={1}
+        disabled={isRunning}
       />
       <div className={styles.inputControls}>
         <ChatToolbar
@@ -562,7 +563,7 @@ function ChatInputArea({
         <button
           className={styles.sendBtn}
           onClick={handleSend}
-          disabled={!chatInput.trim()}
+          disabled={!chatInput.trim() || isRunning}
         >
           Send
         </button>

@@ -268,7 +268,7 @@ pub async fn start_local_server(state: State<'_, AppState>) -> Result<LocalServe
     // Find the claudette-server binary. Try:
     // 1. Next to the current executable
     // 2. In PATH
-    let server_bin = find_server_binary()?;
+    let server_bin = find_server_binary().await?;
 
     let mut child = tokio::process::Command::new(&server_bin)
         .stdout(std::process::Stdio::piped())
@@ -359,7 +359,7 @@ pub async fn get_local_server_status(
     }
 }
 
-fn find_server_binary() -> Result<String, String> {
+async fn find_server_binary() -> Result<String, String> {
     // 1. Next to the current executable.
     if let Ok(exe) = std::env::current_exe() {
         let dir = exe.parent().unwrap_or(std::path::Path::new("."));
@@ -369,10 +369,11 @@ fn find_server_binary() -> Result<String, String> {
         }
     }
 
-    // 2. In PATH.
-    if let Ok(output) = std::process::Command::new("which")
+    // 2. In PATH (use tokio::process to avoid blocking the async runtime).
+    if let Ok(output) = tokio::process::Command::new("which")
         .arg("claudette-server")
         .output()
+        .await
         && output.status.success()
     {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
