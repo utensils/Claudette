@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio::sync::RwLock;
 
+use crate::remote::DiscoveredServer;
+
 /// Per-workspace agent session state managed on the Rust side.
 pub struct AgentSessionState {
     pub session_id: String,
@@ -26,6 +28,26 @@ pub struct PtyHandle {
     pub child: Mutex<Box<dyn portable_pty::Child + Send>>,
 }
 
+/// State of the embedded claudette-server subprocess.
+pub struct LocalServerState {
+    /// Handle to the running server process.
+    pub child: tokio::process::Child,
+    /// The connection string printed by the server on startup.
+    pub connection_string: String,
+}
+
+impl Drop for LocalServerState {
+    fn drop(&mut self) {
+        // Kill the server process when this state is dropped.
+        // Use start_kill() instead of kill() since we're in a sync context.
+        if let Err(e) = self.child.start_kill() {
+            eprintln!("[cleanup] Failed to kill local server: {e}");
+        } else {
+            eprintln!("[cleanup] Stopped local claudette-server");
+        }
+    }
+}
+
 /// Application-wide managed state, shared across all Tauri commands.
 pub struct AppState {
     pub db_path: PathBuf,
@@ -36,6 +58,10 @@ pub struct AppState {
     pub ptys: RwLock<HashMap<u64, PtyHandle>>,
     /// Counter for generating unique PTY IDs.
     pub next_pty_id: AtomicU64,
+    /// mDNS-discovered servers on the local network.
+    pub discovered_servers: RwLock<Vec<DiscoveredServer>>,
+    /// Embedded local claudette-server process (when "Share this machine" is active).
+    pub local_server: RwLock<Option<LocalServerState>>,
 }
 
 impl AppState {
@@ -46,6 +72,8 @@ impl AppState {
             agents: RwLock::new(HashMap::new()),
             ptys: RwLock::new(HashMap::new()),
             next_pty_id: AtomicU64::new(1),
+            discovered_servers: RwLock::new(Vec::new()),
+            local_server: RwLock::new(None),
         }
     }
 

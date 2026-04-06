@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore } from "./stores/useAppStore";
-import { loadInitialData, getAppSetting } from "./services/tauri";
+import { loadInitialData, getAppSetting, listRemoteConnections, listDiscoveredServers, getLocalServerStatus } from "./services/tauri";
 import { AppLayout } from "./components/layout/AppLayout";
 import "./styles/theme.css";
 
@@ -11,11 +11,20 @@ function App() {
   const setDefaultBranches = useAppStore((s) => s.setDefaultBranches);
   const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);
   const setLastMessages = useAppStore((s) => s.setLastMessages);
+  const setRemoteConnections = useAppStore((s) => s.setRemoteConnections);
+  const setDiscoveredServers = useAppStore((s) => s.setDiscoveredServers);
+  const setLocalServerRunning = useAppStore((s) => s.setLocalServerRunning);
+  const setLocalServerConnectionString = useAppStore((s) => s.setLocalServerConnectionString);
 
   useEffect(() => {
     loadInitialData().then((data) => {
-      setRepositories(data.repositories);
-      setWorkspaces(data.workspaces);
+      // Tag local data with null remote_connection_id (backend omits this field).
+      setRepositories(
+        data.repositories.map((r) => ({ ...r, remote_connection_id: null }))
+      );
+      setWorkspaces(
+        data.workspaces.map((w) => ({ ...w, remote_connection_id: null }))
+      );
       setWorktreeBaseDir(data.worktree_base_dir);
       setDefaultBranches(data.default_branches);
       // Index last messages by workspace_id for dashboard display.
@@ -33,7 +42,29 @@ function App() {
         }
       })
       .catch((err) => console.error("Failed to load terminal font size:", err));
-  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages]);
+    listRemoteConnections()
+      .then(setRemoteConnections)
+      .catch((err) => console.error("Failed to load remote connections:", err));
+    // Poll discovered servers every 5s so the Nearby list stays current.
+    const refreshDiscoveredServers = () => {
+      listDiscoveredServers()
+        .then(setDiscoveredServers)
+        .catch((err) => console.error("Failed to load discovered servers:", err));
+    };
+    refreshDiscoveredServers();
+    const discoveredServersPollId = window.setInterval(refreshDiscoveredServers, 5000);
+
+    getLocalServerStatus()
+      .then((info) => {
+        setLocalServerRunning(info.running);
+        setLocalServerConnectionString(info.connection_string);
+      })
+      .catch((err) => console.error("Failed to load local server status:", err));
+
+    return () => {
+      window.clearInterval(discoveredServersPollId);
+    };
+  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages, setRemoteConnections, setDiscoveredServers, setLocalServerRunning, setLocalServerConnectionString]);
 
   return <AppLayout />;
 }

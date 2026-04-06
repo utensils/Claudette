@@ -7,7 +7,10 @@ import type {
   FileDiff,
   DiffViewMode,
   TerminalTab,
+  RemoteConnectionInfo,
+  DiscoveredServer,
 } from "../types";
+import type { RemoteInitialData } from "../types/remote";
 
 export type PermissionLevel = "readonly" | "standard" | "full";
 
@@ -163,6 +166,26 @@ interface AppState {
   setTerminalFontSize: (size: number) => void;
   lastMessages: Record<string, ChatMessage>;
   setLastMessages: (msgs: Record<string, ChatMessage>) => void;
+
+  // -- Remote Connections --
+  remoteConnections: RemoteConnectionInfo[];
+  discoveredServers: DiscoveredServer[];
+  activeRemoteIds: string[];
+  setRemoteConnections: (conns: RemoteConnectionInfo[]) => void;
+  addRemoteConnection: (conn: RemoteConnectionInfo) => void;
+  removeRemoteConnection: (id: string) => void;
+  setDiscoveredServers: (servers: DiscoveredServer[]) => void;
+  setActiveRemoteIds: (ids: string[]) => void;
+  addActiveRemoteId: (id: string) => void;
+  removeActiveRemoteId: (id: string) => void;
+  mergeRemoteData: (connectionId: string, data: RemoteInitialData) => void;
+  clearRemoteData: (connectionId: string) => void;
+
+  // -- Local Server --
+  localServerRunning: boolean;
+  localServerConnectionString: string | null;
+  setLocalServerRunning: (running: boolean) => void;
+  setLocalServerConnectionString: (cs: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -441,4 +464,67 @@ export const useAppStore = create<AppState>((set) => ({
   setTerminalFontSize: (size) => set({ terminalFontSize: size }),
   lastMessages: {},
   setLastMessages: (msgs) => set({ lastMessages: msgs }),
+
+  // -- Remote Connections --
+  remoteConnections: [],
+  discoveredServers: [],
+  activeRemoteIds: [],
+  setRemoteConnections: (conns) => set({ remoteConnections: conns }),
+  addRemoteConnection: (conn) =>
+    set((s) => ({ remoteConnections: [...s.remoteConnections, conn] })),
+  removeRemoteConnection: (id) =>
+    set((s) => ({
+      remoteConnections: s.remoteConnections.filter((c) => c.id !== id),
+      activeRemoteIds: s.activeRemoteIds.filter((rid) => rid !== id),
+    })),
+  setDiscoveredServers: (servers) => set({ discoveredServers: servers }),
+  setActiveRemoteIds: (ids) => set({ activeRemoteIds: ids }),
+  addActiveRemoteId: (id) =>
+    set((s) => ({
+      activeRemoteIds: s.activeRemoteIds.includes(id)
+        ? s.activeRemoteIds
+        : [...s.activeRemoteIds, id],
+    })),
+  removeActiveRemoteId: (id) =>
+    set((s) => ({
+      activeRemoteIds: s.activeRemoteIds.filter((rid) => rid !== id),
+    })),
+  mergeRemoteData: (connectionId, data) =>
+    set((s) => {
+      // Tag remote repos and workspaces with the connection ID, then merge.
+      const taggedRepos = data.repositories.map((r) => ({
+        ...r,
+        remote_connection_id: connectionId,
+      }));
+      const taggedWorkspaces = data.workspaces.map((w) => ({
+        ...w,
+        remote_connection_id: connectionId,
+      }));
+      return {
+        repositories: [
+          ...s.repositories.filter((r) => r.remote_connection_id !== connectionId),
+          ...taggedRepos,
+        ],
+        workspaces: [
+          ...s.workspaces.filter((w) => w.remote_connection_id !== connectionId),
+          ...taggedWorkspaces,
+        ],
+      };
+    }),
+  clearRemoteData: (connectionId) =>
+    set((s) => ({
+      repositories: s.repositories.filter(
+        (r) => r.remote_connection_id !== connectionId
+      ),
+      workspaces: s.workspaces.filter(
+        (w) => w.remote_connection_id !== connectionId
+      ),
+    })),
+
+  // -- Local Server --
+  localServerRunning: false,
+  localServerConnectionString: null,
+  setLocalServerRunning: (running) => set({ localServerRunning: running }),
+  setLocalServerConnectionString: (cs) =>
+    set({ localServerConnectionString: cs }),
 }));
