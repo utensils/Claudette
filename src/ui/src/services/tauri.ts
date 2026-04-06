@@ -11,6 +11,11 @@ import type {
   CreateWorkspaceResult,
   RepoConfigInfo,
 } from "../types/repository";
+import type {
+  RemoteConnectionInfo,
+  DiscoveredServer,
+  PairResult,
+} from "../types/remote";
 
 // -- Data --
 
@@ -210,12 +215,6 @@ export function setAppSetting(key: string, value: string): Promise<void> {
 }
 
 // -- Remote --
-
-import type {
-  RemoteConnectionInfo,
-  DiscoveredServer,
-  PairResult,
-} from "../types/remote";
 
 export function listRemoteConnections(): Promise<RemoteConnectionInfo[]> {
   return invoke("list_remote_connections");

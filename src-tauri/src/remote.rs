@@ -40,22 +40,34 @@ impl RemoteConnectionManager {
     }
 
     /// Add an active connection and start forwarding its events to the Tauri event bus.
+    /// If a connection with the same ID already exists, it is closed and replaced.
     pub async fn add(
         &self,
         info: RemoteConnectionInfo,
         transport: WebSocketTransport,
         app: AppHandle,
     ) {
+        // Close and remove any existing connection with the same ID.
+        let mut connections = self.connections.write().await;
+        if let Some(idx) = connections.iter().position(|c| c.info.id == info.id) {
+            let old = connections.remove(idx);
+            let _ = old.transport.close().await;
+        }
+
         let transport = Arc::new(transport);
         let mut event_rx = transport.event_stream();
 
-        // Forward remote events to Tauri event bus, prefixed with "remote:".
+        // Forward remote events to the Tauri event bus under a "remote:" namespace
+        // and include the originating connection_id in the payload.
         let connection_id = info.id.clone();
         let event_task = tokio::spawn(async move {
             while let Ok(event) = event_rx.recv().await {
-                // Forward as-is — the frontend distinguishes remote events by
-                // the presence of remote_connection_id on the workspace.
-                let _ = app.emit(&event.event, &event.payload);
+                let event_name = format!("remote:{}", event.event);
+                let forwarded_payload = serde_json::json!({
+                    "connection_id": connection_id,
+                    "payload": event.payload,
+                });
+                let _ = app.emit(&event_name, &forwarded_payload);
             }
             eprintln!("[remote] Event stream ended for connection {connection_id}");
         });
@@ -66,7 +78,6 @@ impl RemoteConnectionManager {
             _event_task: event_task,
         };
 
-        let mut connections = self.connections.write().await;
         connections.push(conn);
     }
 

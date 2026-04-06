@@ -40,15 +40,25 @@ function App() {
     listRemoteConnections()
       .then(setRemoteConnections)
       .catch((err) => console.error("Failed to load remote connections:", err));
-    listDiscoveredServers()
-      .then(setDiscoveredServers)
-      .catch((err) => console.error("Failed to load discovered servers:", err));
+    // Poll discovered servers every 5s so the Nearby list stays current.
+    const refreshDiscoveredServers = () => {
+      listDiscoveredServers()
+        .then(setDiscoveredServers)
+        .catch((err) => console.error("Failed to load discovered servers:", err));
+    };
+    refreshDiscoveredServers();
+    const discoveredServersPollId = window.setInterval(refreshDiscoveredServers, 5000);
+
     getLocalServerStatus()
       .then((info) => {
         setLocalServerRunning(info.running);
         setLocalServerConnectionString(info.connection_string);
       })
       .catch((err) => console.error("Failed to load local server status:", err));
+
+    return () => {
+      window.clearInterval(discoveredServersPollId);
+    };
   }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages, setRemoteConnections, setDiscoveredServers, setLocalServerRunning, setLocalServerConnectionString]);
 
   return <AppLayout />;

@@ -477,7 +477,11 @@ export const useAppStore = create<AppState>((set) => ({
   setDiscoveredServers: (servers) => set({ discoveredServers: servers }),
   setActiveRemoteIds: (ids) => set({ activeRemoteIds: ids }),
   addActiveRemoteId: (id) =>
-    set((s) => ({ activeRemoteIds: [...s.activeRemoteIds, id] })),
+    set((s) => ({
+      activeRemoteIds: s.activeRemoteIds.includes(id)
+        ? s.activeRemoteIds
+        : [...s.activeRemoteIds, id],
+    })),
   removeActiveRemoteId: (id) =>
     set((s) => ({
       activeRemoteIds: s.activeRemoteIds.filter((rid) => rid !== id),

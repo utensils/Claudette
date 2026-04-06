@@ -56,16 +56,6 @@ pub async fn pair_with_server(
         .await?;
 
     let connection_id = uuid::Uuid::new_v4().to_string();
-    let info = RemoteConnectionInfo {
-        id: connection_id.clone(),
-        name: auth.server_name.clone(),
-        host: host.clone(),
-        port,
-        session_token: auth.session_token.clone(),
-        cert_fingerprint: Some(cert_fingerprint.clone()),
-        auto_connect: false,
-        created_at: String::new(),
-    };
 
     // Persist to DB.
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
@@ -81,6 +71,23 @@ pub async fn pair_with_server(
     };
     db.insert_remote_connection(&db_conn)
         .map_err(|e| e.to_string())?;
+
+    // Re-fetch to get the DB-generated created_at timestamp.
+    let saved = db
+        .get_remote_connection(&connection_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Failed to re-read saved connection")?;
+
+    let info = RemoteConnectionInfo {
+        id: saved.id,
+        name: saved.name,
+        host: saved.host,
+        port: saved.port,
+        session_token: saved.session_token,
+        cert_fingerprint: saved.cert_fingerprint,
+        auto_connect: saved.auto_connect,
+        created_at: saved.created_at,
+    };
 
     // Add to active connections.
     manager.add(info.clone(), transport, app).await;

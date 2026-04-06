@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use tauri::{AppHandle, Manager};
 
@@ -20,6 +22,9 @@ pub fn start_mdns_browser(app: &AppHandle, saved_fingerprints: Vec<String>) -> R
         let _mdns = mdns;
         let _fingerprints = saved_fingerprints;
 
+        // Track fullname → (host, port) for reliable removal.
+        let mut fullname_map: HashMap<String, (String, u16)> = HashMap::new();
+
         while let Ok(event) = receiver.recv_async().await {
             match event {
                 ServiceEvent::ServiceResolved(info) => {
@@ -33,7 +38,10 @@ pub fn start_mdns_browser(app: &AppHandle, saved_fingerprints: Vec<String>) -> R
                         .to_string();
                     let host = info.get_hostname().trim_end_matches('.').to_string();
                     let port = info.get_port();
+                    let fullname = info.get_fullname().to_string();
                     let is_paired = _fingerprints.iter().any(|fp| fp.starts_with(&fingerprint));
+
+                    fullname_map.insert(fullname, (host.clone(), port));
 
                     let server = DiscoveredServer {
                         name,
@@ -49,9 +57,11 @@ pub fn start_mdns_browser(app: &AppHandle, saved_fingerprints: Vec<String>) -> R
                     servers.push(server);
                 }
                 ServiceEvent::ServiceRemoved(_, fullname) => {
-                    let state = app_handle.state::<AppState>();
-                    let mut servers = state.discovered_servers.write().await;
-                    servers.retain(|s| !fullname.contains(&s.host));
+                    if let Some((host, port)) = fullname_map.remove(&fullname) {
+                        let state = app_handle.state::<AppState>();
+                        let mut servers = state.discovered_servers.write().await;
+                        servers.retain(|s| s.host != host || s.port != port);
+                    }
                 }
                 _ => {}
             }
