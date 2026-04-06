@@ -290,6 +290,15 @@ pub async fn start_local_server(state: State<'_, AppState>) -> Result<LocalServe
         return Err("Server started but did not print a connection string".to_string());
     }
 
+    // Spawn a task to continuously drain stdout to prevent broken pipe panics.
+    // The server writes log messages to stdout; if we don't read them, the pipe
+    // buffer fills and the server will panic with "Broken pipe" when we close stdout.
+    tokio::spawn(async move {
+        while let Ok(Some(_)) = reader.next_line().await {
+            // Discard output
+        }
+    });
+
     let info = LocalServerInfo {
         running: true,
         connection_string: Some(connection_string.clone()),

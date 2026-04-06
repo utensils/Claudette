@@ -36,6 +36,18 @@ pub struct LocalServerState {
     pub connection_string: String,
 }
 
+impl Drop for LocalServerState {
+    fn drop(&mut self) {
+        // Kill the server process when this state is dropped.
+        // Use start_kill() instead of kill() since we're in a sync context.
+        if let Err(e) = self.child.start_kill() {
+            eprintln!("[cleanup] Failed to kill local server: {e}");
+        } else {
+            eprintln!("[cleanup] Stopped local claudette-server");
+        }
+    }
+}
+
 /// Application-wide managed state, shared across all Tauri commands.
 pub struct AppState {
     pub db_path: PathBuf,
