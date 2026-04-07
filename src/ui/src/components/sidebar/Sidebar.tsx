@@ -466,6 +466,7 @@ function RemoteConnectionGroup({
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
   const addWorkspace = useAppStore((s) => s.addWorkspace);
+  const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const repoCollapsed = useAppStore((s) => s.repoCollapsed);
   const toggleRepoCollapsed = useAppStore((s) => s.toggleRepoCollapsed);
   const creatingRef = useRef<Set<string>>(new Set());
@@ -499,6 +500,22 @@ function RemoteConnectionGroup({
       console.error("Failed to create remote workspace:", e);
     } finally {
       creatingRef.current.delete(repoId);
+    }
+  };
+
+  const handleArchive = async (wsId: string) => {
+    try {
+      await sendRemoteCommand(conn.id, "archive_workspace", {
+        workspace_id: wsId,
+      });
+      updateWorkspace(wsId, {
+        status: "Archived",
+        worktree_path: null,
+        agent_status: "Stopped",
+      });
+      if (selectedWorkspaceId === wsId) selectWorkspace(null);
+    } catch (e) {
+      console.error("Failed to archive remote workspace:", e);
     }
   };
 
@@ -603,6 +620,18 @@ function RemoteConnectionGroup({
                     <div className={styles.wsInfo}>
                       <span className={styles.wsName}>{ws.name}</span>
                       <span className={styles.wsBranch}>{ws.branch_name}</span>
+                    </div>
+                    <div className={styles.wsActions}>
+                      <button
+                        className={styles.iconBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleArchive(ws.id);
+                        }}
+                        title="Archive"
+                      >
+                        <X size={12} />
+                      </button>
                     </div>
                   </div>
                 ))}
