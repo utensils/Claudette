@@ -12,7 +12,7 @@ import {
   pairWithServer,
   startLocalServer,
 } from "../../services/tauri";
-import { Settings, Link, X, Share2 } from "lucide-react";
+import { Settings, Link, X, Share2, Plus, Globe } from "lucide-react";
 import { RepoIcon } from "../shared/RepoIcon";
 import styles from "./Sidebar.module.css";
 
@@ -279,21 +279,22 @@ export function Sidebar() {
 
       <div className={styles.footer}>
         <button
-          className={styles.addRepoBtn}
+          className={styles.footerBtn}
           onClick={() => openModal("addRepo")}
+          title="Add repository"
         >
-          + Add repository
+          <Plus size={14} />
         </button>
         <button
-          className={styles.addRepoBtn}
+          className={styles.footerBtn}
           onClick={() => openModal("addRemote")}
-          style={{ marginLeft: 4 }}
+          title="Add remote"
         >
-          + Add remote
+          <Globe size={14} />
         </button>
         <ShareButton openModal={openModal} />
         <button
-          className={styles.settingsBtn}
+          className={styles.footerBtn}
           onClick={() => openModal("appSettings")}
           title="Settings"
         >
@@ -638,7 +639,7 @@ function ShareButton({ openModal }: { openModal: (name: string) => void }) {
 
   return (
     <button
-      className={styles.settingsBtn}
+      className={styles.footerBtn}
       onClick={handleClick}
       title={running ? "Sharing — click to view connection string" : "Share this machine"}
       disabled={loading}
