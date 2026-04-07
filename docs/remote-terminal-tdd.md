@@ -213,13 +213,27 @@ Implementation: `TerminalPanel` checks `workspace.remote_connection_id` before c
 
 **"Open in Terminal"** — Currently calls `openWorkspaceInTerminal(worktreePath)`, which opens an **external** terminal application (e.g., Alacritty, Kitty) at the local worktree path. This fundamentally cannot work for remote workspaces since the path doesn't exist on the local machine.
 
-For remote workspaces, "Open in Terminal" should instead open the **built-in terminal pane** with a remote PTY. Implementation:
+For remote workspaces, the "open-terminal" action should show a modal explaining the situation and offering two choices:
+
+> **Remote Terminal**
+>
+> Remote terminals can only be opened in app. Alternatively you can SSH into the remote per usual.
+>
+> [ Open in App ]  [ Copy Remote Path ]
+
+- **Open in App** — Opens the built-in terminal pane and creates a remote terminal tab with a PTY on the server.
+- **Copy Remote Path** — Copies the remote worktree path to clipboard so the user can `ssh` and `cd` manually.
+
+For local workspaces, behavior is unchanged (opens external terminal directly, no modal).
+
+Implementation:
 
 1. `WorkspaceActions` needs access to `remote_connection_id` (passed as a prop or read from the store)
-2. When `remote_connection_id` is set, the "open-terminal" action toggles the built-in terminal panel visible and creates a new remote terminal tab, rather than calling `openWorkspaceInTerminal`
-3. For local workspaces, behavior is unchanged (opens external terminal)
+2. When `remote_connection_id` is set, the "open-terminal" action opens the `RemoteTerminalModal` instead of calling `openWorkspaceInTerminal`
+3. The modal's "Open in App" button toggles the built-in terminal panel visible and creates a new remote terminal tab
+4. The modal's "Copy Remote Path" button copies `worktreePath` to clipboard and closes the modal
 
-**"Copy Path"** — Currently copies the worktree path to clipboard. For remote workspaces, the path is on the remote machine. This still has value (e.g., for SSH access), but should indicate that it's a remote path. Change the label to "Copy Remote Path" and optionally prefix with the connection host, e.g., `host:/path/to/worktree`.
+**"Copy Path"** — For local workspaces, behavior is unchanged. For remote workspaces, label changes to "Copy Remote Path" to clarify context.
 
 `WorkspaceActions` props need to be extended:
 
@@ -268,14 +282,17 @@ Add four new functions that route PTY commands to a remote server via `sendRemot
 6. On write/resize/close: check `instance.connectionId` to choose local or remote function
 7. On cleanup: call correct close function based on `connectionId`
 
-### 4.4 Frontend: WorkspaceActions
+### 4.4 Frontend: WorkspaceActions + RemoteTerminalModal
 
-**Files**: `src/ui/src/components/chat/WorkspaceActions.tsx`, `src/ui/src/components/chat/ChatPanel.tsx`
+**Files**: `src/ui/src/components/chat/WorkspaceActions.tsx`, `src/ui/src/components/chat/ChatPanel.tsx`, `src/ui/src/components/modals/RemoteTerminalModal.tsx` (new)
 
 1. Add `remoteConnectionId` prop to `WorkspaceActionsProps`
 2. Pass `ws.remote_connection_id` from `ChatPanel` to `WorkspaceActions`
-3. "Open in Terminal" action: when `remoteConnectionId` is set, toggle the built-in terminal panel visible and create a remote terminal tab instead of calling `openWorkspaceInTerminal`
-4. "Copy Path" action: when `remoteConnectionId` is set, change label to "Copy Remote Path" and optionally prefix with connection host
+3. "Open in Terminal" action: when `remoteConnectionId` is set, open `RemoteTerminalModal` instead of calling `openWorkspaceInTerminal`
+4. `RemoteTerminalModal` displays explanatory text and two buttons:
+   - "Open in App" — toggles built-in terminal panel visible, creates a remote terminal tab, closes modal
+   - "Copy Remote Path" — copies `worktreePath` to clipboard, closes modal
+5. "Copy Path" action: when `remoteConnectionId` is set, relabel to "Copy Remote Path"
 
 ### 4.5 Frontend: Remote tab indicator
 
@@ -290,7 +307,9 @@ When rendering tab titles, check if the workspace is remote and prepend a globe 
 | `src-tauri/src/remote.rs` | Inject `connection_id` into `pty-output` event payloads |
 | `src/ui/src/services/tauri.ts` | Add `spawnRemotePty`, `writeRemotePty`, `resizeRemotePty`, `closeRemotePty` |
 | `src/ui/src/components/terminal/TerminalPanel.tsx` | Remote routing in spawn/write/resize/close, event disambiguation, ephemeral tab creation for remote workspaces, tab label |
-| `src/ui/src/components/chat/WorkspaceActions.tsx` | Enable "Open in Terminal" for remote workspaces |
+| `src/ui/src/components/chat/WorkspaceActions.tsx` | Add `remoteConnectionId` prop, show modal for remote "Open in Terminal", relabel "Copy Path" |
+| `src/ui/src/components/chat/ChatPanel.tsx` | Pass `ws.remote_connection_id` to `WorkspaceActions` |
+| `src/ui/src/components/modals/RemoteTerminalModal.tsx` | **New** — modal with "Open in App" and "Copy Remote Path" options |
 
 ## 6. Testing
 
