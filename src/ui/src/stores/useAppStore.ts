@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { DEFAULT_THEME_ID } from "../styles/themes";
 import type {
   Repository,
   Workspace,
@@ -485,7 +486,7 @@ export const useAppStore = create<AppState>((set) => ({
   setDefaultBranches: (branches) => set({ defaultBranches: branches }),
   terminalFontSize: 11,
   setTerminalFontSize: (size) => set({ terminalFontSize: size }),
-  currentThemeId: "default-dark",
+  currentThemeId: DEFAULT_THEME_ID,
   setCurrentThemeId: (id) => set({ currentThemeId: id }),
   lastMessages: {},
   setLastMessages: (msgs) => set({ lastMessages: msgs }),

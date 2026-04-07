@@ -46,10 +46,9 @@ function App() {
       .catch((err) => console.error("Failed to load terminal font size:", err));
     getAppSetting("theme")
       .then(async (savedThemeId) => {
-        const themeId = savedThemeId ?? "default-dark";
-        setCurrentThemeId(themeId);
         const allThemes = await loadAllThemes();
-        const theme = findTheme(allThemes, themeId);
+        const theme = findTheme(allThemes, savedThemeId ?? "default-dark");
+        setCurrentThemeId(theme.id);
         applyTheme(theme);
       })
       .catch((err) => console.error("Failed to load theme:", err));

@@ -63,15 +63,27 @@ export async function loadAllThemes(): Promise<ThemeDefinition[]> {
   } catch (e) {
     console.error("Failed to load user themes:", e);
   }
-  return [...BUILTIN_THEMES, ...userThemes];
+  const themesById = new Map<string, ThemeDefinition>();
+  for (const theme of BUILTIN_THEMES) {
+    themesById.set(theme.id, theme);
+  }
+  for (const theme of userThemes) {
+    themesById.set(theme.id, theme);
+  }
+  return Array.from(themesById.values());
 }
 
 export function findTheme(
   themes: ThemeDefinition[],
   id: string,
 ): ThemeDefinition {
-  return (
-    themes.find((t) => t.id === id) ??
-    themes.find((t) => t.id === DEFAULT_THEME_ID)!
-  );
+  const requested = themes.find((t) => t.id === id);
+  if (requested) return requested;
+
+  const fallback = themes.find((t) => t.id === DEFAULT_THEME_ID);
+  if (fallback) return fallback;
+
+  if (themes[0]) return themes[0];
+
+  throw new Error("No themes are available.");
 }
