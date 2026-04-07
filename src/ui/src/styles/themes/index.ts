@@ -5,6 +5,7 @@ import warmEmber from "./warm-ember.json";
 import highContrast from "./high-contrast.json";
 import rosePine from "./rose-pine.json";
 import rosePineMoon from "./rose-pine-moon.json";
+import rosePineDawn from "./rose-pine-dawn.json";
 
 export const BUILTIN_THEMES: ThemeDefinition[] = [
   defaultDark,
@@ -13,6 +14,7 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
   highContrast,
   rosePine,
   rosePineMoon,
+  rosePineDawn,
 ];
 
 export const DEFAULT_THEME_ID = "default-dark";
