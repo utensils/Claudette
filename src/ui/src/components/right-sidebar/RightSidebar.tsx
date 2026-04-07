@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { loadDiffFiles, sendRemoteCommand } from "../../services/tauri";
 import type { DiffFilesResult } from "../../services/tauri";
@@ -22,20 +22,38 @@ export function RightSidebar() {
   const prevIsRunning = useRef<boolean | undefined>(undefined);
 
   // Load diff files for either local or remote workspace
-  const loadDiff = async (workspaceId: string) => {
-    if (!ws) return;
+  const loadDiff = useCallback(
+    async (workspaceId: string) => {
+      if (!ws) return;
 
-    if (isRemote) {
-      const result = (await sendRemoteCommand(
-        ws.remote_connection_id!,
-        "load_diff_files",
-        { workspace_id: workspaceId }
-      )) as DiffFilesResult;
-      return result;
-    } else {
-      return await loadDiffFiles(workspaceId);
-    }
-  };
+      if (isRemote) {
+        const connId = ws.remote_connection_id;
+        if (!connId) return;
+
+        const result = (await sendRemoteCommand(
+          connId,
+          "load_diff_files",
+          { workspace_id: workspaceId }
+        )) as DiffFilesResult;
+
+        // Validate response shape to prevent runtime errors
+        if (
+          !result ||
+          typeof result !== "object" ||
+          !Array.isArray(result.files) ||
+          typeof result.merge_base !== "string"
+        ) {
+          console.error("Invalid diff files response from remote:", result);
+          return;
+        }
+
+        return result;
+      } else {
+        return await loadDiffFiles(workspaceId);
+      }
+    },
+    [ws, isRemote]
+  );
 
   useEffect(() => {
     if (!selectedWorkspaceId) return;
@@ -48,7 +66,7 @@ export function RightSidebar() {
         setDiffLoading(false);
       })
       .catch(() => setDiffLoading(false));
-  }, [selectedWorkspaceId, isRemote, setDiffFiles, setDiffLoading]);
+  }, [selectedWorkspaceId, loadDiff, setDiffFiles, setDiffLoading]);
 
   // Refresh diff files when agent stops running (after making changes)
   useEffect(() => {
@@ -60,17 +78,22 @@ export function RightSidebar() {
 
     // Debounce: wait a bit after agent stops to let file writes complete
     const timer = setTimeout(() => {
+      setDiffLoading(true);
       loadDiff(selectedWorkspaceId)
         .then((result) => {
           if (result) {
             setDiffFiles(result.files, result.merge_base);
           }
+          setDiffLoading(false);
         })
-        .catch((e) => console.error("Failed to refresh diff files:", e));
+        .catch((e) => {
+          console.error("Failed to refresh diff files:", e);
+          setDiffLoading(false);
+        });
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [isRunning, selectedWorkspaceId, isRemote, setDiffFiles]);
+  }, [isRunning, selectedWorkspaceId, loadDiff, setDiffFiles, setDiffLoading]);
 
   const statusLabel = (status: string | { Renamed: { from: string } }) => {
     if (typeof status === "string") {
