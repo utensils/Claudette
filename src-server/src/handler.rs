@@ -260,25 +260,29 @@ async fn handle_load_initial_data(state: &ServerState) -> Result<serde_json::Val
     let default_branches: std::collections::HashMap<String, String> =
         branch_results.into_iter().flatten().collect();
 
-    // Resolve current branch for each workspace worktree.
+    // Resolve current branch for each active workspace with a valid worktree path.
     let workspace_branch_futures: Vec<_> = workspaces
         .iter()
+        .filter(|ws| ws.status == claudette::model::WorkspaceStatus::Active)
         .filter_map(|ws| {
-            ws.worktree_path.as_ref().map(|path| {
-                let id = ws.id.clone();
-                let path = path.clone();
-                async move {
-                    claudette::git::current_branch(&path)
-                        .await
-                        .ok()
-                        .map(|b| (id, b))
-                }
-            })
+            ws.worktree_path
+                .as_ref()
+                .filter(|path| std::path::Path::new(path).is_dir())
+                .map(|path| {
+                    let id = ws.id.clone();
+                    let path = path.clone();
+                    async move {
+                        match claudette::git::current_branch(&path).await {
+                            Ok(branch) => (id, branch),
+                            Err(_) => (id, "(detached)".to_string()),
+                        }
+                    }
+                })
         })
         .collect();
     let workspace_branch_results = futures_util::future::join_all(workspace_branch_futures).await;
     let workspace_current_branches: std::collections::HashMap<String, String> =
-        workspace_branch_results.into_iter().flatten().collect();
+        workspace_branch_results.into_iter().collect();
 
     // Update workspace branch_name with current branch from worktree.
     let workspaces: Vec<_> = workspaces
