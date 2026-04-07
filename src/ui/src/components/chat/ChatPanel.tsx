@@ -33,12 +33,10 @@ export function ChatPanel() {
   const addChatMessage = useAppStore((s) => s.addChatMessage);
   const streamingContent = useAppStore((s) => s.streamingContent);
   const toolActivities = useAppStore((s) => s.toolActivities);
-  const toggleToolActivityCollapsed = useAppStore(
-    (s) => s.toggleToolActivityCollapsed
-  );
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentTurnCollapsed, setCurrentTurnCollapsed] = useState(true);
 
   // Prompt history: stores past user inputs per workspace.
   const historyRef = useRef<Record<string, string[]>>({});
@@ -161,6 +159,15 @@ export function ChatPanel() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, streaming]);
+
+  // Collapse current turn when a new turn starts (activities goes from 0 to non-zero)
+  const prevActivitiesLengthRef = useRef(0);
+  useEffect(() => {
+    if (isRunning && activities.length > 0 && prevActivitiesLengthRef.current === 0) {
+      setCurrentTurnCollapsed(true);
+    }
+    prevActivitiesLengthRef.current = activities.length;
+  }, [isRunning, activities.length]);
 
   if (!ws) return null;
 
@@ -415,33 +422,45 @@ export function ChatPanel() {
             ))}
 
             {activities.length > 0 && (
-              <div className={styles.toolActivities}>
-                {activities.map((act, i) => (
-                  <div key={act.toolUseId} className={styles.toolActivity}>
-                    <button
-                      className={styles.toolHeader}
-                      onClick={() =>
-                        selectedWorkspaceId &&
-                        toggleToolActivityCollapsed(selectedWorkspaceId, i)
+              <div className={styles.toolActivities} aria-live="polite" aria-atomic="true">
+                <div className={styles.turnSummary}>
+                  <div
+                    className={styles.turnHeader}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setCurrentTurnCollapsed(!currentTurnCollapsed)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setCurrentTurnCollapsed(!currentTurnCollapsed);
                       }
-                    >
-                      <span className={styles.toolChevron}>
-                        {act.collapsed ? ">" : "v"}
-                      </span>
-                      <span className={styles.toolName}>{act.toolName}</span>
-                      {act.summary && (
-                        <span className={styles.toolSummary}>
-                          {act.summary}
-                        </span>
-                      )}
-                    </button>
-                    {!act.collapsed && (
-                      <pre className={styles.toolContent}>
-                        {act.resultText || act.inputJson || "..."}
-                      </pre>
-                    )}
+                    }}
+                  >
+                    <span className={styles.toolChevron}>
+                      {currentTurnCollapsed ? "›" : "⌄"}
+                    </span>
+                    <span className={styles.turnLabel}>
+                      {activities.length} tool call{activities.length !== 1 ? "s" : ""}
+                      {isRunning && <span style={{ color: "var(--accent-dim)" }}> in progress</span>}
+                    </span>
                   </div>
-                ))}
+                  {!currentTurnCollapsed && (
+                    <div className={styles.turnActivities}>
+                      {activities.map((act) => (
+                        <div key={act.toolUseId} className={styles.toolActivity}>
+                          <div className={styles.toolHeader}>
+                            <span className={styles.toolName}>{act.toolName}</span>
+                            {act.summary && (
+                              <span className={styles.toolSummary}>
+                                {act.summary}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
