@@ -94,14 +94,14 @@ body,
 
 /* Selection */
 ::selection {
-  background: rgba(0, 229, 204, 0.3);
+  background: rgba(var(--accent-primary-rgb), 0.3);
   color: var(--text-primary);
 }
 
 /* Focus ring */
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(0, 229, 204, 0.5);
+  box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.5);
 }
 
 /* Scrollbars */
@@ -120,7 +120,7 @@ body,
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 229, 204, 0.25);
+  background: rgba(var(--accent-primary-rgb), 0.25);
 }
 
 /* Global keyframes */
@@ -142,10 +142,10 @@ body,
 
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 4px rgba(0, 229, 204, 0.4);
+    box-shadow: 0 0 4px rgba(var(--accent-primary-rgb), 0.4);
   }
   50% {
-    box-shadow: 0 0 10px rgba(0, 229, 204, 0.7);
+    box-shadow: 0 0 10px rgba(var(--accent-primary-rgb), 0.7);
   }
 }
 

@@ -34,7 +34,7 @@
 .chipActive {
   background: var(--toolbar-active);
   color: var(--toolbar-active-text);
-  border-color: rgba(0, 229, 204, 0.15);
+  border-color: rgba(var(--accent-primary-rgb), 0.15);
 }
 
 .chipActive:hover:not(:disabled) {

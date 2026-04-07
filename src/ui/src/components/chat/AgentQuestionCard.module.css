@@ -1,5 +1,5 @@
 .card {
-  border: 1px solid rgba(0, 229, 204, 0.2);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
   border-radius: 8px;
   padding: 16px;
   background: var(--accent-bg);
@@ -74,7 +74,7 @@
   margin-bottom: 12px;
   padding: 8px 14px;
   background: var(--accent-bg-strong);
-  border: 1px solid rgba(0, 229, 204, 0.2);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
   border-radius: 6px;
   color: var(--accent-primary);
   font-size: 13px;
@@ -84,7 +84,7 @@
 }
 
 .confirmBtn:hover {
-  background: rgba(0, 229, 204, 0.2);
+  background: rgba(var(--accent-primary-rgb), 0.2);
 }
 
 .divider {
@@ -126,7 +126,7 @@
 
 .freeformInput:focus {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(0, 229, 204, 0.1);
+  box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.1);
 }
 
 .freeformInput::placeholder {
@@ -135,7 +135,7 @@
 
 .submitBtn {
   background: var(--accent-bg-strong);
-  border: 1px solid rgba(0, 229, 204, 0.2);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
   color: var(--accent-primary);
   padding: 8px 14px;
   border-radius: 6px;
@@ -147,7 +147,7 @@
 }
 
 .submitBtn:hover:not(:disabled) {
-  background: rgba(0, 229, 204, 0.2);
+  background: rgba(var(--accent-primary-rgb), 0.2);
 }
 
 .submitBtn:disabled {
