@@ -209,7 +209,29 @@ Implementation: `TerminalPanel` checks `workspace.remote_connection_id` before c
 
 ### 3.6 WorkspaceActions Integration
 
-Update `WorkspaceActions` to enable "Open in Terminal" for remote workspaces. The action should work identically from the user's perspective — open the terminal panel and create a tab — but the creation path must branch based on workspace type: local workspaces create a persisted DB-backed tab, while remote workspaces create an in-memory frontend-only tab. The `TerminalPanel` handles the PTY routing internally based on `workspace.remote_connection_id`.
+`WorkspaceActions` currently has two actions, both of which need remote-aware behavior:
+
+**"Open in Terminal"** — Currently calls `openWorkspaceInTerminal(worktreePath)`, which opens an **external** terminal application (e.g., Alacritty, Kitty) at the local worktree path. This fundamentally cannot work for remote workspaces since the path doesn't exist on the local machine.
+
+For remote workspaces, "Open in Terminal" should instead open the **built-in terminal pane** with a remote PTY. Implementation:
+
+1. `WorkspaceActions` needs access to `remote_connection_id` (passed as a prop or read from the store)
+2. When `remote_connection_id` is set, the "open-terminal" action toggles the built-in terminal panel visible and creates a new remote terminal tab, rather than calling `openWorkspaceInTerminal`
+3. For local workspaces, behavior is unchanged (opens external terminal)
+
+**"Copy Path"** — Currently copies the worktree path to clipboard. For remote workspaces, the path is on the remote machine. This still has value (e.g., for SSH access), but should indicate that it's a remote path. Change the label to "Copy Remote Path" and optionally prefix with the connection host, e.g., `host:/path/to/worktree`.
+
+`WorkspaceActions` props need to be extended:
+
+```typescript
+interface WorkspaceActionsProps {
+  worktreePath: string | null;
+  remoteConnectionId: string | null; // NEW
+  disabled?: boolean;
+}
+```
+
+`ChatPanel` already has access to `ws.remote_connection_id` and passes it through.
 
 ### 3.7 Visual Distinction
 
@@ -248,9 +270,12 @@ Add four new functions that route PTY commands to a remote server via `sendRemot
 
 ### 4.4 Frontend: WorkspaceActions
 
-**File**: `src/ui/src/components/chat/WorkspaceActions.tsx`
+**Files**: `src/ui/src/components/chat/WorkspaceActions.tsx`, `src/ui/src/components/chat/ChatPanel.tsx`
 
-Remove the guard that disables "Open in Terminal" for remote workspaces (if one exists), or ensure the action works for remote workspaces by opening the terminal panel as normal.
+1. Add `remoteConnectionId` prop to `WorkspaceActionsProps`
+2. Pass `ws.remote_connection_id` from `ChatPanel` to `WorkspaceActions`
+3. "Open in Terminal" action: when `remoteConnectionId` is set, toggle the built-in terminal panel visible and create a remote terminal tab instead of calling `openWorkspaceInTerminal`
+4. "Copy Path" action: when `remoteConnectionId` is set, change label to "Copy Remote Path" and optionally prefix with connection host
 
 ### 4.5 Frontend: Remote tab indicator
 
