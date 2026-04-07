@@ -470,6 +470,7 @@ function RemoteConnectionGroup({
   const repoCollapsed = useAppStore((s) => s.repoCollapsed);
   const toggleRepoCollapsed = useAppStore((s) => s.toggleRepoCollapsed);
   const creatingRef = useRef<Set<string>>(new Set());
+  const archivingRef = useRef<Set<string>>(new Set());
 
   const remoteRepos = repositories.filter(
     (r) => r.remote_connection_id === conn.id
@@ -504,6 +505,8 @@ function RemoteConnectionGroup({
   };
 
   const handleArchive = async (wsId: string) => {
+    if (archivingRef.current.has(wsId)) return;
+    archivingRef.current.add(wsId);
     try {
       await sendRemoteCommand(conn.id, "archive_workspace", {
         workspace_id: wsId,
@@ -516,6 +519,8 @@ function RemoteConnectionGroup({
       if (selectedWorkspaceId === wsId) selectWorkspace(null);
     } catch (e) {
       console.error("Failed to archive remote workspace:", e);
+    } finally {
+      archivingRef.current.delete(wsId);
     }
   };
 
