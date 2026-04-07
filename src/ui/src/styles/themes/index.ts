@@ -9,6 +9,7 @@ import rosePineDawn from "./rose-pine-dawn.json";
 import solarizedDark from "./solarized-dark.json";
 import solarizedLight from "./solarized-light.json";
 import jellybeans from "./jellybeans.json";
+import jellybeansMuted from "./jellybeans-muted.json";
 
 export const BUILTIN_THEMES: ThemeDefinition[] = [
   defaultDark,
@@ -21,6 +22,7 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
   solarizedDark,
   solarizedLight,
   jellybeans,
+  jellybeansMuted,
 ];
 
 export const DEFAULT_THEME_ID = "default-dark";
