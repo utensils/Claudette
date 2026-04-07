@@ -33,12 +33,10 @@ export function ChatPanel() {
   const addChatMessage = useAppStore((s) => s.addChatMessage);
   const streamingContent = useAppStore((s) => s.streamingContent);
   const toolActivities = useAppStore((s) => s.toolActivities);
-  const toggleToolActivityCollapsed = useAppStore(
-    (s) => s.toggleToolActivityCollapsed
-  );
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [currentTurnCollapsed, setCurrentTurnCollapsed] = useState(true);
 
   // Prompt history: stores past user inputs per workspace.
   const historyRef = useRef<Record<string, string[]>>({});
@@ -161,6 +159,13 @@ export function ChatPanel() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, streaming]);
+
+  // Collapse current turn when agent starts running (new activities)
+  useEffect(() => {
+    if (isRunning && activities.length > 0) {
+      setCurrentTurnCollapsed(true);
+    }
+  }, [isRunning, activities.length]);
 
   if (!ws) return null;
 
@@ -415,50 +420,46 @@ export function ChatPanel() {
             ))}
 
             {activities.length > 0 && (
-              isRunning ? (
-                // During execution: show collapsed summary with count
-                <div className={styles.toolActivities}>
-                  <div className={styles.toolActivity}>
-                    <div className={styles.toolHeader}>
-                      <span className={styles.toolChevron}>›</span>
-                      <span className={styles.toolName}>
-                        {activities.length} tool call{activities.length !== 1 ? "s" : ""}
-                      </span>
-                      <span className={styles.toolSummary}>in progress</span>
-                    </div>
+              <div className={styles.toolActivities}>
+                <div className={styles.turnSummary}>
+                  <div
+                    className={styles.turnHeader}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setCurrentTurnCollapsed(!currentTurnCollapsed)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setCurrentTurnCollapsed(!currentTurnCollapsed);
+                      }
+                    }}
+                  >
+                    <span className={styles.toolChevron}>
+                      {currentTurnCollapsed ? "›" : "⌄"}
+                    </span>
+                    <span className={styles.turnLabel}>
+                      {activities.length} tool call{activities.length !== 1 ? "s" : ""}
+                      {isRunning && <span style={{ color: "var(--accent-dim)" }}> in progress</span>}
+                    </span>
                   </div>
-                </div>
-              ) : (
-                // After execution: show individual expandable tool calls
-                <div className={styles.toolActivities}>
-                  {activities.map((act, i) => (
-                    <div key={act.toolUseId} className={styles.toolActivity}>
-                      <button
-                        className={styles.toolHeader}
-                        onClick={() =>
-                          selectedWorkspaceId &&
-                          toggleToolActivityCollapsed(selectedWorkspaceId, i)
-                        }
-                      >
-                        <span className={styles.toolChevron}>
-                          {act.collapsed ? ">" : "v"}
-                        </span>
-                        <span className={styles.toolName}>{act.toolName}</span>
-                        {act.summary && (
-                          <span className={styles.toolSummary}>
-                            {act.summary}
-                          </span>
-                        )}
-                      </button>
-                      {!act.collapsed && (
-                        <pre className={styles.toolContent}>
-                          {act.resultText || act.inputJson || "..."}
-                        </pre>
-                      )}
+                  {!currentTurnCollapsed && (
+                    <div className={styles.turnActivities}>
+                      {activities.map((act) => (
+                        <div key={act.toolUseId} className={styles.toolActivity}>
+                          <div className={styles.toolHeader}>
+                            <span className={styles.toolName}>{act.toolName}</span>
+                            {act.summary && (
+                              <span className={styles.toolSummary}>
+                                {act.summary}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )
+              </div>
             )}
 
             {streaming && (
