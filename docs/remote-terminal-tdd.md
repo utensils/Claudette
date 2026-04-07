@@ -58,8 +58,9 @@ The server-side PTY infrastructure is complete. The gap is entirely on the clien
 
 1. `TerminalPanel` always calls local Tauri commands (`spawn_pty`, `write_pty`, etc.) — no remote routing
 2. No way to distinguish local vs remote PTY IDs (both are `u64` counters starting at 1, so they can collide)
-3. Terminal tab creation always goes through the local database
+3. Terminal tab creation always goes through the local database, which has a FK constraint against `workspaces(id)` — remote workspaces are not in the local DB
 4. `WorkspaceActions` "Open in Terminal" doesn't work for remote workspaces
+5. Local `spawn_pty` Tauri command hard-codes PTY size to 24x80 and does not accept `rows`/`cols` — the server-side version does accept them. This mismatch is acceptable: the local flow relies on an immediate `resize_pty` call after spawn (triggered by `FitAddon.fit()`), and the same pattern will work for remote. No change needed to the local command for this feature.
 
 ## 3. Design
 
@@ -83,14 +84,23 @@ The `pty-output` event listener already receives events from both local Tauri em
 Instead of branching in every call site, introduce a thin routing layer in the service module:
 
 ```typescript
-// New functions that handle local/remote routing internally
-export function spawnRemotePty(
+// spawnRemotePty must unwrap and validate the server response,
+// which returns { pty_id: number } rather than a bare number.
+export async function spawnRemotePty(
   connectionId: string,
   workspaceId: string,
   cwd: string,
   rows: number,
   cols: number,
-): Promise<number>
+): Promise<number> {
+  const result = await sendRemoteCommand(connectionId, "spawn_pty", {
+    workspace_id: workspaceId, cwd, rows, cols,
+  });
+  if (result === null || typeof result !== "object" || !("pty_id" in result)) {
+    throw new Error("Invalid spawn_pty response: expected { pty_id: number }");
+  }
+  return (result as { pty_id: number }).pty_id;
+}
 
 export function writeRemotePty(
   connectionId: string,
@@ -186,13 +196,20 @@ while let Ok(event) = event_rx.recv().await {
 
 ### 3.5 Terminal Tab Creation for Remote Workspaces
 
-Local terminal tabs are persisted in the local SQLite database via `create_terminal_tab`. For remote workspaces, tabs should be managed locally (they're UI state for the local client, not meaningful to the server). The tab's association with a remote workspace is implicit through the `workspace_id`.
+Local terminal tabs are persisted in the local SQLite database via `create_terminal_tab`. The `terminal_tabs` table has a foreign key on `workspace_id` referencing `workspaces(id)` with `PRAGMA foreign_keys=ON`. Remote workspaces are never inserted into the local `workspaces` table (they exist only in the frontend Zustand store), so calling `create_terminal_tab` with a remote workspace ID would violate the FK constraint.
 
-No changes needed to terminal tab DB operations — they work the same regardless of whether the workspace is local or remote.
+Therefore:
+
+- **Local workspace terminal tabs** continue to use the existing SQLite-backed `create_terminal_tab` / `list_terminal_tabs` flow.
+- **Remote workspace terminal tabs** are ephemeral client-side state managed purely in the Zustand store. They must not call the DB-backed terminal tab APIs.
+- The tab still carries the remote `workspace_id` in frontend state so the UI can group, focus, and route PTY traffic correctly.
+- On app restart, local terminal tabs are restored from SQLite as they are today; remote terminal tabs are not restored (reconnecting to the server provides a fresh state).
+
+Implementation: `TerminalPanel` checks `workspace.remote_connection_id` before calling `createTerminalTab` / `listTerminalTabs`. For remote workspaces, it generates a tab ID locally (e.g., `Date.now()`) and adds it directly to the Zustand store.
 
 ### 3.6 WorkspaceActions Integration
 
-Update `WorkspaceActions` to enable "Open in Terminal" for remote workspaces. The action should work identically — open the terminal panel and create a tab. The `TerminalPanel` handles the routing internally based on `workspace.remote_connection_id`.
+Update `WorkspaceActions` to enable "Open in Terminal" for remote workspaces. The action should work identically from the user's perspective — open the terminal panel and create a tab — but the creation path must branch based on workspace type: local workspaces create a persisted DB-backed tab, while remote workspaces create an in-memory frontend-only tab. The `TerminalPanel` handles the PTY routing internally based on `workspace.remote_connection_id`.
 
 ### 3.7 Visual Distinction
 
@@ -223,10 +240,11 @@ Add four new functions that route PTY commands to a remote server via `sendRemot
 
 1. Read `workspace.remote_connection_id` from the store
 2. Extend `TermInstance` with `connectionId: string | null`
-3. On spawn: route to `spawnRemotePty` or `spawnPty` based on `remote_connection_id`
-4. On `pty-output` listener: match events by both `pty_id` and `connection_id` (local events have no `connection_id` field)
-5. On write/resize/close: check `instance.connectionId` to choose local or remote function
-6. On cleanup: call correct close function based on `connectionId`
+3. On tab creation: skip `createTerminalTab` DB call for remote workspaces; generate a local tab ID and add directly to Zustand store
+4. On spawn: route to `spawnRemotePty` or `spawnPty` based on `remote_connection_id`
+5. On `pty-output` listener: match events by both `pty_id` and `connection_id` (local events have no `connection_id` field)
+6. On write/resize/close: check `instance.connectionId` to choose local or remote function
+7. On cleanup: call correct close function based on `connectionId`
 
 ### 4.4 Frontend: WorkspaceActions
 
@@ -246,7 +264,7 @@ When rendering tab titles, check if the workspace is remote and prepend a globe 
 |------|--------|
 | `src-tauri/src/remote.rs` | Inject `connection_id` into `pty-output` event payloads |
 | `src/ui/src/services/tauri.ts` | Add `spawnRemotePty`, `writeRemotePty`, `resizeRemotePty`, `closeRemotePty` |
-| `src/ui/src/components/terminal/TerminalPanel.tsx` | Remote routing in spawn/write/resize/close, event disambiguation, tab label |
+| `src/ui/src/components/terminal/TerminalPanel.tsx` | Remote routing in spawn/write/resize/close, event disambiguation, ephemeral tab creation for remote workspaces, tab label |
 | `src/ui/src/components/chat/WorkspaceActions.tsx` | Enable "Open in Terminal" for remote workspaces |
 
 ## 6. Testing
