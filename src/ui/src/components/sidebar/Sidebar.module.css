@@ -231,39 +231,25 @@
 .footer {
   display: flex;
   align-items: center;
+  justify-content: center;
+  gap: 4px;
   padding: 8px 12px;
   border-top: 1px solid var(--sidebar-border);
 }
 
-.addRepoBtn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 4px 0;
-  flex: 1;
-  text-align: left;
-  transition: color var(--transition-fast);
-}
-
-.addRepoBtn:hover {
-  color: var(--accent-primary);
-}
-
-.settingsBtn {
+.footerBtn {
   background: none;
   border: none;
   color: var(--text-dim);
   cursor: pointer;
-  padding: 4px;
+  padding: 6px 8px;
   display: flex;
   align-items: center;
   border-radius: 4px;
   transition: color var(--transition-fast), background var(--transition-fast);
 }
 
-.settingsBtn:hover {
+.footerBtn:hover {
   color: var(--accent-primary);
   background: var(--accent-bg);
 }
