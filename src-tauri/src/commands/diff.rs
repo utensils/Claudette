@@ -40,15 +40,24 @@ pub async fn load_diff_files(
         .await
         .map_err(|e| e.to_string())?;
 
-    let current_branch = git::current_branch(worktree_path)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Handle detached HEAD: fall back to "HEAD" for diff calculation
+    let current_branch = match git::current_branch(worktree_path).await {
+        Ok(branch) => branch,
+        Err(e) => {
+            let err = e.to_string();
+            if err.to_lowercase().contains("detached") {
+                "HEAD".to_string()
+            } else {
+                return Err(err);
+            }
+        }
+    };
 
     // If we're on the base branch, there are no changes to show
     if current_branch == base_branch {
         return Ok(DiffFilesResult {
             files: vec![],
-            merge_base: String::new(),
+            merge_base: base_branch.clone(),
         });
     }
 
