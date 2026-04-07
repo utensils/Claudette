@@ -554,8 +554,8 @@ function ChatInputArea({
 
     // Reset height to auto to get the correct scrollHeight
     textarea.style.height = "auto";
-    // Set height to scrollHeight to fit content, respecting max-height in CSS
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+    // Set height to scrollHeight; CSS max-height will cap it
+    textarea.style.height = `${textarea.scrollHeight}px`;
   }, [chatInput]);
 
   const handleSend = () => {
