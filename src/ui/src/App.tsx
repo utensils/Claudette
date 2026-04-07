@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAppStore } from "./stores/useAppStore";
 import { loadInitialData, getAppSetting, listRemoteConnections, listDiscoveredServers, getLocalServerStatus } from "./services/tauri";
+import { applyTheme, loadAllThemes, findTheme } from "./utils/theme";
 import { AppLayout } from "./components/layout/AppLayout";
 import "./styles/theme.css";
 
@@ -15,6 +16,7 @@ function App() {
   const setDiscoveredServers = useAppStore((s) => s.setDiscoveredServers);
   const setLocalServerRunning = useAppStore((s) => s.setLocalServerRunning);
   const setLocalServerConnectionString = useAppStore((s) => s.setLocalServerConnectionString);
+  const setCurrentThemeId = useAppStore((s) => s.setCurrentThemeId);
 
   useEffect(() => {
     loadInitialData().then((data) => {
@@ -42,6 +44,15 @@ function App() {
         }
       })
       .catch((err) => console.error("Failed to load terminal font size:", err));
+    getAppSetting("theme")
+      .then(async (savedThemeId) => {
+        const themeId = savedThemeId ?? "default-dark";
+        setCurrentThemeId(themeId);
+        const allThemes = await loadAllThemes();
+        const theme = findTheme(allThemes, themeId);
+        applyTheme(theme);
+      })
+      .catch((err) => console.error("Failed to load theme:", err));
     listRemoteConnections()
       .then(setRemoteConnections)
       .catch((err) => console.error("Failed to load remote connections:", err));
@@ -64,7 +75,7 @@ function App() {
     return () => {
       window.clearInterval(discoveredServersPollId);
     };
-  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages, setRemoteConnections, setDiscoveredServers, setLocalServerRunning, setLocalServerConnectionString]);
+  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages, setRemoteConnections, setDiscoveredServers, setLocalServerRunning, setLocalServerConnectionString, setCurrentThemeId]);
 
   return <AppLayout />;
 }

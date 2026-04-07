@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { setAppSetting } from "../../services/tauri";
+import { applyTheme, loadAllThemes, findTheme } from "../../utils/theme";
+import type { ThemeDefinition } from "../../types/theme";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
 
@@ -10,11 +12,35 @@ export function AppSettingsModal() {
   const setWorktreeBaseDir = useAppStore((s) => s.setWorktreeBaseDir);
   const terminalFontSize = useAppStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);
+  const currentThemeId = useAppStore((s) => s.currentThemeId);
+  const setCurrentThemeId = useAppStore((s) => s.setCurrentThemeId);
 
   const [path, setPath] = useState(worktreeBaseDir);
   const [fontSize, setFontSize] = useState(String(terminalFontSize));
+  const [selectedThemeId, setSelectedThemeId] = useState(currentThemeId);
+  const [availableThemes, setAvailableThemes] = useState<ThemeDefinition[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const originalThemeIdRef = useRef(currentThemeId);
+
+  useEffect(() => {
+    loadAllThemes().then(setAvailableThemes);
+  }, []);
+
+  const handleThemeChange = (id: string) => {
+    setSelectedThemeId(id);
+    const theme = findTheme(availableThemes, id);
+    applyTheme(theme);
+  };
+
+  const handleCancel = () => {
+    if (selectedThemeId !== originalThemeIdRef.current) {
+      const theme = findTheme(availableThemes, originalThemeIdRef.current);
+      applyTheme(theme);
+    }
+    closeModal();
+  };
 
   const handleSave = async () => {
     if (!path.trim()) return;
@@ -34,6 +60,9 @@ export function AppSettingsModal() {
       await setAppSetting("terminal_font_size", String(size));
       setTerminalFontSize(size);
 
+      await setAppSetting("theme", selectedThemeId);
+      setCurrentThemeId(selectedThemeId);
+
       closeModal();
     } catch (e) {
       setError(String(e));
@@ -43,7 +72,7 @@ export function AppSettingsModal() {
   };
 
   return (
-    <Modal title="Settings" onClose={closeModal}>
+    <Modal title="Settings" onClose={handleCancel}>
       <div className={shared.field}>
         <label className={shared.label}>Worktree Base Directory</label>
         <input
@@ -70,6 +99,23 @@ export function AppSettingsModal() {
           Appearance
         </div>
         <div className={shared.field}>
+          <label className={shared.label}>Color Theme</label>
+          <select
+            className={shared.input}
+            value={selectedThemeId}
+            onChange={(e) => handleThemeChange(e.target.value)}
+          >
+            {availableThemes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <div className={shared.hint}>
+            Add custom themes to ~/.claudette/themes/
+          </div>
+        </div>
+        <div className={shared.field}>
           <label className={shared.label}>Terminal Font Size</label>
           <input
             className={shared.input}
@@ -86,7 +132,7 @@ export function AppSettingsModal() {
 
       {error && <div className={shared.error}>{error}</div>}
       <div className={shared.actions}>
-        <button className={shared.btn} onClick={closeModal}>
+        <button className={shared.btn} onClick={handleCancel}>
           Cancel
         </button>
         <button
