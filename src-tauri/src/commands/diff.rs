@@ -53,8 +53,11 @@ pub async fn load_diff_files(
         }
     };
 
+    eprintln!("[DEBUG load_diff_files] workspace_id={}, base_branch='{}', current_branch='{}'", workspace_id, base_branch, current_branch);
+
     // If we're on the base branch, there are no changes to show
     if current_branch == base_branch {
+        eprintln!("[DEBUG load_diff_files] On base branch, returning empty");
         return Ok(DiffFilesResult {
             files: vec![],
             merge_base: base_branch.clone(),
@@ -65,9 +68,13 @@ pub async fn load_diff_files(
         .await
         .map_err(|e| e.to_string())?;
 
+    eprintln!("[DEBUG load_diff_files] merge_base='{}'", merge_base);
+
     let files = diff::changed_files(worktree_path, &merge_base)
         .await
         .map_err(|e| e.to_string())?;
+
+    eprintln!("[DEBUG load_diff_files] found {} files", files.len());
 
     Ok(DiffFilesResult { files, merge_base })
 }
