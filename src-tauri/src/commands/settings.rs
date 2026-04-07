@@ -1,8 +1,20 @@
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use claudette::db::Database;
 
 use crate::state::AppState;
+
+#[derive(Serialize, Deserialize)]
+pub struct ThemeDefinition {
+    pub id: String,
+    pub name: String,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    pub colors: HashMap<String, String>,
+}
 
 #[tauri::command]
 pub async fn get_app_setting(
@@ -30,4 +42,70 @@ pub async fn set_app_setting(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_user_themes() -> Result<Vec<ThemeDefinition>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let themes_dir = dirs::home_dir()
+            .ok_or("Could not determine home directory")?
+            .join(".claudette")
+            .join("themes");
+
+        if !themes_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut themes = Vec::new();
+        let entries = std::fs::read_dir(&themes_dir).map_err(|e| e.to_string())?;
+        const MAX_THEME_FILE_BYTES: u64 = 1024 * 1024;
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("[themes] Skipping unreadable directory entry: {e}");
+                    continue;
+                }
+            };
+
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "json") {
+                continue;
+            }
+
+            match std::fs::metadata(&path) {
+                Ok(meta) if meta.len() > MAX_THEME_FILE_BYTES => {
+                    eprintln!(
+                        "[themes] Skipping {}: file too large ({} bytes)",
+                        path.display(),
+                        meta.len()
+                    );
+                    continue;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("[themes] Skipping {}: {e}", path.display());
+                    continue;
+                }
+            }
+
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[themes] Skipping {}: {e}", path.display());
+                    continue;
+                }
+            };
+
+            match serde_json::from_str::<ThemeDefinition>(&content) {
+                Ok(theme) => themes.push(theme),
+                Err(e) => eprintln!("[themes] Skipping {}: {e}", path.display()),
+            }
+        }
+
+        Ok(themes)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { DEFAULT_THEME_ID } from "../styles/themes";
 import type {
   Repository,
   Workspace,
@@ -167,6 +168,8 @@ interface AppState {
   setDefaultBranches: (branches: Record<string, string>) => void;
   terminalFontSize: number;
   setTerminalFontSize: (size: number) => void;
+  currentThemeId: string;
+  setCurrentThemeId: (id: string) => void;
   lastMessages: Record<string, ChatMessage>;
   setLastMessages: (msgs: Record<string, ChatMessage>) => void;
 
@@ -483,6 +486,8 @@ export const useAppStore = create<AppState>((set) => ({
   setDefaultBranches: (branches) => set({ defaultBranches: branches }),
   terminalFontSize: 11,
   setTerminalFontSize: (size) => set({ terminalFontSize: size }),
+  currentThemeId: DEFAULT_THEME_ID,
+  setCurrentThemeId: (id) => set({ currentThemeId: id }),
   lastMessages: {},
   setLastMessages: (msgs) => set({ lastMessages: msgs }),
 

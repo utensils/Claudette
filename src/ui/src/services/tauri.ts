@@ -248,6 +248,12 @@ export function setAppSetting(key: string, value: string): Promise<void> {
   return invoke("set_app_setting", { key, value });
 }
 
+import type { ThemeDefinition } from "../types/theme";
+
+export function listUserThemes(): Promise<ThemeDefinition[]> {
+  return invoke("list_user_themes");
+}
+
 // -- Remote --
 
 export function listRemoteConnections(): Promise<RemoteConnectionInfo[]> {

@@ -469,7 +469,7 @@
 
 .input:focus {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(0, 229, 204, 0.1), var(--accent-glow);
+  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.1), var(--accent-glow);
 }
 
 .input::placeholder {
@@ -478,7 +478,7 @@
 
 .sendBtn {
   background: var(--accent-bg-strong);
-  border: 1px solid rgba(0, 229, 204, 0.2);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
   color: var(--accent-primary);
   padding: 8px 18px;
   border-radius: 8px;

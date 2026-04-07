@@ -106,6 +106,7 @@ fn main() {
             // Settings
             commands::settings::get_app_setting,
             commands::settings::set_app_setting,
+            commands::settings::list_user_themes,
             // Remote
             commands::remote::list_remote_connections,
             commands::remote::pair_with_server,
