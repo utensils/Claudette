@@ -281,6 +281,7 @@ pub async fn start_local_server(
     // Read from the sidecar output until we find the connection string
     let mut connection_string = String::new();
     let mut stderr_output = String::new();
+    let mut stdout_output = String::new();
     let timeout = tokio::time::Duration::from_secs(10);
     let deadline = tokio::time::Instant::now() + timeout;
 
@@ -294,6 +295,9 @@ pub async fn start_local_server(
         match event {
             CommandEvent::Stdout(line_bytes) => {
                 let line = String::from_utf8_lossy(&line_bytes);
+                stdout_output.push_str(&line);
+                eprintln!("[server stdout] {}", line.trim());
+
                 let trimmed = line.trim();
                 if trimmed.starts_with("claudette://") {
                     connection_string = trimmed.to_string();
@@ -301,19 +305,26 @@ pub async fn start_local_server(
                 }
             }
             CommandEvent::Stderr(line_bytes) => {
-                // Capture stderr for error reporting
-                stderr_output.push_str(&String::from_utf8_lossy(&line_bytes));
+                let line = String::from_utf8_lossy(&line_bytes);
+                stderr_output.push_str(&line);
+                eprintln!("[server stderr] {}", line.trim());
             }
             CommandEvent::Terminated(payload) => {
+                eprintln!("[server terminated] code: {:?}", payload.code);
+                eprintln!("[server stdout captured]:\n{}", stdout_output);
+                eprintln!("[server stderr captured]:\n{}", stderr_output);
+
                 let exit_info = if let Some(code) = payload.code {
                     format!("exit code {}", code)
                 } else {
                     "unknown reason".to_string()
                 };
-                let error_msg = if stderr_output.is_empty() {
-                    format!("Server process exited before printing connection string ({})", exit_info)
+                let error_msg = if stderr_output.is_empty() && stdout_output.is_empty() {
+                    format!("Server process exited before printing any output ({})", exit_info)
+                } else if stderr_output.is_empty() {
+                    format!("Server process exited ({}).\nStdout:\n{}", exit_info, stdout_output.trim())
                 } else {
-                    format!("Server process exited ({}):\n{}", exit_info, stderr_output.trim())
+                    format!("Server process exited ({}).\nStderr:\n{}", exit_info, stderr_output.trim())
                 };
                 return Err(error_msg);
             }
