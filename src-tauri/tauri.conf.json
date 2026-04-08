@@ -5,8 +5,7 @@
     "beforeDevCommand": "bun run dev",
     "beforeBuildCommand": "bun run build",
     "devUrl": "http://localhost:1420",
-    "frontendDist": "../src/ui/dist",
-    "watchIgnored": ["binaries/**"]
+    "frontendDist": "../src/ui/dist"
   },
   "app": {
     "windows": [

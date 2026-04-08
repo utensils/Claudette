@@ -40,16 +40,28 @@ fn main() {
     // Only copy if the server binary exists; otherwise warn but don't fail
     // This allows the tauri app to build even if the server isn't needed yet
     if server_binary.exists() {
-        fs::copy(&server_binary, &dest).unwrap_or_else(|e| {
-            panic!(
-                "Failed to copy claudette-server binary from {:?} to {:?}: {}",
-                server_binary, dest, e
-            )
-        });
-        println!(
-            "cargo:warning=Copied claudette-server from {:?} to {:?}",
-            server_binary, dest
-        );
+        // Only copy if destination doesn't exist or files differ in size
+        // (using size comparison to avoid timestamp issues with fs::copy)
+        let should_copy = if dest.exists() {
+            let src_size = fs::metadata(&server_binary).ok().map(|m| m.len());
+            let dest_size = fs::metadata(&dest).ok().map(|m| m.len());
+            src_size != dest_size
+        } else {
+            true // Destination doesn't exist, need to copy
+        };
+
+        if should_copy {
+            fs::copy(&server_binary, &dest).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to copy claudette-server binary from {:?} to {:?}: {}",
+                    server_binary, dest, e
+                )
+            });
+            println!(
+                "cargo:warning=Copied claudette-server from {:?} to {:?}",
+                server_binary, dest
+            );
+        }
     } else {
         println!(
             "cargo:warning=claudette-server binary not found at {:?}. Build it first with: cargo build --package claudette-server",
