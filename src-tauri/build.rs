@@ -37,8 +37,8 @@ fn main() {
         dest.set_extension("exe");
     }
 
-    // Only copy if the server binary exists; otherwise warn but don't fail
-    // This allows the tauri app to build even if the server isn't needed yet
+    // Only copy if the server binary exists; otherwise create a placeholder
+    // This allows the tauri app to build even if the server isn't built yet
     if server_binary.exists() {
         // Only copy if destination doesn't exist or files differ in size
         // (using size comparison to avoid timestamp issues with fs::copy)
@@ -63,6 +63,16 @@ fn main() {
             );
         }
     } else {
+        // Create an empty placeholder file so tauri_build doesn't fail
+        // The sidecar won't work until the actual server is built and copied
+        if !dest.exists() {
+            fs::write(&dest, b"")
+                .unwrap_or_else(|e| panic!("Failed to create placeholder at {:?}: {}", dest, e));
+            println!(
+                "cargo:warning=Created placeholder for claudette-server at {:?}",
+                dest
+            );
+        }
         println!(
             "cargo:warning=claudette-server binary not found at {:?}. Build it first with: cargo build --package claudette-server",
             server_binary
