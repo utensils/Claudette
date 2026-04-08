@@ -27,7 +27,6 @@
 
       systems = [
         "x86_64-linux"
-        "x86_64-darwin"
         "aarch64-linux"
         "aarch64-darwin"
       ];
@@ -58,7 +57,11 @@
           commonMeta = {
             homepage = "https://github.com/utensils/Claudette";
             license = lib.licenses.mit;
-            platforms = lib.platforms.darwin ++ lib.platforms.linux;
+            platforms = [
+              "x86_64-linux"
+              "aarch64-linux"
+              "aarch64-darwin"
+            ];
           };
 
           # Frontend: FOD with network access for bun install + vite build.
@@ -86,13 +89,16 @@
             '';
           };
 
-          # Source filtering for Rust builds
+          # Cargo-only source: Cargo.toml, Cargo.lock, and *.rs files.
+          # Used by buildDepsOnly so UI/asset changes don't rebuild deps.
+          cargoSrc = craneLib.cleanCargoSource ./.;
+
+          # Full source: Cargo files + src-tauri config + assets (logo for tauri-codegen).
           src = lib.cleanSourceWith {
             src = ./.;
             filter =
               path: type:
               (craneLib.filterCargoSources path type)
-              || (builtins.match ".*src/ui/.*" path != null)
               || (builtins.match ".*src-tauri/.*" path != null)
               || (builtins.match ".*assets/.*" path != null);
           };
@@ -135,10 +141,14 @@
             };
           };
 
-          # Cargo deps — cached separately from source changes
+          # Cargo deps — cached separately from source changes.
+          # Uses cargoSrc (Cargo files + *.rs only) so UI/asset edits
+          # don't invalidate the dependency cache.
           cargoArtifacts = craneLib.buildDepsOnly (
             commonCraneArgs
             // {
+              src = cargoSrc;
+
               # Tauri build.rs needs a frontend dir to exist
               preBuild = ''
                 mkdir -p src/ui/dist
@@ -166,11 +176,15 @@
             }
           );
 
-          # Headless server binary
+          # Headless server binary — version from src-server/Cargo.toml
+          serverInfo = craneLib.crateNameFromCargoToml { cargoToml = ./src-server/Cargo.toml; };
+
           claudette-server = craneLib.buildPackage (
             commonCraneArgs
             // {
               inherit cargoArtifacts;
+              pname = serverInfo.pname;
+              version = serverInfo.version;
               cargoExtraArgs = "-p claudette-server";
 
               meta = commonMeta // {
