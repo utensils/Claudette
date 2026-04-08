@@ -271,6 +271,21 @@ pub async fn start_local_server(
     // Use Tauri's sidecar API to spawn the bundled claudette-server binary
     eprintln!("[debug] Resolving claudette-server sidecar...");
 
+    // In dev mode on macOS, Tauri may not find the sidecar correctly.
+    // Try to use an absolute path as a workaround.
+    use tauri::Manager;
+    let resource_path = app.path().resource_dir()
+        .map_err(|e| format!("Failed to get resource dir: {e}"))?;
+    eprintln!("[debug] Resource directory: {:?}", resource_path);
+
+    // List files in resource directory to see what's there
+    if let Ok(entries) = std::fs::read_dir(&resource_path) {
+        eprintln!("[debug] Files in resource dir:");
+        for entry in entries.flatten() {
+            eprintln!("  - {:?}", entry.file_name());
+        }
+    }
+
     let sidecar_command = app
         .shell()
         .sidecar("claudette-server")
