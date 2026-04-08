@@ -24,6 +24,10 @@ export function RightSidebar() {
   // Load diff files for either local or remote workspace
   const loadDiff = useCallback(
     async (workspaceId: string) => {
+      // Guard: workspace may not be in the list yet during creation/deletion
+      const currentWs = useAppStore.getState().workspaces.find((w) => w.id === workspaceId);
+      if (!currentWs) return;
+
       if (remoteConnectionId) {
         const result = (await sendRemoteCommand(
           remoteConnectionId,

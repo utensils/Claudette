@@ -150,10 +150,10 @@ export function ChatPanel() {
       .catch((e) => console.error("Failed to load chat history:", e));
   }, [selectedWorkspaceId, setChatMessages]);
 
-  // Auto-scroll to bottom (on new messages only — streaming handles its own scroll)
+  // Auto-scroll to bottom (on new messages or workspace switch — streaming handles its own scroll)
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  }, [messages.length, selectedWorkspaceId]);
 
   if (!ws) return null;
 
@@ -421,15 +421,20 @@ const StreamingMessage = memo(function StreamingMessage({
     (s) => s.streamingContent[workspaceId] || ""
   );
 
-  // Throttle Markdown rendering: store latest text in ref, render at rAF pace
+  // Throttle Markdown rendering: store latest text in ref, update at ~10fps
   const latestRef = useRef(streaming);
   latestRef.current = streaming;
   const [displayed, setDisplayed] = useState(streaming);
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const tick = () => {
-      setDisplayed(latestRef.current);
+    let lastTime = 0;
+    const THROTTLE_MS = 100; // ~10fps
+    const tick = (time: number) => {
+      if (time - lastTime >= THROTTLE_MS) {
+        lastTime = time;
+        setDisplayed(latestRef.current);
+      }
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
