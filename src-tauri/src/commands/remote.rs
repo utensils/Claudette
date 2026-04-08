@@ -269,14 +269,20 @@ pub async fn start_local_server(
     }
 
     // Use Tauri's sidecar API to spawn the bundled claudette-server binary
+    eprintln!("[debug] Resolving claudette-server sidecar...");
+
     let sidecar_command = app
         .shell()
         .sidecar("claudette-server")
         .map_err(|e| format!("Failed to resolve claudette-server sidecar: {e}"))?;
 
+    eprintln!("[debug] Spawning claudette-server sidecar...");
+
     let (mut rx, child) = sidecar_command
         .spawn()
         .map_err(|e| format!("Failed to spawn claudette-server: {e}"))?;
+
+    eprintln!("[debug] Sidecar spawned, waiting for events...");
 
     // Read from the sidecar output until we find the connection string
     let mut connection_string = String::new();
