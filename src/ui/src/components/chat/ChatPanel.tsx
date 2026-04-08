@@ -25,6 +25,12 @@ import styles from "./ChatPanel.module.css";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+// Stable empty arrays to avoid Zustand selector re-renders when data is undefined.
+// Without these, `?? []` / `|| []` creates a new reference on every store update,
+// causing Object.is to return false and triggering unnecessary component re-renders.
+const EMPTY_COMPLETED_TURNS: CompletedTurn[] = [];
+const EMPTY_ACTIVITIES: ToolActivity[] = [];
+
 export function ChatPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -472,7 +478,7 @@ const CompletedTurnsSection = memo(function CompletedTurnsSection({
   workspaceId: string;
 }) {
   const completedTurns = useAppStore(
-    (s) => s.completedTurns[workspaceId] ?? []
+    (s) => s.completedTurns[workspaceId] ?? EMPTY_COMPLETED_TURNS
   );
   const toggleCompletedTurn = useAppStore((s) => s.toggleCompletedTurn);
 
@@ -544,7 +550,7 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
   isRunning: boolean;
 }) {
   const activities = useAppStore(
-    (s) => s.toolActivities[workspaceId] || []
+    (s) => s.toolActivities[workspaceId] ?? EMPTY_ACTIVITIES
   );
   const [collapsed, setCollapsed] = useState(true);
 
