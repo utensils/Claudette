@@ -253,10 +253,16 @@ pub fn build_claude_args(
         args.push(serde_json::Value::Object(obj).to_string());
     }
 
-    // Add --allowedTools only if not bypassing permissions
-    if !allowed_tools.is_empty() && !bypass_permissions {
-        args.push("--allowedTools".to_string());
-        args.push(allowed_tools.join(","));
+    // Add --allowedTools
+    if !allowed_tools.is_empty() {
+        if bypass_permissions {
+            // For bypass mode, explicitly allow Bash and Edit with all patterns, plus all other tools
+            args.push("--allowedTools".to_string());
+            args.push("Bash(*) Edit(*) *".to_string());
+        } else {
+            args.push("--allowedTools".to_string());
+            args.push(allowed_tools.join(","));
+        }
     }
 
     // Only append custom instructions on the first turn — resumed sessions
@@ -912,5 +918,58 @@ mod tests {
         // --settings should still be passed on resume (per-turn flag)
         let args = build_claude_args("sess-1", "hello", true, &[], None, &settings);
         assert!(args.contains(&"--settings".to_string()));
+    }
+
+    #[test]
+    fn test_build_args_bypass_permissions_first_turn() {
+        let tools = vec!["*".to_string()];
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            false,
+            &tools,
+            None,
+            &AgentSettings::default(),
+        );
+        // Should set permission-mode to bypassPermissions on first turn
+        let pm_idx = args.iter().position(|a| a == "--permission-mode").unwrap();
+        assert_eq!(args[pm_idx + 1], "bypassPermissions");
+        // Should use wildcard allowedTools format with explicit Bash and Edit patterns
+        let at_idx = args.iter().position(|a| a == "--allowedTools").unwrap();
+        assert_eq!(args[at_idx + 1], "Bash(*) Edit(*) *");
+    }
+
+    #[test]
+    fn test_build_args_bypass_permissions_resume() {
+        let tools = vec!["*".to_string()];
+        let args = build_claude_args(
+            "sess-1",
+            "hello",
+            true,
+            &tools,
+            None,
+            &AgentSettings::default(),
+        );
+        // Permission mode is session-level, should not appear on resume
+        assert!(!args.contains(&"--permission-mode".to_string()));
+        // But allowedTools should still be passed with Bash and Edit patterns
+        let at_idx = args.iter().position(|a| a == "--allowedTools").unwrap();
+        assert_eq!(args[at_idx + 1], "Bash(*) Edit(*) *");
+    }
+
+    #[test]
+    fn test_build_args_bypass_permissions_with_plan_mode() {
+        let tools = vec!["*".to_string()];
+        let settings = AgentSettings {
+            plan_mode: true,
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", false, &tools, None, &settings);
+        // Plan mode takes precedence over bypass
+        let pm_idx = args.iter().position(|a| a == "--permission-mode").unwrap();
+        assert_eq!(args[pm_idx + 1], "plan");
+        // Should still use wildcard allowedTools format with Bash and Edit patterns
+        let at_idx = args.iter().position(|a| a == "--allowedTools").unwrap();
+        assert_eq!(args[at_idx + 1], "Bash(*) Edit(*) *");
     }
 }
