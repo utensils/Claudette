@@ -1,6 +1,5 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
-use tauri_plugin_shell::ShellExt;
 
 use claudette::db::Database;
 
@@ -268,102 +267,77 @@ pub async fn start_local_server(
         });
     }
 
-    // Use Tauri's sidecar API to spawn the bundled claudette-server binary
-    eprintln!("[debug] Resolving claudette-server sidecar...");
-
-    // In dev mode on macOS, Tauri may not find the sidecar correctly.
-    // Try to use an absolute path as a workaround.
     use tauri::Manager;
+
+    // In dev mode, Tauri's sidecar API has issues with output capture on macOS.
+    // Use tokio::process::Command directly as a workaround.
     let resource_path = app.path().resource_dir()
         .map_err(|e| format!("Failed to get resource dir: {e}"))?;
-    eprintln!("[debug] Resource directory: {:?}", resource_path);
 
-    // List files in resource directory to see what's there
-    if let Ok(entries) = std::fs::read_dir(&resource_path) {
-        eprintln!("[debug] Files in resource dir:");
-        for entry in entries.flatten() {
-            eprintln!("  - {:?}", entry.file_name());
-        }
+    let server_path = resource_path.join("claudette-server");
+    eprintln!("[debug] Server binary path: {:?}", server_path);
+
+    if !server_path.exists() {
+        return Err(format!("Server binary not found at {:?}", server_path));
     }
 
-    let sidecar_command = app
-        .shell()
-        .sidecar("claudette-server")
-        .map_err(|e| format!("Failed to resolve claudette-server sidecar: {e}"))?;
+    eprintln!("[debug] Spawning server directly with tokio...");
 
-    eprintln!("[debug] Spawning claudette-server sidecar...");
-
-    let (mut rx, child) = sidecar_command
+    let mut child = tokio::process::Command::new(&server_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("Failed to spawn claudette-server: {e}"))?;
 
-    eprintln!("[debug] Sidecar spawned, waiting for events...");
+    let stdout = child.stdout.take()
+        .ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take()
+        .ok_or("Failed to capture stderr")?;
 
-    // Read from the sidecar output until we find the connection string
+    eprintln!("[debug] Server spawned with PID {:?}", child.id());
+
+    // Read from stdout until we find the connection string
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
     let mut connection_string = String::new();
-    let mut stderr_output = String::new();
-    let mut stdout_output = String::new();
     let timeout = tokio::time::Duration::from_secs(10);
-    let deadline = tokio::time::Instant::now() + timeout;
 
-    while tokio::time::Instant::now() < deadline {
-        let event = tokio::time::timeout_at(deadline, rx.recv())
-            .await
-            .map_err(|_| "Timed out waiting for server to start")?
-            .ok_or("Server process exited before printing connection string")?;
+    // Spawn a task to drain stderr
+    let stderr_task = tokio::spawn(async move {
+        let mut stderr_reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = stderr_reader.next_line().await {
+            eprintln!("[server stderr] {}", line);
+        }
+    });
 
-        use tauri_plugin_shell::process::CommandEvent;
-        match event {
-            CommandEvent::Stdout(line_bytes) => {
-                let line = String::from_utf8_lossy(&line_bytes);
-                stdout_output.push_str(&line);
+    while let Ok(result) = tokio::time::timeout(timeout, stdout_reader.next_line()).await {
+        match result {
+            Ok(Some(line)) => {
                 eprintln!("[server stdout] {}", line.trim());
-
                 let trimmed = line.trim();
                 if trimmed.starts_with("claudette://") {
                     connection_string = trimmed.to_string();
                     break;
                 }
             }
-            CommandEvent::Stderr(line_bytes) => {
-                let line = String::from_utf8_lossy(&line_bytes);
-                stderr_output.push_str(&line);
-                eprintln!("[server stderr] {}", line.trim());
+            Ok(None) => {
+                return Err("Server process exited before printing connection string".to_string());
             }
-            CommandEvent::Terminated(payload) => {
-                eprintln!("[server terminated] code: {:?}", payload.code);
-                eprintln!("[server stdout captured]:\n{}", stdout_output);
-                eprintln!("[server stderr captured]:\n{}", stderr_output);
-
-                let exit_info = if let Some(code) = payload.code {
-                    format!("exit code {}", code)
-                } else {
-                    "unknown reason".to_string()
-                };
-                let error_msg = if stderr_output.is_empty() && stdout_output.is_empty() {
-                    format!("Server process exited before printing any output ({})", exit_info)
-                } else if stderr_output.is_empty() {
-                    format!("Server process exited ({}).\nStdout:\n{}", exit_info, stdout_output.trim())
-                } else {
-                    format!("Server process exited ({}).\nStderr:\n{}", exit_info, stderr_output.trim())
-                };
-                return Err(error_msg);
+            Err(e) => {
+                return Err(format!("Error reading server output: {}", e));
             }
-            _ => {}
         }
     }
 
     if connection_string.is_empty() {
-        let _ = child.kill();
+        let _ = child.kill().await;
         return Err("Server started but did not print a connection string".to_string());
     }
 
-    // Spawn a task to drain remaining output events
-    tokio::spawn(async move {
-        while let Some(_event) = rx.recv().await {
-            // Discard output
-        }
-    });
+    // Keep the stderr task running
+    tokio::spawn(stderr_task);
 
     let info = LocalServerInfo {
         running: true,
@@ -371,7 +345,7 @@ pub async fn start_local_server(
     };
 
     *server = Some(LocalServerState {
-        child: Some(child),
+        child,
         connection_string,
     });
 
@@ -381,8 +355,9 @@ pub async fn start_local_server(
 #[tauri::command]
 pub async fn stop_local_server(state: State<'_, AppState>) -> Result<(), String> {
     let mut server = state.local_server.write().await;
-    if let Some(srv) = server.take() {
-        drop(srv); // Drop impl kills the process
+    if let Some(mut srv) = server.take() {
+        let _ = srv.child.kill().await;
+        eprintln!("[cleanup] Stopped local claudette-server");
     }
     Ok(())
 }

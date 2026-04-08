@@ -30,24 +30,10 @@ pub struct PtyHandle {
 
 /// State of the embedded claudette-server subprocess.
 pub struct LocalServerState {
-    /// Handle to the running server process (from tauri-plugin-shell sidecar).
-    /// Wrapped in Option so we can take ownership in Drop.
-    pub child: Option<tauri_plugin_shell::process::CommandChild>,
+    /// Handle to the running server process.
+    pub child: tokio::process::Child,
     /// The connection string printed by the server on startup.
     pub connection_string: String,
-}
-
-impl Drop for LocalServerState {
-    fn drop(&mut self) {
-        // Kill the server process when this state is dropped.
-        if let Some(child) = self.child.take() {
-            if let Err(e) = child.kill() {
-                eprintln!("[cleanup] Failed to kill local server: {e}");
-            } else {
-                eprintln!("[cleanup] Stopped local claudette-server");
-            }
-        }
-    }
 }
 
 /// Application-wide managed state, shared across all Tauri commands.
