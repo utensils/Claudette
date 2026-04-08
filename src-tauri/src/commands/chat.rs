@@ -13,18 +13,6 @@ struct AgentStreamPayload {
     event: AgentEvent,
 }
 
-const TOOLS_FULL: &[&str] = &[
-    "Bash",
-    "Read",
-    "Write",
-    "Edit",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "WebFetch",
-    "NotebookEdit",
-];
-
 const TOOLS_STANDARD: &[&str] = &[
     "Read",
     "Write",
@@ -38,9 +26,10 @@ const TOOLS_STANDARD: &[&str] = &[
 const TOOLS_READONLY: &[&str] = &["Read", "Glob", "Grep", "WebSearch", "WebFetch"];
 
 /// Map a permission level name to the list of tools to pre-approve.
+/// "full" returns a wildcard pattern to allow all tools including MCP tools.
 fn tools_for_level(level: &str) -> Vec<String> {
     let tools: &[&str] = match level {
-        "full" => TOOLS_FULL,
+        "full" => return vec!["*".to_string()], // Wildcard = allow all tools
         "standard" => TOOLS_STANDARD,
         _ => TOOLS_READONLY,
     };
