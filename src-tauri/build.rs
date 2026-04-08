@@ -2,6 +2,9 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 fn main() {
     // Get the target triple
     let target = env::var("TARGET").expect("TARGET not set");
@@ -57,6 +60,18 @@ fn main() {
                     server_binary, dest, e
                 )
             });
+
+            // Ensure the binary is executable on Unix
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(&dest)
+                    .expect("Failed to read binary metadata")
+                    .permissions();
+                perms.set_mode(0o755); // rwxr-xr-x
+                fs::set_permissions(&dest, perms)
+                    .expect("Failed to set executable permissions");
+            }
+
             println!(
                 "cargo:warning=Copied claudette-server from {:?} to {:?}",
                 server_binary, dest
@@ -66,8 +81,27 @@ fn main() {
         // Create an empty placeholder file so tauri_build doesn't fail
         // The sidecar won't work until the actual server is built and copied
         if !dest.exists() {
-            fs::write(&dest, b"")
+            // Create a minimal shell script that exits with error
+            let placeholder_content = if cfg!(unix) {
+                "#!/bin/sh\necho 'claudette-server not built. Run: cargo build --package claudette-server' >&2\nexit 1\n"
+            } else {
+                "@echo off\r\necho claudette-server not built. Run: cargo build --package claudette-server\r\nexit /b 1\r\n"
+            };
+
+            fs::write(&dest, placeholder_content)
                 .unwrap_or_else(|e| panic!("Failed to create placeholder at {:?}: {}", dest, e));
+
+            // Make it executable on Unix
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(&dest)
+                    .expect("Failed to read placeholder metadata")
+                    .permissions();
+                perms.set_mode(0o755); // rwxr-xr-x
+                fs::set_permissions(&dest, perms)
+                    .expect("Failed to set executable permissions on placeholder");
+            }
+
             println!(
                 "cargo:warning=Created placeholder for claudette-server at {:?}",
                 dest
