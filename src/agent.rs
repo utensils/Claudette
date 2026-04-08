@@ -253,10 +253,16 @@ pub fn build_claude_args(
         args.push(serde_json::Value::Object(obj).to_string());
     }
 
-    // Add --allowedTools only if not bypassing permissions
-    if !allowed_tools.is_empty() && !bypass_permissions {
-        args.push("--allowedTools".to_string());
-        args.push(allowed_tools.join(","));
+    // Add --allowedTools
+    if !allowed_tools.is_empty() {
+        if bypass_permissions {
+            // For bypass mode, explicitly allow Bash with all commands and all other tools
+            args.push("--allowedTools".to_string());
+            args.push("Bash(*) *".to_string());
+        } else {
+            args.push("--allowedTools".to_string());
+            args.push(allowed_tools.join(","));
+        }
     }
 
     // Only append custom instructions on the first turn — resumed sessions
