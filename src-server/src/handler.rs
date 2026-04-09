@@ -8,18 +8,6 @@ use serde_json::json;
 
 use crate::ws::{AgentSessionState, PtyHandle, ServerState, Writer, send_message};
 
-const TOOLS_FULL: &[&str] = &[
-    "Bash",
-    "Read",
-    "Write",
-    "Edit",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "WebFetch",
-    "NotebookEdit",
-];
-
 const TOOLS_STANDARD: &[&str] = &[
     "Read",
     "Write",
@@ -32,9 +20,13 @@ const TOOLS_STANDARD: &[&str] = &[
 
 const TOOLS_READONLY: &[&str] = &["Read", "Glob", "Grep", "WebSearch", "WebFetch"];
 
+/// Map a permission level name to the tools to pre-approve.
+/// "full" returns the wildcard sentinel `["*"]`, which `build_claude_args`
+/// interprets as `--permission-mode bypassPermissions` (skips all permission
+/// checks, including for MCP tools).
 fn tools_for_level(level: &str) -> Vec<String> {
     let tools: &[&str] = match level {
-        "full" => TOOLS_FULL,
+        "full" => return vec!["*".to_string()],
         "standard" => TOOLS_STANDARD,
         _ => TOOLS_READONLY,
     };
