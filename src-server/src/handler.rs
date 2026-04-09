@@ -20,8 +20,10 @@ const TOOLS_STANDARD: &[&str] = &[
 
 const TOOLS_READONLY: &[&str] = &["Read", "Glob", "Grep", "WebSearch", "WebFetch"];
 
-/// Map a permission level name to the list of tools to pre-approve.
-/// "full" returns a wildcard pattern to allow all tools including MCP tools.
+/// Map a permission level name to the tools to pre-approve.
+/// "full" returns the wildcard sentinel `["*"]`, which `build_claude_args`
+/// interprets as `--permission-mode bypassPermissions` (skips all permission
+/// checks, including for MCP tools).
 fn tools_for_level(level: &str) -> Vec<String> {
     let tools: &[&str] = match level {
         "full" => return vec!["*".to_string()],
