@@ -179,17 +179,19 @@ export function TerminalPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTerminalTabId, ws?.worktree_path]);
 
-  // Show/hide terminal containers based on active tab.
+  // Show/hide terminal containers based on active tab and selected workspace.
   useEffect(() => {
+    const currentWorkspaceTabs = tabs.map((t) => t.id);
     for (const [tabId, inst] of instancesRef.current) {
-      const isActive = tabId === activeTerminalTabId;
+      const belongsToCurrentWorkspace = currentWorkspaceTabs.includes(tabId);
+      const isActive = tabId === activeTerminalTabId && belongsToCurrentWorkspace;
       inst.container.style.display = isActive ? "block" : "none";
       if (isActive) {
         inst.fit.fit();
         inst.term.focus();
       }
     }
-  }, [activeTerminalTabId]);
+  }, [activeTerminalTabId, tabs]);
 
   // Update font size on all instances without destroying them.
   useEffect(() => {
@@ -199,7 +201,7 @@ export function TerminalPanel() {
     }
   }, [terminalFontSize]);
 
-  // Cleanup all instances on workspace change.
+  // Cleanup all instances on component unmount only.
   useEffect(() => {
     return () => {
       for (const inst of instancesRef.current.values()) {
@@ -211,7 +213,7 @@ export function TerminalPanel() {
       }
       instancesRef.current.clear();
     };
-  }, [selectedWorkspaceId]);
+  }, []);
 
   const handleCreateTab = useCallback(async () => {
     if (!selectedWorkspaceId) return;
