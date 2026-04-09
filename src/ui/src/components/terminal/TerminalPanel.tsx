@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -48,9 +48,10 @@ export function TerminalPanel() {
   const instancesRef = useRef<Map<number, TermInstance>>(new Map());
 
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
-  const tabs = selectedWorkspaceId
-    ? terminalTabs[selectedWorkspaceId] || []
-    : [];
+  const tabs = useMemo(
+    () => (selectedWorkspaceId ? terminalTabs[selectedWorkspaceId] ?? [] : []),
+    [selectedWorkspaceId, terminalTabs]
+  );
 
   // Load terminal tabs on workspace change; auto-create one if none exist.
   useEffect(() => {
@@ -78,6 +79,15 @@ export function TerminalPanel() {
     addTerminalTab,
     activeTerminalTabId,
   ]);
+
+  // Ensure activeTerminalTabId belongs to the current workspace.
+  useEffect(() => {
+    if (!selectedWorkspaceId || tabs.length === 0) return;
+    const tabIds = tabs.map((t) => t.id);
+    if (activeTerminalTabId && !tabIds.includes(activeTerminalTabId)) {
+      setActiveTerminalTab(tabs[0].id);
+    }
+  }, [selectedWorkspaceId, tabs, activeTerminalTabId, setActiveTerminalTab]);
 
   // Create a terminal instance for a tab if it doesn't exist yet.
   useEffect(() => {
@@ -181,9 +191,9 @@ export function TerminalPanel() {
 
   // Show/hide terminal containers based on active tab and selected workspace.
   useEffect(() => {
-    const currentWorkspaceTabs = tabs.map((t) => t.id);
+    const currentWorkspaceTabIds = new Set(tabs.map((t) => t.id));
     for (const [tabId, inst] of instancesRef.current) {
-      const belongsToCurrentWorkspace = currentWorkspaceTabs.includes(tabId);
+      const belongsToCurrentWorkspace = currentWorkspaceTabIds.has(tabId);
       const isActive = tabId === activeTerminalTabId && belongsToCurrentWorkspace;
       inst.container.style.display = isActive ? "block" : "none";
       if (isActive) {
@@ -200,6 +210,23 @@ export function TerminalPanel() {
       inst.fit.fit();
     }
   }, [terminalFontSize]);
+
+  // Cleanup instances for tabs that no longer exist in any workspace.
+  useEffect(() => {
+    const allTabIds = new Set(
+      Object.values(terminalTabs).flatMap((tabs) => tabs.map((t) => t.id))
+    );
+    for (const [tabId, inst] of instancesRef.current) {
+      if (!allTabIds.has(tabId)) {
+        inst.resizeObserver.disconnect();
+        inst.term.dispose();
+        if (inst.unlisten) inst.unlisten();
+        if (inst.ptyId >= 0) closePty(inst.ptyId);
+        inst.container.remove();
+        instancesRef.current.delete(tabId);
+      }
+    }
+  }, [terminalTabs]);
 
   // Cleanup all instances on component unmount only.
   useEffect(() => {
