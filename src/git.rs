@@ -45,37 +45,55 @@ pub async fn validate_repo(path: &str) -> Result<(), GitError> {
 }
 
 pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
-    // Try symbolic-ref of origin/HEAD first (returns e.g. "origin/main")
+    // Resolve the primary remote name (usually "origin", but could be "upstream"
+    // in fork-and-PR workflows). Falls back to "origin" if no remote exists.
+    let remote = run_git(repo_path, &["remote"])
+        .await
+        .ok()
+        .and_then(|out| out.lines().next().map(|l| l.to_string()))
+        .unwrap_or_else(|| "origin".to_string());
+
+    // Try symbolic-ref of <remote>/HEAD first (returns e.g. "origin/main")
     if let Ok(remote_head) = run_git(
         repo_path,
-        &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+        &[
+            "symbolic-ref",
+            &format!("refs/remotes/{remote}/HEAD"),
+            "--short",
+        ],
     )
     .await
+        && !remote_head.is_empty()
     {
-        let trimmed = remote_head.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
+        return Ok(remote_head);
     }
 
     // Fall back to checking if remote-tracking main or master exists
     if run_git(
         repo_path,
-        &["rev-parse", "--verify", "refs/remotes/origin/main"],
+        &[
+            "rev-parse",
+            "--verify",
+            &format!("refs/remotes/{remote}/main"),
+        ],
     )
     .await
     .is_ok()
     {
-        return Ok("origin/main".into());
+        return Ok(format!("{remote}/main"));
     }
     if run_git(
         repo_path,
-        &["rev-parse", "--verify", "refs/remotes/origin/master"],
+        &[
+            "rev-parse",
+            "--verify",
+            &format!("refs/remotes/{remote}/master"),
+        ],
     )
     .await
     .is_ok()
     {
-        return Ok("origin/master".into());
+        return Ok(format!("{remote}/master"));
     }
 
     // Last resort: local branches (no remote configured)
