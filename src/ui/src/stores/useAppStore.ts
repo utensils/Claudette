@@ -493,7 +493,7 @@ export const useAppStore = create<AppState>((set) => ({
   setDefaultBranches: (branches) => set({ defaultBranches: branches }),
   terminalFontSize: 11,
   setTerminalFontSize: (size) => set({ terminalFontSize: size }),
-  terminalFontFamily: "monospace",
+  terminalFontFamily: '"MesloLGS Nerd Font Mono", "FiraCode Nerd Font Mono", "JetBrainsMono Nerd Font Mono", monospace',
   setTerminalFontFamily: (family) => set({ terminalFontFamily: family }),
   currentThemeId: DEFAULT_THEME_ID,
   setCurrentThemeId: (id) => set({ currentThemeId: id }),
