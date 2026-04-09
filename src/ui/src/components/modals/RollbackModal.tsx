@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
-import { rollbackToCheckpoint } from "../../services/tauri";
+import { rollbackToCheckpoint, loadDiffFiles } from "../../services/tauri";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
 
@@ -8,6 +8,8 @@ export function RollbackModal() {
   const closeModal = useAppStore((s) => s.closeModal);
   const modalData = useAppStore((s) => s.modalData);
   const rollbackConversation = useAppStore((s) => s.rollbackConversation);
+  const setDiffFiles = useAppStore((s) => s.setDiffFiles);
+  const clearDiff = useAppStore((s) => s.clearDiff);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [restoreFiles, setRestoreFiles] = useState(false);
@@ -26,6 +28,11 @@ export function RollbackModal() {
         restoreFiles,
       );
       rollbackConversation(workspaceId, checkpointId, messages);
+      // Refresh the changed files view to reflect the rolled-back file state.
+      clearDiff();
+      loadDiffFiles(workspaceId)
+        .then((result) => setDiffFiles(result.files, result.merge_base))
+        .catch((e) => console.error("Failed to refresh diff after rollback:", e));
       closeModal();
     } catch (e) {
       setError(String(e));
