@@ -80,8 +80,22 @@ pub async fn send_chat_message(
 
     // Get or create agent session. Custom instructions are resolved once on
     // the first turn and cached for the session lifetime.
+    //
+    // Session state is persisted to SQLite so that `--resume` survives app
+    // restarts. The in-memory HashMap acts as a hot cache; on a cache miss we
+    // restore from the database before falling back to creating a new session.
     let mut agents = state.agents.write().await;
     let session = agents.entry(workspace_id.clone()).or_insert_with(|| {
+        // Try restoring a persisted session from the database first.
+        if let Ok(Some((sid, tc))) = db.get_agent_session(&workspace_id) {
+            return AgentSessionState {
+                session_id: sid,
+                turn_count: tc,
+                active_pid: None,
+                custom_instructions: None,
+            };
+        }
+
         // First turn: resolve instructions from .claudette.json > repo settings.
         let instructions = {
             let from_config = repo.as_ref().and_then(|r| {
@@ -105,6 +119,9 @@ pub async fn send_chat_message(
     let session_id = session.session_id.clone();
     let custom_instructions = session.custom_instructions.clone();
     session.turn_count += 1;
+
+    // Persist updated session state to the database.
+    let _ = db.save_agent_session(&workspace_id, &session_id, session.turn_count);
 
     // Build agent settings from frontend params.
     let agent_settings = AgentSettings {
@@ -151,6 +168,10 @@ pub async fn send_chat_message(
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
                 agents.remove(&ws_id);
+                // Also clear persisted session so restart doesn't try --resume.
+                if let Ok(db) = Database::open(&db_path) {
+                    let _ = db.clear_agent_session(&ws_id);
+                }
             }
             // Persist assistant messages to DB on completion.
             if let AgentEvent::Stream(StreamEvent::Assistant { ref message }) = event {
@@ -240,6 +261,11 @@ pub async fn reset_agent_session(
 ) -> Result<(), String> {
     let mut agents = state.agents.write().await;
     agents.remove(&workspace_id);
+
+    // Clear persisted session so the next turn starts fresh.
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.clear_agent_session(&workspace_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
