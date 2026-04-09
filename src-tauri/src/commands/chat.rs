@@ -80,19 +80,34 @@ pub async fn send_chat_message(
 
     // Get or create agent session. Custom instructions are resolved once on
     // the first turn and cached for the session lifetime.
+    //
+    // Session state is persisted to SQLite so that `--resume` survives app
+    // restarts. The in-memory HashMap acts as a hot cache; on a cache miss we
+    // restore from the database before falling back to creating a new session.
+    // Resolve custom instructions once — used for both restored and new sessions.
+    let instructions = {
+        let from_config = repo.as_ref().and_then(|r| {
+            let path = r.path.clone();
+            claudette::config::load_config(std::path::Path::new(&path))
+                .ok()
+                .flatten()
+                .and_then(|c| c.instructions)
+        });
+        from_config.or_else(|| repo.as_ref().and_then(|r| r.custom_instructions.clone()))
+    };
+
     let mut agents = state.agents.write().await;
     let session = agents.entry(workspace_id.clone()).or_insert_with(|| {
-        // First turn: resolve instructions from .claudette.json > repo settings.
-        let instructions = {
-            let from_config = repo.as_ref().and_then(|r| {
-                let path = r.path.clone();
-                claudette::config::load_config(std::path::Path::new(&path))
-                    .ok()
-                    .flatten()
-                    .and_then(|c| c.instructions)
-            });
-            from_config.or_else(|| repo.as_ref().and_then(|r| r.custom_instructions.clone()))
-        };
+        // Try restoring a persisted session from the database first.
+        if let Ok(Some((sid, tc))) = db.get_agent_session(&workspace_id) {
+            return AgentSessionState {
+                session_id: sid,
+                turn_count: tc,
+                active_pid: None,
+                custom_instructions: instructions.clone(),
+            };
+        }
+
         AgentSessionState {
             session_id: uuid::Uuid::new_v4().to_string(),
             turn_count: 0,
@@ -126,6 +141,11 @@ pub async fn send_chat_message(
     )
     .await?;
 
+    // Persist session state only after the subprocess spawned successfully.
+    // If run_turn fails (missing binary, spawn error), we avoid persisting a
+    // turn_count > 0 for a session Claude never initialized.
+    let _ = db.save_agent_session(&workspace_id, &session_id, session.turn_count);
+
     session.active_pid = Some(turn_handle.pid);
     drop(agents);
 
@@ -145,12 +165,18 @@ pub async fn send_chat_message(
 
             // If the process exits without ever initializing, reset the session
             // so the next attempt starts fresh instead of trying --resume.
-            if let AgentEvent::ProcessExited(code) = &event
-                && (!got_init || *code != Some(0))
+            // A non-zero exit AFTER successful init is normal (e.g. user stop,
+            // transient error) — the session is still valid for resumption.
+            if let AgentEvent::ProcessExited(_code) = &event
+                && !got_init
             {
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
                 agents.remove(&ws_id);
+                // Also clear persisted session so restart doesn't try --resume.
+                if let Ok(db) = Database::open(&db_path) {
+                    let _ = db.clear_agent_session(&ws_id);
+                }
             }
             // Persist assistant messages to DB on completion.
             if let AgentEvent::Stream(StreamEvent::Assistant { ref message }) = event {
@@ -240,6 +266,11 @@ pub async fn reset_agent_session(
 ) -> Result<(), String> {
     let mut agents = state.agents.write().await;
     agents.remove(&workspace_id);
+
+    // Clear persisted session so the next turn starts fresh.
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.clear_agent_session(&workspace_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

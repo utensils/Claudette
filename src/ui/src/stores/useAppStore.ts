@@ -29,6 +29,9 @@ export interface CompletedTurn {
   activities: ToolActivity[];
   messageCount: number;
   collapsed: boolean;
+  /** Index into chatMessages at the time of finalization — used to render
+   *  the turn summary at the correct chronological position. */
+  afterMessageIndex: number;
 }
 
 export interface AgentQuestionItem {
@@ -42,6 +45,13 @@ export interface AgentQuestion {
   workspaceId: string;
   toolUseId: string;
   questions: AgentQuestionItem[];
+}
+
+export interface PlanApproval {
+  workspaceId: string;
+  toolUseId: string;
+  planFilePath: string | null;
+  allowedPrompts: Array<{ tool: string; prompt: string }>;
 }
 
 interface AppState {
@@ -86,9 +96,15 @@ interface AppState {
     partialJson: string
   ) => void;
 
-  // -- Agent Questions --
-  agentQuestion: AgentQuestion | null;
-  setAgentQuestion: (q: AgentQuestion | null) => void;
+  // -- Agent Questions (per-workspace) --
+  agentQuestions: Record<string, AgentQuestion>;
+  setAgentQuestion: (q: AgentQuestion) => void;
+  clearAgentQuestion: (wsId: string) => void;
+
+  // -- Plan Approvals (per-workspace) --
+  planApprovals: Record<string, PlanApproval>;
+  setPlanApproval: (p: PlanApproval) => void;
+  clearPlanApproval: (wsId: string) => void;
 
   // -- Notifications --
   unreadCompletions: Set<string>; // workspace IDs with unread completions
@@ -316,13 +332,14 @@ export const useAppStore = create<AppState>((set) => ({
         activities: activities.map((a) => ({
           toolUseId: a.toolUseId,
           toolName: a.toolName,
-          inputJson: "",
-          resultText: "",
+          inputJson: a.inputJson,
+          resultText: a.resultText,
           collapsed: true,
           summary: a.summary,
         })),
         messageCount,
         collapsed: false,
+        afterMessageIndex: (s.chatMessages[wsId] || []).length,
       };
       return {
         completedTurns: {
@@ -342,9 +359,29 @@ export const useAppStore = create<AppState>((set) => ({
       },
     })),
 
-  // -- Agent Questions --
-  agentQuestion: null,
-  setAgentQuestion: (q) => set({ agentQuestion: q }),
+  // -- Agent Questions (per-workspace) --
+  agentQuestions: {},
+  setAgentQuestion: (q) =>
+    set((s) => ({
+      agentQuestions: { ...s.agentQuestions, [q.workspaceId]: q },
+    })),
+  clearAgentQuestion: (wsId) =>
+    set((s) => {
+      const { [wsId]: _, ...rest } = s.agentQuestions;
+      return { agentQuestions: rest };
+    }),
+
+  // -- Plan Approvals (per-workspace) --
+  planApprovals: {},
+  setPlanApproval: (p) =>
+    set((s) => ({
+      planApprovals: { ...s.planApprovals, [p.workspaceId]: p },
+    })),
+  clearPlanApproval: (wsId) =>
+    set((s) => {
+      const { [wsId]: _, ...rest } = s.planApprovals;
+      return { planApprovals: rest };
+    }),
 
   // -- Notifications --
   unreadCompletions: new Set<string>(),

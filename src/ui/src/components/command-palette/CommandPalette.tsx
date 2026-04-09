@@ -61,6 +61,8 @@ export function CommandPalette() {
   const setThinkingEnabled = useAppStore((s) => s.setThinkingEnabled);
   const setPlanMode = useAppStore((s) => s.setPlanMode);
   const setFastMode = useAppStore((s) => s.setFastMode);
+  const clearAgentQuestion = useAppStore((s) => s.clearAgentQuestion);
+  const clearPlanApproval = useAppStore((s) => s.clearPlanApproval);
 
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -147,6 +149,8 @@ export function CommandPalette() {
         persistSetting: (key: string, value: string) => setAppSetting(key, value).catch(console.error),
         stopAgent: (wsId: string) => stopAgent(wsId),
         resetAgentSession: (wsId: string) => resetAgentSession(wsId),
+        clearAgentQuestion: (wsId: string) => clearAgentQuestion(wsId),
+        clearPlanApproval: (wsId: string) => clearPlanApproval(wsId),
         updateWorkspace: (id: string, updates: Record<string, unknown>) => updateWorkspace(id, updates),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

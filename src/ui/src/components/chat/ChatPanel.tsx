@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
+import React, { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -22,6 +22,7 @@ import type { SlashCommand } from "../../services/tauri";
 import type { ChatMessage } from "../../types/chat";
 import { useAgentStream } from "../../hooks/useAgentStream";
 import { AgentQuestionCard } from "./AgentQuestionCard";
+import { PlanApprovalCard } from "./PlanApprovalCard";
 import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { HeaderMenu } from "./HeaderMenu";
@@ -195,11 +196,15 @@ export function ChatPanel() {
   const permissionLevel = selectedWorkspaceId
     ? permissionLevelMap[selectedWorkspaceId] ?? "full"
     : "full";
-  const agentQuestion = useAppStore((s) => s.agentQuestion);
-  const setAgentQuestion = useAppStore((s) => s.setAgentQuestion);
+  const pendingQuestion = useAppStore(
+    (s) => (selectedWorkspaceId ? s.agentQuestions[selectedWorkspaceId] ?? null : null)
+  );
+  const clearAgentQuestion = useAppStore((s) => s.clearAgentQuestion);
+  const pendingPlan = useAppStore(
+    (s) => (selectedWorkspaceId ? s.planApprovals[selectedWorkspaceId] ?? null : null)
+  );
+  const clearPlanApproval = useAppStore((s) => s.clearPlanApproval);
   const isRunning = ws?.agent_status === "Running";
-  const pendingQuestion =
-    agentQuestion?.workspaceId === selectedWorkspaceId ? agentQuestion : null;
 
   // Spinner and elapsed timer for running agent.
   const [spinnerIdx, setSpinnerIdx] = useState(0);
@@ -297,6 +302,13 @@ export function ChatPanel() {
   const handleSend = async (content: string) => {
     const trimmed = content.trim();
     if (!trimmed || !selectedWorkspaceId) return;
+
+    // Clear any pending agent question or plan approval — the user is sending
+    // a new message (answer from a card or manual override).
+    if (selectedWorkspaceId) {
+      clearAgentQuestion(selectedWorkspaceId);
+      clearPlanApproval(selectedWorkspaceId);
+    }
 
     setError(null);
 
@@ -467,31 +479,11 @@ export function ChatPanel() {
           </div>
         ) : (
           <>
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`${styles.message} ${styles[`role_${msg.role}`]}`}
-              >
-                {msg.role === "User" && (
-                  <div className={styles.roleLabel}>You</div>
-                )}
-                <div className={styles.content}>
-                  {msg.role === "Assistant" ? (
-                    <Markdown
-                      remarkPlugins={REMARK_PLUGINS}
-                      rehypePlugins={REHYPE_PLUGINS}
-                    >
-                      {preprocessContent(msg.content)}
-                    </Markdown>
-                  ) : (
-                    msg.content
-                  )}
-                </div>
-              </div>
-            ))}
-
             {selectedWorkspaceId && (
-              <CompletedTurnsSection workspaceId={selectedWorkspaceId} />
+              <MessagesWithTurns
+                messages={messages}
+                workspaceId={selectedWorkspaceId}
+              />
             )}
 
             {selectedWorkspaceId && hasStreaming && (
@@ -509,13 +501,24 @@ export function ChatPanel() {
               <AgentQuestionCard
                 question={pendingQuestion}
                 onRespond={(response) => {
-                  setAgentQuestion(null);
+                  if (selectedWorkspaceId) clearAgentQuestion(selectedWorkspaceId);
                   handleSend(response);
                 }}
               />
             )}
 
-            {isRunning && !pendingQuestion && (
+            {pendingPlan && (
+              <PlanApprovalCard
+                approval={pendingPlan}
+                remoteConnectionId={ws?.remote_connection_id ?? undefined}
+                onRespond={(response) => {
+                  if (selectedWorkspaceId) clearPlanApproval(selectedWorkspaceId);
+                  handleSend(response);
+                }}
+              />
+            )}
+
+            {isRunning && !pendingQuestion && !pendingPlan && (
               <div
                 ref={processingRef}
                 className={styles.processing}
@@ -604,12 +607,77 @@ const StreamingMessage = memo(function StreamingMessage({
 });
 
 /**
- * Completed turns section — subscribes to completedTurns for this workspace only.
- * Isolated so it doesn't re-render on streaming or tool activity changes.
+ * Render a single completed turn summary (collapsible tool call list).
  */
-const CompletedTurnsSection = memo(function CompletedTurnsSection({
+function TurnSummary({
+  turn,
+  collapsed,
+  onToggle,
+}: {
+  turn: CompletedTurn;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className={styles.turnSummary}
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+    >
+      <div className={styles.turnHeader}>
+        <span className={styles.toolChevron}>
+          {collapsed ? "›" : "⌄"}
+        </span>
+        <span className={styles.turnLabel}>
+          {turn.activities.length} tool call
+          {turn.activities.length !== 1 ? "s" : ""}
+          {turn.messageCount > 0 &&
+            `, ${turn.messageCount} message${turn.messageCount !== 1 ? "s" : ""}`}
+        </span>
+      </div>
+      {!collapsed && (
+        <div className={styles.turnActivities}>
+          {turn.activities.map((act: ToolActivity) => (
+            <div key={act.toolUseId} className={styles.toolActivity}>
+              <div className={styles.toolHeader}>
+                <span className={styles.toolName} style={{ color: toolColor(act.toolName) }}>
+                  {act.toolName}
+                </span>
+                {act.summary && (
+                  <span className={styles.toolSummary}>{act.summary}</span>
+                )}
+              </div>
+              {act.inputJson && (
+                <pre className={styles.toolDetail}>{act.inputJson}</pre>
+              )}
+              {act.resultText && (
+                <pre className={styles.toolDetail}>{act.resultText}</pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Renders all messages interleaved with completed turn summaries at the correct
+ * chronological position. Uses a single store subscription + useMemo to avoid
+ * per-message selectors and redundant re-renders during streaming.
+ */
+const MessagesWithTurns = memo(function MessagesWithTurns({
+  messages,
   workspaceId,
 }: {
+  messages: ChatMessage[];
   workspaceId: string;
 }) {
   const completedTurns = useAppStore(
@@ -617,58 +685,66 @@ const CompletedTurnsSection = memo(function CompletedTurnsSection({
   );
   const toggleCompletedTurn = useAppStore((s) => s.toggleCompletedTurn);
 
-  if (completedTurns.length === 0) return null;
+  // Build an index: afterMessageIndex → array of (turn, globalIndex) pairs.
+  // Only recomputed when completedTurns changes, not on every streaming update.
+  const turnsByPosition = useMemo(() => {
+    const map: Record<number, Array<{ turn: CompletedTurn; globalIdx: number }>> = {};
+    completedTurns.forEach((turn, globalIdx) => {
+      const key = turn.afterMessageIndex;
+      (map[key] ??= []).push({ turn, globalIdx });
+    });
+    return map;
+  }, [completedTurns]);
+
+  const renderTurns = (position: number) => {
+    const entries = turnsByPosition[position];
+    if (!entries) return null;
+    return entries.map(({ turn, globalIdx }) => (
+      <TurnSummary
+        key={turn.id}
+        turn={turn}
+        collapsed={turn.collapsed}
+        onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
+      />
+    ));
+  };
 
   return (
     <>
-      {completedTurns.map((turn: CompletedTurn, ti: number) => (
-        <div
-          key={turn.id}
-          className={styles.turnSummary}
-          role="button"
-          tabIndex={0}
-          onClick={() => toggleCompletedTurn(workspaceId, ti)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggleCompletedTurn(workspaceId, ti);
-            }
-          }}
-        >
-          <div className={styles.turnHeader}>
-            <span className={styles.toolChevron}>
-              {turn.collapsed ? "›" : "⌄"}
-            </span>
-            <span className={styles.turnLabel}>
-              {turn.activities.length} tool call
-              {turn.activities.length !== 1 ? "s" : ""}
-              {turn.messageCount > 0 &&
-                `, ${turn.messageCount} message${turn.messageCount !== 1 ? "s" : ""}`}
-            </span>
-          </div>
-          {!turn.collapsed && (
-            <div className={styles.turnActivities}>
-              {turn.activities.map((act: ToolActivity) => (
-                <div
-                  key={act.toolUseId}
-                  className={styles.toolActivity}
+      {messages.map((msg, idx) => (
+        <React.Fragment key={msg.id}>
+          {renderTurns(idx)}
+          <div className={`${styles.message} ${styles[`role_${msg.role}`]}`}>
+            {msg.role === "User" && (
+              <div className={styles.roleLabel}>You</div>
+            )}
+            <div className={styles.content}>
+              {msg.role === "Assistant" ? (
+                <Markdown
+                  remarkPlugins={REMARK_PLUGINS}
+                  rehypePlugins={REHYPE_PLUGINS}
                 >
-                  <div className={styles.toolHeader}>
-                    <span className={styles.toolName} style={{ color: toolColor(act.toolName) }}>
-                      {act.toolName}
-                    </span>
-                    {act.summary && (
-                      <span className={styles.toolSummary}>
-                        {act.summary}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                  {preprocessContent(msg.content)}
+                </Markdown>
+              ) : (
+                msg.content
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        </React.Fragment>
       ))}
+      {/* Turns that finalized after or at the last message index */}
+      {completedTurns
+        .map((turn, globalIdx) => ({ turn, globalIdx }))
+        .filter(({ turn }) => turn.afterMessageIndex >= messages.length)
+        .map(({ turn, globalIdx }) => (
+          <TurnSummary
+            key={turn.id}
+            turn={turn}
+            collapsed={turn.collapsed}
+            onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
+          />
+        ))}
     </>
   );
 });
@@ -814,7 +890,19 @@ function ChatInputArea({
     setChatInput("");
   };
 
+  const planMode = useAppStore(
+    (s) => s.planMode[selectedWorkspaceId] ?? false,
+  );
+  const setPlanMode = useAppStore((s) => s.setPlanMode);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Shift+Tab: toggle plan mode
+    if (e.key === "Tab" && e.shiftKey) {
+      e.preventDefault();
+      setPlanMode(selectedWorkspaceId, !planMode);
+      return;
+    }
+
     // Slash command picker navigation
     if (showSlashPicker) {
       if (e.key === "ArrowDown") {
@@ -839,7 +927,7 @@ function ChatInputArea({
         }
         return;
       }
-      if (e.key === "Tab") {
+      if (e.key === "Tab" && !e.shiftKey) {
         e.preventDefault();
         const cmd = slashResults[slashPickerIndex];
         if (cmd) {

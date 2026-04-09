@@ -90,6 +90,8 @@ fn main() {
             commands::chat::send_chat_message,
             commands::chat::stop_agent,
             commands::chat::reset_agent_session,
+            // Plan
+            commands::plan::read_plan_file,
             // Diff
             commands::diff::load_diff_files,
             commands::diff::load_file_diff,

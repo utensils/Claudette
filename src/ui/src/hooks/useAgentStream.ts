@@ -1,64 +1,11 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "../stores/useAppStore";
-import type { AgentQuestionItem } from "../stores/useAppStore";
 import type { AgentStreamPayload } from "../types/agent-events";
 import { extractToolSummary } from "./toolSummary";
+import { parseAskUserQuestion } from "./parseAgentQuestion";
 
 const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
-
-/**
- * Parse AskUserQuestion tool input JSON into question items.
- * Supports two formats:
- * - Single: { question: "...", options: [...] }
- * - Multi:  { questions: [{ header?, question, options, multiSelect? }] }
- *
- * Options can be strings or objects with label/description fields.
- */
-function parseAskUserQuestion(
-  parsed: Record<string, unknown>
-): AgentQuestionItem[] {
-  // Multi-question format
-  if (Array.isArray(parsed.questions)) {
-    return parsed.questions.map((q: Record<string, unknown>) => ({
-      header: typeof q.header === "string" ? q.header : undefined,
-      question: typeof q.question === "string" ? q.question : "",
-      options: parseOptions(q.options),
-      multiSelect: q.multiSelect === true,
-    }));
-  }
-
-  // Single-question format
-  if (typeof parsed.question === "string") {
-    return [
-      {
-        question: parsed.question,
-        options: parseOptions(parsed.options),
-        multiSelect: false,
-      },
-    ];
-  }
-
-  return [];
-}
-
-function parseOptions(
-  raw: unknown
-): Array<{ label: string; description?: string }> {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((opt: unknown) => {
-    if (typeof opt === "string") return { label: opt };
-    if (typeof opt === "object" && opt !== null) {
-      const o = opt as Record<string, unknown>;
-      return {
-        label: typeof o.label === "string" ? o.label : String(o.label ?? ""),
-        description:
-          typeof o.description === "string" ? o.description : undefined,
-      };
-    }
-    return { label: String(opt) };
-  });
-}
 
 export function useAgentStream() {
   const appendStreamingContent = useAppStore((s) => s.appendStreamingContent);
@@ -71,6 +18,7 @@ export function useAgentStream() {
   );
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const setAgentQuestion = useAppStore((s) => s.setAgentQuestion);
+  const setPlanApproval = useAppStore((s) => s.setPlanApproval);
   const finalizeTurn = useAppStore((s) => s.finalizeTurn);
   const setPlanMode = useAppStore((s) => s.setPlanMode);
 
@@ -81,6 +29,8 @@ export function useAgentStream() {
   >({});
   // Count assistant messages in the current turn for the summary.
   const turnMessageCountRef = useRef<Record<string, number>>({});
+  // Plan file path extracted from EnterPlanMode tool results, keyed by wsId.
+  const planFilePathRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const unlisten = listen<AgentStreamPayload>("agent-stream", (event) => {
@@ -92,11 +42,10 @@ export function useAgentStream() {
         updateWorkspace(wsId, { agent_status: "Idle" });
         setStreamingContent(wsId, "");
         blockToolMapRef.current = {};
-        // Clear pending question for this workspace
-        const currentQuestion = useAppStore.getState().agentQuestion;
-        if (currentQuestion?.workspaceId === wsId) {
-          setAgentQuestion(null);
-        }
+        // NOTE: Do NOT clear agentQuestion here. In --print mode the CLI
+        // exits immediately after emitting AskUserQuestion, so ProcessExited
+        // fires before the user has a chance to answer. The question is
+        // cleared when the user responds (onRespond) or sends a new message.
 
         // Notification: mark workspace as unread if not currently selected
         const { selectedWorkspaceId, markWorkspaceAsUnread } = useAppStore.getState();
@@ -231,6 +180,56 @@ export function useAgentStream() {
                       // Malformed JSON — ignore, question won't show
                     }
                   }
+
+                  // Handle ExitPlanMode — show approval card.
+                  if (entry.toolName === "ExitPlanMode") {
+                    let allowedPrompts: Array<{ tool: string; prompt: string }> = [];
+                    if (activity?.inputJson) {
+                      try {
+                        const parsed = JSON.parse(activity.inputJson);
+                        if (Array.isArray(parsed.allowedPrompts)) {
+                          allowedPrompts = parsed.allowedPrompts;
+                        }
+                      } catch { /* ignore */ }
+                    }
+
+                    // Extract absolute plan file path from ALL messages (the
+                    // path is typically mentioned when entering plan mode,
+                    // which may be many messages back). Search newest-first.
+                    const planPathRe = /(\/[^\s)"`]+\/\.claude\/plans\/[^\s)"`]+\.md)/;
+                    const messages = useAppStore.getState().chatMessages[wsId] || [];
+                    let planFilePath: string | null = null;
+                    for (let i = messages.length - 1; i >= 0; i--) {
+                      const m = messages[i].content.match(planPathRe);
+                      if (m) { planFilePath = m[1]; break; }
+                    }
+
+                    // Also check current streaming content and tool activity
+                    // input (the plan path may appear in tool results).
+                    if (!planFilePath) {
+                      const streaming = useAppStore.getState().streamingContent[wsId] || "";
+                      const m = streaming.match(planPathRe);
+                      if (m) planFilePath = m[1];
+                    }
+                    if (!planFilePath) {
+                      const allActivities = useAppStore.getState().toolActivities[wsId] || [];
+                      for (const act of allActivities) {
+                        const m = (act.inputJson + act.resultText).match(planPathRe);
+                        if (m) { planFilePath = m[1]; break; }
+                      }
+                    }
+                    // Fall back to cached path from EnterPlanMode tool result.
+                    if (!planFilePath && planFilePathRef.current[wsId]) {
+                      planFilePath = planFilePathRef.current[wsId];
+                    }
+
+                    setPlanApproval({
+                      workspaceId: wsId,
+                      toolUseId: entry.toolUseId,
+                      planFilePath,
+                      allowedPrompts,
+                    });
+                  }
                   break;
                 }
               }
@@ -268,15 +267,21 @@ export function useAgentStream() {
             break;
           }
           case "user": {
-            // Tool results — update matching tool activities
+            // Tool results — update matching tool activities and extract
+            // plan file path from EnterPlanMode results.
+            const planPathRe = /(\/[^\s)"`]+\/\.claude\/plans\/[^\s)"`]+\.md)/;
             for (const block of streamEvent.message.content) {
               if (block.type === "tool_result") {
+                const text =
+                  typeof block.content === "string"
+                    ? block.content
+                    : JSON.stringify(block.content);
                 updateToolActivity(wsId, block.tool_use_id, {
-                  resultText:
-                    typeof block.content === "string"
-                      ? block.content
-                      : JSON.stringify(block.content),
+                  resultText: text,
                 });
+                // Capture plan file path from tool results (e.g. EnterPlanMode).
+                const pm = text.match(planPathRe);
+                if (pm) planFilePathRef.current[wsId] = pm[1];
               }
             }
             break;
@@ -297,6 +302,7 @@ export function useAgentStream() {
     appendToolActivityInput,
     updateWorkspace,
     setAgentQuestion,
+    setPlanApproval,
     finalizeTurn,
     setPlanMode,
   ]);
