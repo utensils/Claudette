@@ -23,11 +23,15 @@ export function useKeyboardShortcuts() {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
-      // Shift+Tab: toggle plan mode — only when no overlay/modal is open
-      // so it doesn't break form tab navigation in modals
+      // Shift+Tab: toggle plan mode — only when no overlay is open and no
+      // interactive element (input, textarea, select, button) is focused,
+      // so it doesn't break standard focus navigation.
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      const isInteractive = activeTag === "input" || activeTag === "textarea" ||
+        activeTag === "select" || activeTag === "button";
       if (
         e.key === "Tab" && e.shiftKey && !mod && selectedWorkspaceId &&
-        !activeModal && !commandPaletteOpen && !fuzzyFinderOpen
+        !activeModal && !commandPaletteOpen && !fuzzyFinderOpen && !isInteractive
       ) {
         e.preventDefault();
         setPlanMode(selectedWorkspaceId, !planMode);

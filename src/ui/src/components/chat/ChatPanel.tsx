@@ -133,7 +133,7 @@ const SANITIZE_SCHEMA = {
   attributes: {
     ...defaultSchema.attributes,
     div: [...(defaultSchema.attributes?.div ?? []), "className"],
-    span: [...(defaultSchema.attributes?.span ?? []), "className", "style"],
+    span: [...(defaultSchema.attributes?.span ?? []), "className"],
     hr: [...(defaultSchema.attributes?.hr ?? []), "className"],
     "*": [...(defaultSchema.attributes?.["*"] ?? []), "class"],
   },

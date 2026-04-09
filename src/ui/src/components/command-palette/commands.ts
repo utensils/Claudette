@@ -106,7 +106,9 @@ export function buildThemeCommands(
 
 export function buildCommands(ctx: CommandContext): Command[] {
   const cmds: Command[] = [];
-  const isMac = navigator.platform.startsWith("Mac");
+  const isMac = ((navigator as unknown as Record<string, unknown>).userAgentData as { platform?: string } | undefined)
+    ?.platform?.toLowerCase().startsWith("mac")
+    ?? navigator.platform.startsWith("Mac");
   const mod = isMac ? "Cmd" : "Ctrl";
 
   // -- UI --

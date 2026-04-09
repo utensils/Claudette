@@ -232,6 +232,9 @@ export function CommandPalette() {
       filteredCommands[selectedIndex].execute();
     } else if (e.key === "Escape") {
       e.preventDefault();
+      // Stop propagation so the global keyboard shortcut handler doesn't
+      // also close the palette when we just want to exit theme mode.
+      e.nativeEvent.stopImmediatePropagation();
       if (mode === "theme") {
         exitThemeMode();
       } else {
