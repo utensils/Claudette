@@ -10,6 +10,7 @@ import type {
   TerminalTab,
   RemoteConnectionInfo,
   DiscoveredServer,
+  ConversationCheckpoint,
 } from "../types";
 import type { RemoteInitialData } from "../types/remote";
 
@@ -105,6 +106,16 @@ interface AppState {
   planApprovals: Record<string, PlanApproval>;
   setPlanApproval: (p: PlanApproval) => void;
   clearPlanApproval: (wsId: string) => void;
+
+  // -- Checkpoints --
+  checkpoints: Record<string, ConversationCheckpoint[]>;
+  setCheckpoints: (wsId: string, cps: ConversationCheckpoint[]) => void;
+  addCheckpoint: (wsId: string, cp: ConversationCheckpoint) => void;
+  rollbackConversation: (
+    wsId: string,
+    checkpointId: string,
+    messages: ChatMessage[]
+  ) => void;
 
   // -- Notifications --
   unreadCompletions: Set<string>; // workspace IDs with unread completions
@@ -381,6 +392,44 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const { [wsId]: _, ...rest } = s.planApprovals;
       return { planApprovals: rest };
+    }),
+
+  // -- Checkpoints --
+  checkpoints: {},
+  setCheckpoints: (wsId, cps) =>
+    set((s) => ({
+      checkpoints: { ...s.checkpoints, [wsId]: cps },
+    })),
+  addCheckpoint: (wsId, cp) =>
+    set((s) => ({
+      checkpoints: {
+        ...s.checkpoints,
+        [wsId]: [...(s.checkpoints[wsId] || []), cp],
+      },
+    })),
+  rollbackConversation: (wsId, checkpointId, messages) =>
+    set((s) => {
+      const { [wsId]: _q, ...restQuestions } = s.agentQuestions;
+      const { [wsId]: _p, ...restApprovals } = s.planApprovals;
+      return {
+        chatMessages: { ...s.chatMessages, [wsId]: messages },
+        completedTurns: { ...s.completedTurns, [wsId]: [] },
+        toolActivities: { ...s.toolActivities, [wsId]: [] },
+        streamingContent: { ...s.streamingContent, [wsId]: "" },
+        agentQuestions: restQuestions,
+        planApprovals: restApprovals,
+        checkpoints: {
+          ...s.checkpoints,
+          [wsId]: (s.checkpoints[wsId] || []).filter(
+            (cp) => {
+              const target = (s.checkpoints[wsId] || []).find(
+                (c) => c.id === checkpointId,
+              );
+              return target ? cp.turn_index <= target.turn_index : true;
+            },
+          ),
+        },
+      };
     }),
 
   // -- Notifications --

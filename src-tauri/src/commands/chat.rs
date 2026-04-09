@@ -3,7 +3,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use claudette::agent::{self, AgentEvent, AgentSettings, StreamEvent};
 use claudette::db::Database;
-use claudette::model::{ChatMessage, ChatRole};
+use claudette::git;
+use claudette::model::{ChatMessage, ChatRole, ConversationCheckpoint};
 
 use crate::state::{AgentSessionState, AppState};
 
@@ -152,6 +153,7 @@ pub async fn send_chat_message(
     // Bridge: read from mpsc receiver, emit Tauri events.
     let ws_id = workspace_id.clone();
     let db_path = state.db_path.clone();
+    let wt_path = worktree_path.clone();
     tokio::spawn(async move {
         let mut rx = turn_handle.event_rx;
         let mut got_init = false;
@@ -209,18 +211,48 @@ pub async fn send_chat_message(
                 }
             }
 
-            // Update cost/duration on result events.
+            // Update cost/duration on result events, then create a checkpoint.
             if let AgentEvent::Stream(StreamEvent::Result {
                 total_cost_usd,
                 duration_ms,
                 ..
             }) = &event
-                && let (Some(cost), Some(dur)) = (total_cost_usd, duration_ms)
                 && let Ok(db) = Database::open(&db_path)
                 && let Ok(msgs) = db.list_chat_messages(&ws_id)
                 && let Some(last) = msgs.iter().rfind(|m| m.role == ChatRole::Assistant)
             {
-                let _ = db.update_chat_message_cost(&last.id, *cost, *dur);
+                if let (Some(cost), Some(dur)) = (total_cost_usd, duration_ms) {
+                    let _ = db.update_chat_message_cost(&last.id, *cost, *dur);
+                }
+
+                // Auto-checkpoint: create git commit and record checkpoint.
+                let turn_index = db
+                    .latest_checkpoint(&ws_id)
+                    .ok()
+                    .flatten()
+                    .map(|cp| cp.turn_index + 1)
+                    .unwrap_or(0);
+
+                let commit_hash =
+                    git::create_checkpoint_commit(&wt_path, &format!("Turn {turn_index}"))
+                        .await
+                        .ok();
+
+                let checkpoint = ConversationCheckpoint {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    workspace_id: ws_id.clone(),
+                    message_id: last.id.clone(),
+                    commit_hash,
+                    turn_index,
+                    created_at: now_iso(),
+                };
+                if db.insert_checkpoint(&checkpoint).is_ok() {
+                    let payload = serde_json::json!({
+                        "workspace_id": &ws_id,
+                        "checkpoint": &checkpoint,
+                    });
+                    let _ = app.emit("checkpoint-created", &payload);
+                }
             }
 
             let payload = AgentStreamPayload {
@@ -272,6 +304,81 @@ pub async fn reset_agent_session(
     db.clear_agent_session(&workspace_id)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_checkpoints(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ConversationCheckpoint>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.list_checkpoints(&workspace_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn rollback_to_checkpoint(
+    workspace_id: String,
+    checkpoint_id: String,
+    restore_files: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChatMessage>, String> {
+    // Guard: reject if agent is running.
+    {
+        let agents = state.agents.read().await;
+        if let Some(session) = agents.get(&workspace_id)
+            && session.active_pid.is_some()
+        {
+            return Err("Cannot rollback while the agent is running".into());
+        }
+    }
+
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+
+    // Load the target checkpoint and verify ownership.
+    let checkpoint = db
+        .get_checkpoint(&checkpoint_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Checkpoint not found")?;
+    if checkpoint.workspace_id != workspace_id {
+        return Err("Checkpoint does not belong to this workspace".into());
+    }
+
+    // Truncate messages after the checkpoint's anchor message.
+    db.delete_messages_after(&workspace_id, &checkpoint.message_id)
+        .map_err(|e| e.to_string())?;
+
+    // Delete future checkpoints.
+    db.delete_checkpoints_after(&workspace_id, checkpoint.turn_index)
+        .map_err(|e| e.to_string())?;
+
+    // Reset agent session so the next turn starts fresh.
+    {
+        let mut agents = state.agents.write().await;
+        agents.remove(&workspace_id);
+    }
+    db.clear_agent_session(&workspace_id)
+        .map_err(|e| e.to_string())?;
+
+    // Optionally restore files to the checkpoint's git state.
+    if restore_files && let Some(ref commit_hash) = checkpoint.commit_hash {
+        let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+        let ws = workspaces
+            .iter()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        let wt = ws
+            .worktree_path
+            .as_ref()
+            .ok_or("Workspace has no worktree")?;
+        git::restore_to_commit(wt, commit_hash)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Return the truncated message list.
+    db.list_chat_messages(&workspace_id)
+        .map_err(|e| e.to_string())
 }
 
 fn now_iso() -> String {

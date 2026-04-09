@@ -170,6 +170,28 @@ export function resetAgentSession(workspaceId: string): Promise<void> {
   return invoke("reset_agent_session", { workspaceId });
 }
 
+// -- Checkpoints --
+
+import type { ConversationCheckpoint } from "../types/checkpoint";
+
+export function listCheckpoints(
+  workspaceId: string,
+): Promise<ConversationCheckpoint[]> {
+  return invoke("list_checkpoints", { workspaceId });
+}
+
+export function rollbackToCheckpoint(
+  workspaceId: string,
+  checkpointId: string,
+  restoreFiles: boolean,
+): Promise<ChatMessage[]> {
+  return invoke("rollback_to_checkpoint", {
+    workspaceId,
+    checkpointId,
+    restoreFiles,
+  });
+}
+
 // -- Plan --
 
 export function readPlanFile(path: string): Promise<string> {

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "../stores/useAppStore";
 import type { AgentStreamPayload } from "../types/agent-events";
+import type { ConversationCheckpoint } from "../types/checkpoint";
 import { extractToolSummary } from "./toolSummary";
 import { parseAskUserQuestion } from "./parseAgentQuestion";
 
@@ -306,4 +307,19 @@ export function useAgentStream() {
     finalizeTurn,
     setPlanMode,
   ]);
+
+  // Listen for checkpoint-created events from the backend.
+  const addCheckpoint = useAppStore((s) => s.addCheckpoint);
+  useEffect(() => {
+    const unlisten = listen<{
+      workspace_id: string;
+      checkpoint: ConversationCheckpoint;
+    }>("checkpoint-created", (event) => {
+      const { workspace_id: wsId, checkpoint } = event.payload;
+      addCheckpoint(wsId, checkpoint);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [addCheckpoint]);
 }

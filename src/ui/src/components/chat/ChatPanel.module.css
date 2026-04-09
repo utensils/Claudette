@@ -171,6 +171,7 @@
 
 /* User messages — compact input blocks */
 .role_User {
+  position: relative;
   background: var(--chat-user-bg);
   border-radius: 8px;
   padding: 10px 14px;
@@ -187,6 +188,32 @@
   font-size: 13px;
   line-height: 1.55;
   color: var(--text-muted);
+}
+
+/* Rollback button — appears on hover over user messages */
+.rollbackBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast),
+    background var(--transition-fast);
+  line-height: 1;
+}
+
+.role_User:hover .rollbackBtn {
+  opacity: 1;
+}
+
+.rollbackBtn:hover {
+  color: var(--accent-primary);
+  background: var(--accent-bg);
 }
 
 /* Assistant messages — clean prose, no chrome */

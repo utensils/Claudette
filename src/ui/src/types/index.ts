@@ -25,3 +25,4 @@ export type {
   DiscoveredServer,
   PairResult,
 } from "./remote";
+export type { ConversationCheckpoint } from "./checkpoint";

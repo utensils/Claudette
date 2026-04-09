@@ -6,6 +6,7 @@ import { RemoveRepoModal } from "./RemoveRepoModal";
 import { RepoSettingsModal } from "./RepoSettingsModal";
 import { RelinkRepoModal } from "./RelinkRepoModal";
 import { AppSettingsModal } from "./AppSettingsModal";
+import { RollbackModal } from "./RollbackModal";
 import { ShareModal } from "./ShareModal";
 
 export function ModalRouter() {
@@ -26,6 +27,8 @@ export function ModalRouter() {
       return <RelinkRepoModal />;
     case "appSettings":
       return <AppSettingsModal />;
+    case "rollback":
+      return <RollbackModal />;
     case "share":
       return <ShareModal />;
     default:

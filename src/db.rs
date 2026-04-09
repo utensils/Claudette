@@ -3,7 +3,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::model::{
-    ChatMessage, RemoteConnection, Repository, TerminalTab, Workspace, WorkspaceStatus,
+    ChatMessage, ConversationCheckpoint, RemoteConnection, Repository, TerminalTab, Workspace,
+    WorkspaceStatus,
 };
 
 pub struct Database {
@@ -170,6 +171,24 @@ impl Database {
                  ALTER TABLE workspaces ADD COLUMN turn_count INTEGER NOT NULL DEFAULT 0;
 
                  PRAGMA user_version = 9;",
+            )?;
+        }
+
+        if version < 10 {
+            self.conn.execute_batch(
+                "CREATE TABLE conversation_checkpoints (
+                    id            TEXT PRIMARY KEY,
+                    workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                    message_id    TEXT NOT NULL,
+                    commit_hash   TEXT,
+                    turn_index    INTEGER NOT NULL,
+                    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+
+                CREATE INDEX idx_checkpoints_workspace
+                    ON conversation_checkpoints(workspace_id, turn_index);
+
+                PRAGMA user_version = 10;",
             )?;
         }
 
@@ -529,6 +548,115 @@ impl Database {
             params![workspace_id],
         )?;
         Ok(())
+    }
+
+    // --- Conversation Checkpoints ---
+
+    pub fn insert_checkpoint(&self, cp: &ConversationCheckpoint) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "INSERT INTO conversation_checkpoints (id, workspace_id, message_id, commit_hash, turn_index)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![cp.id, cp.workspace_id, cp.message_id, cp.commit_hash, cp.turn_index],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_checkpoints(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<ConversationCheckpoint>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, workspace_id, message_id, commit_hash, turn_index, created_at
+             FROM conversation_checkpoints WHERE workspace_id = ?1 ORDER BY turn_index",
+        )?;
+        let rows = stmt.query_map(params![workspace_id], |row| {
+            Ok(ConversationCheckpoint {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                message_id: row.get(2)?,
+                commit_hash: row.get(3)?,
+                turn_index: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn get_checkpoint(
+        &self,
+        id: &str,
+    ) -> Result<Option<ConversationCheckpoint>, rusqlite::Error> {
+        self.conn
+            .query_row(
+                "SELECT id, workspace_id, message_id, commit_hash, turn_index, created_at
+                 FROM conversation_checkpoints WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(ConversationCheckpoint {
+                        id: row.get(0)?,
+                        workspace_id: row.get(1)?,
+                        message_id: row.get(2)?,
+                        commit_hash: row.get(3)?,
+                        turn_index: row.get(4)?,
+                        created_at: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    pub fn latest_checkpoint(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Option<ConversationCheckpoint>, rusqlite::Error> {
+        self.conn
+            .query_row(
+                "SELECT id, workspace_id, message_id, commit_hash, turn_index, created_at
+                 FROM conversation_checkpoints
+                 WHERE workspace_id = ?1
+                 ORDER BY turn_index DESC
+                 LIMIT 1",
+                params![workspace_id],
+                |row| {
+                    Ok(ConversationCheckpoint {
+                        id: row.get(0)?,
+                        workspace_id: row.get(1)?,
+                        message_id: row.get(2)?,
+                        commit_hash: row.get(3)?,
+                        turn_index: row.get(4)?,
+                        created_at: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    pub fn delete_checkpoints_after(
+        &self,
+        workspace_id: &str,
+        turn_index: i32,
+    ) -> Result<usize, rusqlite::Error> {
+        let deleted = self.conn.execute(
+            "DELETE FROM conversation_checkpoints WHERE workspace_id = ?1 AND turn_index > ?2",
+            params![workspace_id, turn_index],
+        )?;
+        Ok(deleted)
+    }
+
+    /// Delete all chat messages inserted after the given message (by rowid order).
+    /// Returns the number of messages deleted.
+    pub fn delete_messages_after(
+        &self,
+        workspace_id: &str,
+        after_message_id: &str,
+    ) -> Result<usize, rusqlite::Error> {
+        let deleted = self.conn.execute(
+            "DELETE FROM chat_messages
+             WHERE workspace_id = ?1
+               AND rowid > (SELECT rowid FROM chat_messages WHERE id = ?2)",
+            params![workspace_id, after_message_id],
+        )?;
+        Ok(deleted)
     }
 
     // --- Terminal Tabs ---
@@ -1352,5 +1480,135 @@ mod tests {
         // After workspace deletion, usage rows should be gone.
         let usage = db.get_slash_command_usage("w1").unwrap();
         assert!(usage.is_empty());
+    }
+
+    // --- Conversation checkpoint tests ---
+
+    fn make_checkpoint(id: &str, ws_id: &str, msg_id: &str, turn: i32) -> ConversationCheckpoint {
+        ConversationCheckpoint {
+            id: id.into(),
+            workspace_id: ws_id.into(),
+            message_id: msg_id.into(),
+            commit_hash: Some(format!("abc{turn}")),
+            turn_index: turn,
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_crud() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::User, "q2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m4", "w1", ChatRole::Assistant, "a2"))
+            .unwrap();
+
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m2", 0))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp2", "w1", "m4", 1))
+            .unwrap();
+
+        // list
+        let cps = db.list_checkpoints("w1").unwrap();
+        assert_eq!(cps.len(), 2);
+        assert_eq!(cps[0].turn_index, 0);
+        assert_eq!(cps[1].turn_index, 1);
+
+        // get
+        let cp = db.get_checkpoint("cp1").unwrap().unwrap();
+        assert_eq!(cp.message_id, "m2");
+
+        // latest
+        let latest = db.latest_checkpoint("w1").unwrap().unwrap();
+        assert_eq!(latest.id, "cp2");
+        assert_eq!(latest.turn_index, 1);
+    }
+
+    #[test]
+    fn test_delete_messages_after() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::User, "q2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m4", "w1", ChatRole::Assistant, "a2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m5", "w1", ChatRole::User, "q3"))
+            .unwrap();
+
+        let deleted = db.delete_messages_after("w1", "m2").unwrap();
+        assert_eq!(deleted, 3);
+
+        let msgs = db.list_chat_messages("w1").unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].id, "m1");
+        assert_eq!(msgs[1].id, "m2");
+    }
+
+    #[test]
+    fn test_delete_messages_after_last_message_deletes_nothing() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+
+        let deleted = db.delete_messages_after("w1", "m2").unwrap();
+        assert_eq!(deleted, 0);
+
+        let msgs = db.list_chat_messages("w1").unwrap();
+        assert_eq!(msgs.len(), 2);
+    }
+
+    #[test]
+    fn test_delete_checkpoints_after() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::Assistant, "a3"))
+            .unwrap();
+
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp2", "w1", "m2", 1))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp3", "w1", "m3", 2))
+            .unwrap();
+
+        let deleted = db.delete_checkpoints_after("w1", 0).unwrap();
+        assert_eq!(deleted, 2);
+
+        let cps = db.list_checkpoints("w1").unwrap();
+        assert_eq!(cps.len(), 1);
+        assert_eq!(cps[0].id, "cp1");
+    }
+
+    #[test]
+    fn test_checkpoint_cascade_on_workspace_delete() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+
+        db.delete_workspace("w1").unwrap();
+
+        let cps = db.list_checkpoints("w1").unwrap();
+        assert!(cps.is_empty());
+    }
+
+    #[test]
+    fn test_latest_checkpoint_returns_none_when_empty() {
+        let db = setup_db_with_workspace();
+        let result = db.latest_checkpoint("w1").unwrap();
+        assert!(result.is_none());
     }
 }

@@ -189,6 +189,33 @@ pub async fn branch_delete(repo_path: &str, branch: &str) -> Result<(), GitError
     Ok(())
 }
 
+/// Create a checkpoint commit in a worktree, staging all changes first.
+/// If there are no changes to commit, returns the current HEAD hash.
+pub async fn create_checkpoint_commit(
+    worktree_path: &str,
+    message: &str,
+) -> Result<String, GitError> {
+    // Stage all changes (including untracked files).
+    run_git(worktree_path, &["add", "-A"]).await?;
+
+    // Check if there are staged changes.
+    let status = run_git(worktree_path, &["status", "--porcelain"]).await?;
+    if !status.is_empty() {
+        let commit_msg = format!("[checkpoint] {message}");
+        run_git(worktree_path, &["commit", "-m", &commit_msg]).await?;
+    }
+
+    // Return current HEAD hash regardless.
+    run_git(worktree_path, &["rev-parse", "HEAD"]).await
+}
+
+/// Hard-reset a worktree to a specific commit and clean untracked files.
+pub async fn restore_to_commit(worktree_path: &str, commit_hash: &str) -> Result<(), GitError> {
+    run_git(worktree_path, &["reset", "--hard", commit_hash]).await?;
+    run_git(worktree_path, &["clean", "-fd"]).await?;
+    Ok(())
+}
+
 /// Get the current branch name for a worktree or repository.
 /// Returns an error if in a detached HEAD state.
 pub async fn current_branch(repo_path: &str) -> Result<String, GitError> {
@@ -200,4 +227,94 @@ pub async fn current_branch(repo_path: &str) -> Result<String, GitError> {
         ));
     }
     Ok(branch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a temporary git repo for testing.
+    async fn setup_temp_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        run_git(path, &["init"]).await.unwrap();
+        run_git(path, &["config", "user.email", "test@test.com"])
+            .await
+            .unwrap();
+        run_git(path, &["config", "user.name", "Test"])
+            .await
+            .unwrap();
+
+        // Create an initial commit so HEAD exists.
+        let readme = dir.path().join("README.md");
+        std::fs::write(&readme, "# test").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "initial"]).await.unwrap();
+
+        dir
+    }
+
+    #[tokio::test]
+    async fn test_create_checkpoint_commit_with_changes() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Create a new file.
+        std::fs::write(dir.path().join("file.txt"), "hello").unwrap();
+
+        let hash = create_checkpoint_commit(path, "Turn 0").await.unwrap();
+        assert!(!hash.is_empty());
+
+        // Verify the commit message.
+        let log = run_git(path, &["log", "-1", "--format=%s"]).await.unwrap();
+        assert_eq!(log, "[checkpoint] Turn 0");
+    }
+
+    #[tokio::test]
+    async fn test_create_checkpoint_commit_no_changes() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        let head_before = run_git(path, &["rev-parse", "HEAD"]).await.unwrap();
+        let hash = create_checkpoint_commit(path, "Turn 0").await.unwrap();
+
+        // No new commit should be created — hash should match HEAD.
+        assert_eq!(hash, head_before);
+    }
+
+    #[tokio::test]
+    async fn test_restore_to_commit() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let file = dir.path().join("data.txt");
+
+        // First checkpoint.
+        std::fs::write(&file, "version 1").unwrap();
+        let hash1 = create_checkpoint_commit(path, "Turn 0").await.unwrap();
+
+        // Second checkpoint.
+        std::fs::write(&file, "version 2").unwrap();
+        let _hash2 = create_checkpoint_commit(path, "Turn 1").await.unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "version 2");
+
+        // Restore to first checkpoint.
+        restore_to_commit(path, &hash1).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "version 1");
+    }
+
+    #[tokio::test]
+    async fn test_restore_to_commit_cleans_untracked() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        let head = run_git(path, &["rev-parse", "HEAD"]).await.unwrap();
+
+        // Create an untracked file.
+        let extra = dir.path().join("extra.txt");
+        std::fs::write(&extra, "should be cleaned").unwrap();
+        assert!(extra.exists());
+
+        restore_to_commit(path, &head).await.unwrap();
+        assert!(!extra.exists());
+    }
 }

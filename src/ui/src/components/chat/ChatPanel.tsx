@@ -5,11 +5,12 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeHighlight from "rehype-highlight";
 import { AnsiUp } from "ansi_up";
-import { GitBranch, LayoutDashboard } from "lucide-react";
+import { GitBranch, LayoutDashboard, RotateCcw } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
 import {
   loadChatHistory,
+  listCheckpoints,
   listSlashCommands,
   recordSlashCommandUsage,
   sendChatMessage,
@@ -283,6 +284,14 @@ export function ChatPanel() {
           .map((m) => m.content);
       })
       .catch((e) => console.error("Failed to load chat history:", e));
+
+    // Load checkpoints for rollback support.
+    const setCheckpoints = useAppStore.getState().setCheckpoints;
+    if (!currentWs?.remote_connection_id) {
+      listCheckpoints(selectedWorkspaceId)
+        .then((cps) => setCheckpoints(selectedWorkspaceId, cps))
+        .catch((e) => console.error("Failed to load checkpoints:", e));
+    }
   }, [selectedWorkspaceId, setChatMessages]);
 
   // Auto-scroll to bottom (on new messages or workspace switch — streaming handles its own scroll)
@@ -483,6 +492,7 @@ export function ChatPanel() {
               <MessagesWithTurns
                 messages={messages}
                 workspaceId={selectedWorkspaceId}
+                isRunning={isRunning}
               />
             )}
 
@@ -673,17 +683,25 @@ function TurnSummary({
  * chronological position. Uses a single store subscription + useMemo to avoid
  * per-message selectors and redundant re-renders during streaming.
  */
+const EMPTY_CHECKPOINTS: import("../../types/checkpoint").ConversationCheckpoint[] = [];
+
 const MessagesWithTurns = memo(function MessagesWithTurns({
   messages,
   workspaceId,
+  isRunning,
 }: {
   messages: ChatMessage[];
   workspaceId: string;
+  isRunning: boolean;
 }) {
   const completedTurns = useAppStore(
     (s) => s.completedTurns[workspaceId] ?? EMPTY_COMPLETED_TURNS
   );
   const toggleCompletedTurn = useAppStore((s) => s.toggleCompletedTurn);
+  const checkpoints = useAppStore(
+    (s) => s.checkpoints[workspaceId] ?? EMPTY_CHECKPOINTS
+  );
+  const openModal = useAppStore((s) => s.openModal);
 
   // Build an index: afterMessageIndex → array of (turn, globalIndex) pairs.
   // Only recomputed when completedTurns changes, not on every streaming update.
@@ -695,6 +713,22 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     });
     return map;
   }, [completedTurns]);
+
+  // Map user message index → checkpoint for the preceding turn.
+  // A user message at index i can roll back to the checkpoint whose message_id
+  // matches the assistant message immediately before it (messages[i-1]).
+  const rollbackCheckpointByIdx = useMemo(() => {
+    const msgIdToCp = new Map(checkpoints.map((cp) => [cp.message_id, cp]));
+    const result = new Map<number, typeof checkpoints[number]>();
+    for (let i = 1; i < messages.length; i++) {
+      if (messages[i].role === "User") {
+        const prev = messages[i - 1];
+        const cp = msgIdToCp.get(prev.id);
+        if (cp) result.set(i, cp);
+      }
+    }
+    return result;
+  }, [messages, checkpoints]);
 
   const renderTurns = (position: number) => {
     const entries = turnsByPosition[position];
@@ -718,6 +752,26 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             {msg.role === "User" && (
               <div className={styles.roleLabel}>You</div>
             )}
+            {msg.role === "User" &&
+              !isRunning &&
+              rollbackCheckpointByIdx.has(idx) && (
+                <button
+                  className={styles.rollbackBtn}
+                  title="Roll back to before this message"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const cp = rollbackCheckpointByIdx.get(idx)!;
+                    openModal("rollback", {
+                      workspaceId,
+                      checkpointId: cp.id,
+                      messagePreview: msg.content.slice(0, 100),
+                      hasCommitHash: !!cp.commit_hash,
+                    });
+                  }}
+                >
+                  <RotateCcw size={14} />
+                </button>
+              )}
             <div className={styles.content}>
               {msg.role === "Assistant" ? (
                 <Markdown
