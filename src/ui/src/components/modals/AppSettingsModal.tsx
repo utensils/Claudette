@@ -144,7 +144,7 @@ export function AppSettingsModal() {
             placeholder="monospace"
           />
           <div className={shared.hint}>
-            Font name (e.g., "FiraCode Nerd Font Mono", "JetBrainsMono Nerd Font Mono", "MesloLGS Nerd Font Mono")
+            Font name (e.g., "FiraMono Nerd Font", "Hack Nerd Font Mono")
           </div>
         </div>
       </div>
