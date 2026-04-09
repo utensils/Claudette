@@ -170,6 +170,12 @@ export function resetAgentSession(workspaceId: string): Promise<void> {
   return invoke("reset_agent_session", { workspaceId });
 }
 
+// -- Plan --
+
+export function readPlanFile(path: string): Promise<string> {
+  return invoke("read_plan_file", { path });
+}
+
 // -- Diff --
 
 export interface DiffFilesResult {

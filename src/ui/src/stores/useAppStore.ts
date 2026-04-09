@@ -47,6 +47,13 @@ export interface AgentQuestion {
   questions: AgentQuestionItem[];
 }
 
+export interface PlanApproval {
+  workspaceId: string;
+  toolUseId: string;
+  planFilePath: string | null;
+  allowedPrompts: Array<{ tool: string; prompt: string }>;
+}
+
 interface AppState {
   // -- Repositories --
   repositories: Repository[];
@@ -93,6 +100,11 @@ interface AppState {
   agentQuestions: Record<string, AgentQuestion>;
   setAgentQuestion: (q: AgentQuestion) => void;
   clearAgentQuestion: (wsId: string) => void;
+
+  // -- Plan Approvals (per-workspace) --
+  planApprovals: Record<string, PlanApproval>;
+  setPlanApproval: (p: PlanApproval) => void;
+  clearPlanApproval: (wsId: string) => void;
 
   // -- Notifications --
   unreadCompletions: Set<string>; // workspace IDs with unread completions
@@ -357,6 +369,18 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const { [wsId]: _, ...rest } = s.agentQuestions;
       return { agentQuestions: rest };
+    }),
+
+  // -- Plan Approvals (per-workspace) --
+  planApprovals: {},
+  setPlanApproval: (p) =>
+    set((s) => ({
+      planApprovals: { ...s.planApprovals, [p.workspaceId]: p },
+    })),
+  clearPlanApproval: (wsId) =>
+    set((s) => {
+      const { [wsId]: _, ...rest } = s.planApprovals;
+      return { planApprovals: rest };
     }),
 
   // -- Notifications --

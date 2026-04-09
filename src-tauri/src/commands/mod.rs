@@ -1,6 +1,7 @@
 pub mod chat;
 pub mod data;
 pub mod diff;
+pub mod plan;
 pub mod remote;
 pub mod repository;
 pub mod settings;

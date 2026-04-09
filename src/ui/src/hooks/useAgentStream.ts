@@ -18,6 +18,7 @@ export function useAgentStream() {
   );
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const setAgentQuestion = useAppStore((s) => s.setAgentQuestion);
+  const setPlanApproval = useAppStore((s) => s.setPlanApproval);
   const finalizeTurn = useAppStore((s) => s.finalizeTurn);
   const setPlanMode = useAppStore((s) => s.setPlanMode);
 
@@ -177,6 +178,48 @@ export function useAgentStream() {
                       // Malformed JSON — ignore, question won't show
                     }
                   }
+
+                  // Handle ExitPlanMode — show approval card.
+                  if (entry.toolName === "ExitPlanMode") {
+                    let allowedPrompts: Array<{ tool: string; prompt: string }> = [];
+                    if (activity?.inputJson) {
+                      try {
+                        const parsed = JSON.parse(activity.inputJson);
+                        if (Array.isArray(parsed.allowedPrompts)) {
+                          allowedPrompts = parsed.allowedPrompts;
+                        }
+                      } catch { /* ignore */ }
+                    }
+
+                    // Try to extract plan file path from recent messages.
+                    const messages = useAppStore.getState().chatMessages[wsId] || [];
+                    let planFilePath: string | null = null;
+                    for (let i = messages.length - 1; i >= Math.max(0, messages.length - 5); i--) {
+                      const match = messages[i].content.match(/\.claude\/plans\/[^\s)]+\.md/);
+                      if (match) {
+                        // Reconstruct full path — the match may be a relative or full path.
+                        planFilePath = match[0].startsWith("/") ? match[0] : null;
+                        // Also try extracting from a broader pattern.
+                        const fullMatch = messages[i].content.match(/(\/[^\s)]+\.claude\/plans\/[^\s)]+\.md)/);
+                        if (fullMatch) planFilePath = fullMatch[1];
+                        break;
+                      }
+                    }
+
+                    // Also check streaming content for the plan path.
+                    if (!planFilePath) {
+                      const streaming = useAppStore.getState().streamingContent[wsId] || "";
+                      const streamMatch = streaming.match(/(\/[^\s)]+\.claude\/plans\/[^\s)]+\.md)/);
+                      if (streamMatch) planFilePath = streamMatch[1];
+                    }
+
+                    setPlanApproval({
+                      workspaceId: wsId,
+                      toolUseId: entry.toolUseId,
+                      planFilePath,
+                      allowedPrompts,
+                    });
+                  }
                   break;
                 }
               }
@@ -243,6 +286,7 @@ export function useAgentStream() {
     appendToolActivityInput,
     updateWorkspace,
     setAgentQuestion,
+    setPlanApproval,
     finalizeTurn,
     setPlanMode,
   ]);

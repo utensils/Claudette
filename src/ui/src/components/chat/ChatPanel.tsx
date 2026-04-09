@@ -22,6 +22,7 @@ import type { SlashCommand } from "../../services/tauri";
 import type { ChatMessage } from "../../types/chat";
 import { useAgentStream } from "../../hooks/useAgentStream";
 import { AgentQuestionCard } from "./AgentQuestionCard";
+import { PlanApprovalCard } from "./PlanApprovalCard";
 import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { HeaderMenu } from "./HeaderMenu";
@@ -199,6 +200,10 @@ export function ChatPanel() {
     (s) => (selectedWorkspaceId ? s.agentQuestions[selectedWorkspaceId] ?? null : null)
   );
   const clearAgentQuestion = useAppStore((s) => s.clearAgentQuestion);
+  const pendingPlan = useAppStore(
+    (s) => (selectedWorkspaceId ? s.planApprovals[selectedWorkspaceId] ?? null : null)
+  );
+  const clearPlanApproval = useAppStore((s) => s.clearPlanApproval);
   const isRunning = ws?.agent_status === "Running";
 
   // Spinner and elapsed timer for running agent.
@@ -298,10 +303,11 @@ export function ChatPanel() {
     const trimmed = content.trim();
     if (!trimmed || !selectedWorkspaceId) return;
 
-    // Clear any pending agent question — the user is sending a new message
-    // (either an answer from the question card or a manual override).
+    // Clear any pending agent question or plan approval — the user is sending
+    // a new message (answer from a card or manual override).
     if (selectedWorkspaceId) {
       clearAgentQuestion(selectedWorkspaceId);
+      clearPlanApproval(selectedWorkspaceId);
     }
 
     setError(null);
@@ -501,7 +507,17 @@ export function ChatPanel() {
               />
             )}
 
-            {isRunning && !pendingQuestion && (
+            {pendingPlan && (
+              <PlanApprovalCard
+                approval={pendingPlan}
+                onRespond={(response) => {
+                  if (selectedWorkspaceId) clearPlanApproval(selectedWorkspaceId);
+                  handleSend(response);
+                }}
+              />
+            )}
+
+            {isRunning && !pendingQuestion && !pendingPlan && (
               <div
                 ref={processingRef}
                 className={styles.processing}
