@@ -2,7 +2,12 @@ import type { ThemeDefinition } from "../types/theme";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../styles/themes";
 import { listUserThemes } from "../services/tauri";
 
+// Vite ?url imports — resolved to asset URLs without injecting CSS
+import hljsDarkUrl from "highlight.js/styles/github-dark.min.css?url";
+import hljsLightUrl from "highlight.js/styles/github.min.css?url";
+
 const THEMEABLE_VARS = [
+  "color-scheme",
   "accent-primary",
   "accent-primary-rgb",
   "accent-dim",
@@ -54,6 +59,21 @@ export function applyTheme(theme: ThemeDefinition): void {
       root.style.removeProperty(`--${varName}`);
     }
   }
+  // Set the real color-scheme property so native controls match.
+  // Default to "dark" if the theme doesn't specify (e.g. older user themes).
+  const scheme = theme.colors["color-scheme"] ?? "dark";
+  root.style.setProperty("color-scheme", scheme);
+
+  // Swap highlight.js syntax theme to match light/dark
+  const isLight = scheme === "light";
+  let link = document.getElementById("hljs-theme") as HTMLLinkElement | null;
+  if (!link) {
+    link = document.createElement("link");
+    link.id = "hljs-theme";
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+  }
+  link.href = isLight ? hljsLightUrl : hljsDarkUrl;
 }
 
 export async function loadAllThemes(): Promise<ThemeDefinition[]> {

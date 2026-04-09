@@ -6,19 +6,43 @@ export function useKeyboardShortcuts() {
   const toggleRightSidebar = useAppStore((s) => s.toggleRightSidebar);
   const toggleTerminalPanel = useAppStore((s) => s.toggleTerminalPanel);
   const toggleFuzzyFinder = useAppStore((s) => s.toggleFuzzyFinder);
+  const toggleCommandPalette = useAppStore((s) => s.toggleCommandPalette);
   const closeModal = useAppStore((s) => s.closeModal);
   const activeModal = useAppStore((s) => s.activeModal);
   const fuzzyFinderOpen = useAppStore((s) => s.fuzzyFinderOpen);
+  const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
   const setDiffSelectedFile = useAppStore((s) => s.setDiffSelectedFile);
   const diffSelectedFile = useAppStore((s) => s.diffSelectedFile);
+  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
+  const setPlanMode = useAppStore((s) => s.setPlanMode);
+  const planMode = useAppStore(
+    (s) => (selectedWorkspaceId ? s.planMode[selectedWorkspaceId] ?? false : false),
+  );
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
+      // Shift+Tab: toggle plan mode — only when no overlay is open and no
+      // interactive element (input, textarea, select, button) is focused,
+      // so it doesn't break standard focus navigation.
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      const isInteractive = activeTag === "input" || activeTag === "textarea" ||
+        activeTag === "select" || activeTag === "button";
+      if (
+        e.key === "Tab" && e.shiftKey && !mod && selectedWorkspaceId &&
+        !activeModal && !commandPaletteOpen && !fuzzyFinderOpen && !isInteractive
+      ) {
+        e.preventDefault();
+        setPlanMode(selectedWorkspaceId, !planMode);
+        return;
+      }
+
       // Escape: dismiss topmost overlay
       if (e.key === "Escape") {
-        if (activeModal) {
+        if (commandPaletteOpen) {
+          toggleCommandPalette();
+        } else if (activeModal) {
           closeModal();
         } else if (fuzzyFinderOpen) {
           toggleFuzzyFinder();
@@ -39,6 +63,10 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           toggleFuzzyFinder();
           break;
+        case "p":
+          e.preventDefault();
+          toggleCommandPalette();
+          break;
         case "d":
           e.preventDefault();
           toggleRightSidebar();
@@ -57,10 +85,15 @@ export function useKeyboardShortcuts() {
     toggleRightSidebar,
     toggleTerminalPanel,
     toggleFuzzyFinder,
+    toggleCommandPalette,
     closeModal,
     activeModal,
     fuzzyFinderOpen,
+    commandPaletteOpen,
     setDiffSelectedFile,
     diffSelectedFile,
+    selectedWorkspaceId,
+    setPlanMode,
+    planMode,
   ]);
 }

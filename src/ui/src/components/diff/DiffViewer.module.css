@@ -56,12 +56,12 @@
 }
 
 .hunkHeader {
-  background: rgba(100, 160, 240, 0.08);
+  background: rgba(var(--accent-primary-rgb), 0.05);
   color: var(--diff-hunk-header);
   padding: 4px 12px;
   font-size: 12px;
-  border-top: 1px solid rgba(100, 160, 240, 0.1);
-  border-bottom: 1px solid rgba(100, 160, 240, 0.1);
+  border-top: 1px solid rgba(var(--accent-primary-rgb), 0.08);
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.08);
 }
 
 .line {

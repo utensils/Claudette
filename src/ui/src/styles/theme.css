@@ -1,4 +1,8 @@
 :root {
+  /* System color scheme — controls native UI elements (selects, scrollbars) */
+  --color-scheme: dark;
+  color-scheme: var(--color-scheme);
+
   /* Brand accent — Claudette teal */
   --accent-primary: #00e5cc;
   --accent-primary-rgb: 0, 229, 204;
@@ -40,7 +44,7 @@
 
   /* Chat */
   --chat-user-bg: rgba(255, 255, 255, 0.05);
-  --chat-system-bg: rgba(230, 179, 51, 0.08);
+  --chat-system-bg: rgba(255, 255, 255, 0.03);
   --chat-input-bg: rgb(26, 26, 33);
   --chat-header-bg: rgb(22, 22, 28);
 
