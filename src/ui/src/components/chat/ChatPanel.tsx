@@ -615,8 +615,6 @@ function TurnSummary({
   onToggle,
 }: {
   turn: CompletedTurn;
-  turnIndex: number;
-  workspaceId: string;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -699,8 +697,6 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
       <TurnSummary
         key={turn.id}
         turn={turn}
-        turnIndex={globalIdx}
-        workspaceId={workspaceId}
         collapsed={turn.collapsed}
         onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
       />
@@ -739,8 +735,6 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
           <TurnSummary
             key={turn.id}
             turn={turn}
-            turnIndex={globalIdx}
-            workspaceId={workspaceId}
             collapsed={turn.collapsed}
             onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
           />
