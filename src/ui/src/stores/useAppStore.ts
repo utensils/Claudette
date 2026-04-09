@@ -332,8 +332,8 @@ export const useAppStore = create<AppState>((set) => ({
         activities: activities.map((a) => ({
           toolUseId: a.toolUseId,
           toolName: a.toolName,
-          inputJson: "",
-          resultText: "",
+          inputJson: a.inputJson,
+          resultText: a.resultText,
           collapsed: true,
           summary: a.summary,
         })),

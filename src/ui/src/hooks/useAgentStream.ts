@@ -29,6 +29,8 @@ export function useAgentStream() {
   >({});
   // Count assistant messages in the current turn for the summary.
   const turnMessageCountRef = useRef<Record<string, number>>({});
+  // Plan file path extracted from EnterPlanMode tool results, keyed by wsId.
+  const planFilePathRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     const unlisten = listen<AgentStreamPayload>("agent-stream", (event) => {
@@ -191,20 +193,34 @@ export function useAgentStream() {
                       } catch { /* ignore */ }
                     }
 
-                    // Extract absolute plan file path from recent messages or
-                    // streaming content. Only match absolute paths (leading /).
-                    const planPathRe = /(\/[^\s)]+\/\.claude\/plans\/[^\s)]+\.md)/;
+                    // Extract absolute plan file path from ALL messages (the
+                    // path is typically mentioned when entering plan mode,
+                    // which may be many messages back). Search newest-first.
+                    const planPathRe = /(\/[^\s)"`]+\/\.claude\/plans\/[^\s)"`]+\.md)/;
                     const messages = useAppStore.getState().chatMessages[wsId] || [];
                     let planFilePath: string | null = null;
-                    for (let i = messages.length - 1; i >= Math.max(0, messages.length - 5); i--) {
+                    for (let i = messages.length - 1; i >= 0; i--) {
                       const m = messages[i].content.match(planPathRe);
                       if (m) { planFilePath = m[1]; break; }
                     }
 
+                    // Also check current streaming content and tool activity
+                    // input (the plan path may appear in tool results).
                     if (!planFilePath) {
                       const streaming = useAppStore.getState().streamingContent[wsId] || "";
                       const m = streaming.match(planPathRe);
                       if (m) planFilePath = m[1];
+                    }
+                    if (!planFilePath) {
+                      const allActivities = useAppStore.getState().toolActivities[wsId] || [];
+                      for (const act of allActivities) {
+                        const m = (act.inputJson + act.resultText).match(planPathRe);
+                        if (m) { planFilePath = m[1]; break; }
+                      }
+                    }
+                    // Fall back to cached path from EnterPlanMode tool result.
+                    if (!planFilePath && planFilePathRef.current[wsId]) {
+                      planFilePath = planFilePathRef.current[wsId];
                     }
 
                     setPlanApproval({
@@ -251,15 +267,21 @@ export function useAgentStream() {
             break;
           }
           case "user": {
-            // Tool results — update matching tool activities
+            // Tool results — update matching tool activities and extract
+            // plan file path from EnterPlanMode results.
+            const planPathRe = /(\/[^\s)"`]+\/\.claude\/plans\/[^\s)"`]+\.md)/;
             for (const block of streamEvent.message.content) {
               if (block.type === "tool_result") {
+                const text =
+                  typeof block.content === "string"
+                    ? block.content
+                    : JSON.stringify(block.content);
                 updateToolActivity(wsId, block.tool_use_id, {
-                  resultText:
-                    typeof block.content === "string"
-                      ? block.content
-                      : JSON.stringify(block.content),
+                  resultText: text,
                 });
+                // Capture plan file path from tool results (e.g. EnterPlanMode).
+                const pm = text.match(planPathRe);
+                if (pm) planFilePathRef.current[wsId] = pm[1];
               }
             }
             break;
