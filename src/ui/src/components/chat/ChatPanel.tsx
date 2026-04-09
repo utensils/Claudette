@@ -718,14 +718,21 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   // Map user message index → checkpoint for the preceding turn.
   // A user message at index i can roll back to the checkpoint whose message_id
   // matches the assistant message immediately before it (messages[i-1]).
+  // Index 0 (first user message) is always rollback-eligible when checkpoints
+  // exist — it clears the entire conversation.
   const rollbackCheckpointByIdx = useMemo(() => {
     const msgIdToCp = new Map(checkpoints.map((cp) => [cp.message_id, cp]));
-    const result = new Map<number, typeof checkpoints[number]>();
-    for (let i = 1; i < messages.length; i++) {
+    const result = new Map<number, typeof checkpoints[number] | null>();
+    for (let i = 0; i < messages.length; i++) {
       if (messages[i].role === "User") {
-        const prev = messages[i - 1];
-        const cp = msgIdToCp.get(prev.id);
-        if (cp) result.set(i, cp);
+        if (i === 0 && checkpoints.length > 0) {
+          // First user message → clear all (null = no specific checkpoint).
+          result.set(0, null);
+        } else if (i > 0) {
+          const prev = messages[i - 1];
+          const cp = msgIdToCp.get(prev.id);
+          if (cp) result.set(i, cp);
+        }
       }
     }
     return result;
@@ -761,12 +768,14 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                   title="Roll back to before this message"
                   onClick={(e) => {
                     e.stopPropagation();
-                    const cp = rollbackCheckpointByIdx.get(idx)!;
+                    const cp = rollbackCheckpointByIdx.get(idx);
                     openModal("rollback", {
                       workspaceId,
-                      checkpointId: cp.id,
+                      checkpointId: cp ? cp.id : null,
                       messagePreview: msg.content.slice(0, 100),
-                      hasFileChanges: checkpointHasFileChanges(cp, checkpoints),
+                      hasFileChanges: cp
+                        ? checkpointHasFileChanges(cp, checkpoints)
+                        : checkpoints.some((c) => !!c.commit_hash),
                     });
                   }}
                 >

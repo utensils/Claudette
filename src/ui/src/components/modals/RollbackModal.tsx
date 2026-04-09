@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
-import { rollbackToCheckpoint, loadDiffFiles } from "../../services/tauri";
+import {
+  rollbackToCheckpoint,
+  clearConversation,
+  loadDiffFiles,
+} from "../../services/tauri";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
 
@@ -15,19 +19,18 @@ export function RollbackModal() {
   const [restoreFiles, setRestoreFiles] = useState(false);
 
   const workspaceId = modalData.workspaceId as string;
-  const checkpointId = modalData.checkpointId as string;
+  const checkpointId = (modalData.checkpointId as string) ?? null;
   const messagePreview = modalData.messagePreview as string;
   const hasFileChanges = modalData.hasFileChanges as boolean;
+  const isClearAll = !checkpointId;
 
   const handleRollback = async () => {
     setLoading(true);
     try {
-      const messages = await rollbackToCheckpoint(
-        workspaceId,
-        checkpointId,
-        restoreFiles,
-      );
-      rollbackConversation(workspaceId, checkpointId, messages);
+      const messages = isClearAll
+        ? await clearConversation(workspaceId, restoreFiles)
+        : await rollbackToCheckpoint(workspaceId, checkpointId, restoreFiles);
+      rollbackConversation(workspaceId, checkpointId ?? "__clear__", messages);
       // Refresh the changed files view to reflect the rolled-back file state.
       clearDiff();
       loadDiffFiles(workspaceId)
@@ -43,8 +46,9 @@ export function RollbackModal() {
   return (
     <Modal title="Roll Back Conversation" onClose={closeModal}>
       <div className={shared.warning}>
-        Roll back to before this message? All messages after this point will be
-        removed.
+        {isClearAll
+          ? "Clear the entire conversation and start fresh?"
+          : "Roll back to before this message? All messages after this point will be removed."}
         {messagePreview && (
           <div style={{ marginTop: 6, opacity: 0.7, fontStyle: "italic" }}>
             &ldquo;{messagePreview}

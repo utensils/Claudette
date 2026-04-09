@@ -92,6 +92,7 @@ fn main() {
             commands::chat::reset_agent_session,
             commands::chat::list_checkpoints,
             commands::chat::rollback_to_checkpoint,
+            commands::chat::clear_conversation,
             // Plan
             commands::plan::read_plan_file,
             // Diff

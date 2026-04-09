@@ -192,6 +192,16 @@ export function rollbackToCheckpoint(
   });
 }
 
+export function clearConversation(
+  workspaceId: string,
+  restoreFiles: boolean,
+): Promise<ChatMessage[]> {
+  return invoke("clear_conversation", {
+    workspaceId,
+    restoreFiles,
+  });
+}
+
 // -- Plan --
 
 export function readPlanFile(path: string): Promise<string> {

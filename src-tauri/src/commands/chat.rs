@@ -169,19 +169,19 @@ pub async fn send_chat_message(
                 got_init = true;
             }
 
-            // If the process exits without ever initializing, reset the session
-            // so the next attempt starts fresh instead of trying --resume.
-            // A non-zero exit AFTER successful init is normal (e.g. user stop,
-            // transient error) — the session is still valid for resumption.
-            if let AgentEvent::ProcessExited(_code) = &event
-                && !got_init
-            {
+            if let AgentEvent::ProcessExited(_code) = &event {
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
-                agents.remove(&ws_id);
-                // Also clear persisted session so restart doesn't try --resume.
-                if let Ok(db) = Database::open(&db_path) {
-                    let _ = db.clear_agent_session(&ws_id);
+                if !got_init {
+                    // Failed to initialize — clear the entire session so the
+                    // next attempt starts fresh instead of trying --resume.
+                    agents.remove(&ws_id);
+                    if let Ok(db) = Database::open(&db_path) {
+                        let _ = db.clear_agent_session(&ws_id);
+                    }
+                } else if let Some(session) = agents.get_mut(&ws_id) {
+                    // Normal exit — clear active_pid so rollback isn't blocked.
+                    session.active_pid = None;
                 }
             }
             // Persist assistant messages to DB on completion.
@@ -391,6 +391,73 @@ pub async fn rollback_to_checkpoint(
         .map_err(|e| e.to_string())?;
 
     // Return the truncated message list.
+    db.list_chat_messages(&workspace_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Clear the entire conversation for a workspace, optionally restoring files
+/// to the merge-base (initial state before any agent work).
+#[tauri::command]
+pub async fn clear_conversation(
+    workspace_id: String,
+    restore_files: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChatMessage>, String> {
+    // Guard: reject if agent is running.
+    {
+        let agents = state.agents.read().await;
+        if let Some(session) = agents.get(&workspace_id)
+            && session.active_pid.is_some()
+        {
+            return Err("Cannot clear conversation while the agent is running".into());
+        }
+    }
+
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+
+    // Optionally restore files to the merge-base before clearing.
+    if restore_files {
+        let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+        let ws = workspaces
+            .iter()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        let wt = ws
+            .worktree_path
+            .as_ref()
+            .ok_or("Workspace has no worktree")?;
+        let repos = db.list_repositories().map_err(|e| e.to_string())?;
+        let repo = repos
+            .iter()
+            .find(|r| r.id == ws.repository_id)
+            .ok_or("Repository not found")?;
+        let base = git::default_branch(&repo.path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let merge_base = claudette::diff::merge_base(wt, &ws.branch_name, &base)
+            .await
+            .map_err(|e| e.to_string())?;
+        git::restore_to_commit(wt, &merge_base)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Delete all messages and checkpoints.
+    db.delete_chat_messages_for_workspace(&workspace_id)
+        .map_err(|e| e.to_string())?;
+    // Checkpoints cascade via FK, but delete explicitly for clarity.
+    db.delete_checkpoints_after(&workspace_id, -1)
+        .map_err(|e| e.to_string())?;
+
+    // Reset agent session.
+    {
+        let mut agents = state.agents.write().await;
+        agents.remove(&workspace_id);
+    }
+    db.clear_agent_session(&workspace_id)
+        .map_err(|e| e.to_string())?;
+
+    // Return empty list.
     db.list_chat_messages(&workspace_id)
         .map_err(|e| e.to_string())
 }
