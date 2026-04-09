@@ -107,8 +107,17 @@ pub async fn restore_worktree(
     Ok(abs_path.to_string_lossy().to_string())
 }
 
-pub async fn remove_worktree(repo_path: &str, worktree_path: &str) -> Result<(), GitError> {
-    run_git(repo_path, &["worktree", "remove", "--force", worktree_path]).await?;
+pub async fn remove_worktree(
+    repo_path: &str,
+    worktree_path: &str,
+    force: bool,
+) -> Result<(), GitError> {
+    let args = if force {
+        vec!["worktree", "remove", "--force", worktree_path]
+    } else {
+        vec!["worktree", "remove", worktree_path]
+    };
+    run_git(repo_path, &args).await?;
     Ok(())
 }
 

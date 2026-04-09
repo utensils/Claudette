@@ -548,7 +548,7 @@ async fn handle_archive_workspace(
             .get_repository(&ws.repository_id)
             .map_err(|e| e.to_string())?;
         if let Some(repo) = repo {
-            let _ = claudette::git::remove_worktree(&repo.path, path).await;
+            let _ = claudette::git::remove_worktree(&repo.path, path, false).await;
         }
     }
 

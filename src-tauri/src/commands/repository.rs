@@ -112,7 +112,7 @@ pub async fn remove_repository(id: String, state: State<'_, AppState>) -> Result
     // Remove each worktree (best-effort).
     for ws in &repo_workspaces {
         if let Some(ref wt_path) = ws.worktree_path {
-            let _ = git::remove_worktree(&repo.path, wt_path).await;
+            let _ = git::remove_worktree(&repo.path, wt_path, true).await;
         }
     }
 

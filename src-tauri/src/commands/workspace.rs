@@ -250,7 +250,7 @@ pub async fn archive_workspace(id: String, state: State<'_, AppState>) -> Result
         .ok_or("Repository not found")?;
 
     if let Some(ref wt_path) = ws.worktree_path {
-        let _ = git::remove_worktree(&repo.path, wt_path).await;
+        let _ = git::remove_worktree(&repo.path, wt_path, false).await;
     }
 
     db.delete_terminal_tabs_for_workspace(&id)
@@ -309,7 +309,7 @@ pub async fn delete_workspace(id: String, state: State<'_, AppState>) -> Result<
 
     // Remove worktree if active.
     if let Some(ref wt_path) = ws.worktree_path {
-        let _ = git::remove_worktree(&repo.path, wt_path).await;
+        let _ = git::remove_worktree(&repo.path, wt_path, true).await;
     }
 
     // Best-effort branch delete.
