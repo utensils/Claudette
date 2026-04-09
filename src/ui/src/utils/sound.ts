@@ -72,9 +72,9 @@ async function resolveUrls(
   pack: SoundPackDefinition,
   event: SoundEvent
 ): Promise<string[]> {
-  // Already resolved — return cached URLs.
+  // Already resolved (including empty = all files failed) — return cached.
   const existing = pack.resolvedUrls?.[event];
-  if (existing && existing.length > 0) return existing;
+  if (existing !== undefined) return existing;
 
   // Get the filenames for this event.
   const entry = pack.sounds[event];

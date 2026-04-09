@@ -5,6 +5,7 @@ import type { AgentQuestionItem } from "../stores/useAppStore";
 import type { AgentStreamPayload } from "../types/agent-events";
 import { extractToolSummary } from "./toolSummary";
 import { loadAllSoundPacks, findSoundPack, playSound } from "../utils/sound";
+import { BUILTIN_SOUND_PACKS } from "../sounds";
 import type { SoundPackDefinition, SoundEvent } from "../types/sound";
 
 const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
@@ -84,8 +85,8 @@ export function useAgentStream() {
   // Count assistant messages in the current turn for the summary.
   const turnMessageCountRef = useRef<Record<string, number>>({});
 
-  // Sound packs loaded once on mount.
-  const soundPacksRef = useRef<SoundPackDefinition[]>([]);
+  // Sound packs: initialize with built-in packs, then load user packs async.
+  const soundPacksRef = useRef<SoundPackDefinition[]>(BUILTIN_SOUND_PACKS);
   useEffect(() => {
     loadAllSoundPacks().then((packs) => {
       soundPacksRef.current = packs;

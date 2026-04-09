@@ -212,11 +212,15 @@ pub async fn list_user_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
             };
 
             // Validate that referenced sound files exist and aren't too large.
+            let canonical_sounds = sounds_dir
+                .canonicalize()
+                .unwrap_or_else(|_| sounds_dir.clone());
             let mut valid = true;
             'outer: for (event, entry) in &manifest.sounds {
                 for filename in entry.filenames() {
-                    // Reject path traversal.
-                    if filename.contains("..") || filename.starts_with('/') {
+                    // Reject absolute paths and path traversal.
+                    let filename_path = std::path::Path::new(filename);
+                    if filename_path.is_absolute() || filename.contains("..") {
                         eprintln!(
                             "[sounds] Skipping {}: invalid path for event '{event}': {filename}",
                             pack_dir.display()
@@ -225,6 +229,26 @@ pub async fn list_user_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
                         break 'outer;
                     }
                     let sound_path = pack_dir.join(filename);
+                    // Canonicalize and verify it stays within the sounds directory.
+                    match sound_path.canonicalize() {
+                        Ok(canonical) if !canonical.starts_with(&canonical_sounds) => {
+                            eprintln!(
+                                "[sounds] Skipping {}: sound file escapes sounds dir: {filename}",
+                                pack_dir.display()
+                            );
+                            valid = false;
+                            break 'outer;
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "[sounds] Skipping {}: missing sound file '{filename}': {e}",
+                                pack_dir.display()
+                            );
+                            valid = false;
+                            break 'outer;
+                        }
+                        Ok(_) => {}
+                    }
                     match std::fs::metadata(&sound_path) {
                         Ok(meta) if meta.len() > MAX_SOUND_FILE_BYTES => {
                             eprintln!(
@@ -238,7 +262,7 @@ pub async fn list_user_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
                         Ok(_) => {}
                         Err(e) => {
                             eprintln!(
-                                "[sounds] Skipping {}: missing sound file '{filename}': {e}",
+                                "[sounds] Skipping {}: cannot stat '{filename}': {e}",
                                 pack_dir.display()
                             );
                             valid = false;
@@ -266,8 +290,9 @@ pub async fn list_user_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
 #[tauri::command]
 pub async fn read_sound_file(base_path: String, filename: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        // Reject path traversal.
-        if filename.contains("..") || filename.starts_with('/') {
+        // Reject absolute paths and path traversal.
+        let filename_path = std::path::Path::new(&filename);
+        if filename_path.is_absolute() || filename.contains("..") {
             return Err(format!("Invalid sound filename: {filename}"));
         }
 

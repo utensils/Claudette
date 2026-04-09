@@ -32,8 +32,6 @@ export function AppSettingsModal() {
   const [loading, setLoading] = useState(false);
 
   const originalThemeIdRef = useRef(currentThemeId);
-  const originalSoundPackIdRef = useRef(soundPackId);
-  const originalVolumeRef = useRef(soundVolume);
 
   useEffect(() => {
     loadAllThemes().then(setAvailableThemes);
