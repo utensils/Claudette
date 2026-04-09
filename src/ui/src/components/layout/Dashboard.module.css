@@ -29,7 +29,7 @@
 
 /* Workspace card */
 .card {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--hover-bg-subtle);
   border: 1px solid var(--divider);
   border-left: 3px solid var(--status-idle);
   border-radius: 8px;
@@ -52,7 +52,7 @@
 }
 
 .card:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-bg);
   border-color: var(--text-faint);
   transform: translateY(-2px);
   box-shadow: var(--shadow-card-hover);

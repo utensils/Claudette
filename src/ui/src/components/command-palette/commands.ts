@@ -69,8 +69,12 @@ export interface CommandContext {
   applyThemeById: (id: string) => void;
   enterThemeMode: () => void;
 
-  // Agent (workspace-specific)
+  // Workspace context
   selectedWorkspaceId: string | null;
+  currentRepoId: string | null;
+  createWorkspace: (repoId: string) => Promise<void>;
+
+  // Agent (workspace-specific)
   thinkingEnabled: boolean;
   setThinkingEnabled: (wsId: string, enabled: boolean) => void;
   planMode: boolean;
@@ -79,6 +83,7 @@ export interface CommandContext {
   setFastMode: (wsId: string, enabled: boolean) => void;
   stopAgent: (wsId: string) => Promise<void>;
   resetAgentSession: (wsId: string) => Promise<void>;
+  updateWorkspace: (id: string, updates: Record<string, unknown>) => void;
 }
 
 /** Build theme sub-menu commands (shown when user selects "Change Theme"). */
@@ -167,7 +172,10 @@ export function buildCommands(ctx: CommandContext): Command[] {
       category: "agent",
       icon: Square,
       keywords: ["kill", "cancel", "abort"],
-      execute: () => { ctx.stopAgent(wsId); ctx.close(); },
+      execute: () => {
+        ctx.stopAgent(wsId).then(() => ctx.updateWorkspace(wsId, { agent_status: "Stopped" }));
+        ctx.close();
+      },
     });
     cmds.push({
       id: "reset-session",
@@ -191,15 +199,19 @@ export function buildCommands(ctx: CommandContext): Command[] {
     execute: () => { ctx.enterThemeMode(); },
   });
 
-  // -- Workspace --
-  cmds.push({
-    id: "create-workspace",
-    name: "Create Workspace",
-    category: "workspace",
-    icon: Plus,
-    keywords: ["new", "add", "worktree"],
-    execute: () => { ctx.openModal("createWorkspace"); ctx.close(); },
-  });
+  // -- Workspace (only when a repo is available) --
+  if (ctx.currentRepoId) {
+    const repoId = ctx.currentRepoId;
+    cmds.push({
+      id: "create-workspace",
+      name: "Create Workspace",
+      description: "New workspace in current repository",
+      category: "workspace",
+      icon: Plus,
+      keywords: ["new", "add", "worktree"],
+      execute: () => { ctx.createWorkspace(repoId); ctx.close(); },
+    });
+  }
 
   // -- Navigation --
   cmds.push({
@@ -221,14 +233,16 @@ export function buildCommands(ctx: CommandContext): Command[] {
     keywords: ["preferences", "config", "options"],
     execute: () => { ctx.openModal("appSettings"); ctx.close(); },
   });
-  cmds.push({
-    id: "repo-settings",
-    name: "Repository Settings",
-    category: "settings",
-    icon: Wrench,
-    keywords: ["repo", "project", "config"],
-    execute: () => { ctx.openModal("repoSettings"); ctx.close(); },
-  });
+  if (ctx.currentRepoId) {
+    cmds.push({
+      id: "repo-settings",
+      name: "Repository Settings",
+      category: "settings",
+      icon: Wrench,
+      keywords: ["repo", "project", "config"],
+      execute: () => { ctx.openModal("repoSettings", { repoId: ctx.currentRepoId }); ctx.close(); },
+    });
+  }
   cmds.push({
     id: "add-repository",
     name: "Add Repository",

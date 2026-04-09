@@ -4,7 +4,6 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import { AnsiUp } from "ansi_up";
-import "highlight.js/styles/github-dark.min.css";
 import { GitBranch, LayoutDashboard } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
@@ -24,6 +23,7 @@ import { useAgentStream } from "../../hooks/useAgentStream";
 import { AgentQuestionCard } from "./AgentQuestionCard";
 import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
+import { HeaderMenu } from "./HeaderMenu";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
 import styles from "./ChatPanel.module.css";
 
@@ -393,13 +393,20 @@ export function ChatPanel() {
             worktreePath={ws.worktree_path}
             disabled={isRunning}
           />
-          <select
-            className={styles.permissionSelect}
+          <HeaderMenu
+            label="Permissions"
+            items={[
+              { value: "readonly", label: "Read-only" },
+              { value: "standard", label: "Standard" },
+              { value: "full", label: "Full access" },
+            ]}
             value={permissionLevel}
-            onChange={async (e) => {
+            disabled={isRunning}
+            title="Tool permission level for this workspace"
+            onSelect={async (val) => {
               if (!selectedWorkspaceId) return;
               const previous = permissionLevel;
-              const level = e.target.value as "readonly" | "standard" | "full";
+              const level = val as "readonly" | "standard" | "full";
               setPermissionLevel(selectedWorkspaceId, level);
               try {
                 await setAppSetting(
@@ -411,14 +418,7 @@ export function ChatPanel() {
                 setPermissionLevel(selectedWorkspaceId, previous);
               }
             }}
-            disabled={isRunning}
-            title="Tool permission level for this workspace"
-            aria-label="Tool permission level for this workspace"
-          >
-            <option value="readonly">Read-only</option>
-            <option value="standard">Standard</option>
-            <option value="full">Full access</option>
-          </select>
+          />
           <span
             className={styles.statusBadge}
             style={{ color: agentStatusColor }}

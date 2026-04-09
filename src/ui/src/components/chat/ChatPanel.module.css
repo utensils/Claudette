@@ -93,29 +93,6 @@
   white-space: nowrap;
 }
 
-.permissionSelect {
-  appearance: none;
-  background: var(--chat-input-bg)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23808089'/%3E%3C/svg%3E")
-    no-repeat right 6px center;
-  border: 1px solid var(--divider);
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  padding: 2px 20px 2px 6px;
-  cursor: pointer;
-  outline: none;
-  transition: border-color var(--transition-fast);
-}
-
-.permissionSelect:hover:not(:disabled) {
-  border-color: var(--text-dim);
-}
-
-.permissionSelect:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 .statusBadge {
   font-size: 12px;
@@ -553,6 +530,19 @@
 
 .content tr:last-child td {
   border-bottom: none;
+}
+
+/* Inline code inside table cells */
+.content td code {
+  font-size: 0.85em;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+/* Wide tables get horizontal scroll */
+.content .table-wrapper {
+  overflow-x: auto;
+  margin: 12px 0;
 }
 
 .cursor {

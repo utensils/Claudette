@@ -78,7 +78,7 @@
 
 .btnPrimary {
   composes: btn;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--accent-bg);
 }
 
 .warning {

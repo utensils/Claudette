@@ -2,7 +2,13 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Search, ChevronLeft } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { applyTheme, findTheme, loadAllThemes } from "../../utils/theme";
-import { setAppSetting, stopAgent, resetAgentSession } from "../../services/tauri";
+import {
+  setAppSetting,
+  stopAgent,
+  resetAgentSession,
+  generateWorkspaceName,
+  createWorkspace as createWorkspaceService,
+} from "../../services/tauri";
 import type { ThemeDefinition } from "../../types/theme";
 import {
   buildCommands,
@@ -28,8 +34,20 @@ export function CommandPalette() {
   const toggleFuzzyFinder = useAppStore((s) => s.toggleFuzzyFinder);
   const openModal = useAppStore((s) => s.openModal);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
+  const workspaces = useAppStore((s) => s.workspaces);
+  const addWorkspace = useAppStore((s) => s.addWorkspace);
+  const selectWorkspace = useAppStore((s) => s.selectWorkspace);
+  const addChatMessage = useAppStore((s) => s.addChatMessage);
+  const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const currentThemeId = useAppStore((s) => s.currentThemeId);
   const setCurrentThemeId = useAppStore((s) => s.setCurrentThemeId);
+
+  // Resolve current repo from selected workspace
+  const currentRepoId = useMemo(() => {
+    if (!selectedWorkspaceId) return null;
+    const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
+    return ws?.repository_id ?? null;
+  }, [selectedWorkspaceId, workspaces]);
 
   const thinkingEnabled = useAppStore(
     (s) => (selectedWorkspaceId ? s.thinkingEnabled[selectedWorkspaceId] ?? false : false),
@@ -66,6 +84,28 @@ export function CommandPalette() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [themes, setCurrentThemeId]);
 
+  const handleCreateWorkspace = useCallback(async (repoId: string) => {
+    try {
+      const generated = await generateWorkspaceName();
+      const result = await createWorkspaceService(repoId, generated.slug);
+      addWorkspace(result.workspace);
+      selectWorkspace(result.workspace.id);
+      if (generated.message) {
+        addChatMessage(result.workspace.id, {
+          id: crypto.randomUUID(),
+          workspace_id: result.workspace.id,
+          role: "System",
+          content: generated.message,
+          cost_usd: null,
+          duration_ms: null,
+          created_at: new Date().toISOString(),
+        });
+      }
+    } catch (e) {
+      console.error("Failed to create workspace:", e);
+    }
+  }, [addWorkspace, selectWorkspace, addChatMessage]);
+
   const enterThemeMode = useCallback(() => {
     setMode("theme");
     setQuery("");
@@ -96,6 +136,8 @@ export function CommandPalette() {
         applyThemeById,
         enterThemeMode,
         selectedWorkspaceId,
+        currentRepoId,
+        createWorkspace: handleCreateWorkspace,
         thinkingEnabled,
         setThinkingEnabled,
         planMode,
@@ -104,9 +146,10 @@ export function CommandPalette() {
         setFastMode,
         stopAgent: (wsId: string) => stopAgent(wsId),
         resetAgentSession: (wsId: string) => resetAgentSession(wsId),
+        updateWorkspace: (id: string, updates: Record<string, unknown>) => updateWorkspace(id, updates),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [themes, selectedWorkspaceId, thinkingEnabled, planMode, fastMode, enterThemeMode, applyThemeById],
+    [themes, selectedWorkspaceId, currentRepoId, thinkingEnabled, planMode, fastMode, enterThemeMode, applyThemeById, handleCreateWorkspace],
   );
 
   // Build theme sub-menu commands
