@@ -1,6 +1,10 @@
 import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeHighlight from "rehype-highlight";
+import { AnsiUp } from "ansi_up";
+import "highlight.js/styles/github-dark.min.css";
 import { GitBranch, LayoutDashboard } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
@@ -24,6 +28,100 @@ import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
 import styles from "./ChatPanel.module.css";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+// Shared AnsiUp instance for converting ANSI escape sequences to HTML.
+const ansiUp = new AnsiUp();
+ansiUp.use_classes = false;
+
+/** Convert ANSI escape codes in text to HTML span tags. */
+function ansiToHtml(text: string): string {
+  // Only run conversion if the text actually contains escape sequences
+  if (!text.includes("\x1b") && !text.includes("\u001b")) return text;
+  return ansiUp.ansi_to_html(text);
+}
+
+/**
+ * Pre-process Claude Code's decorative callout blocks into styled HTML.
+ * Claude outputs patterns like:
+ *   `★ Insight ─────────────────────────────────────`
+ *   [content]
+ *   `─────────────────────────────────────────────────`
+ *
+ * These look great in a terminal but render as inline <code> in markdown.
+ * Convert them to block-level HTML elements that react-markdown + rehype-raw
+ * will pass through as styled callout blocks.
+ */
+/**
+ * Build callout header HTML, splitting a leading icon from the label text.
+ * e.g. "★ Insight" → icon span + "Insight", "Warning" → just "Warning"
+ */
+function calloutHeader(rawLabel: string): string {
+  const label = rawLabel.trim();
+  const match = label.match(/^(\S)\s+(.*)/);
+  if (match) {
+    return `<span class="cc-callout-icon">${match[1]}</span> ${match[2]}`;
+  }
+  return label;
+}
+
+function preprocessCallouts(text: string): string {
+  // Full callout blocks (backtick-wrapped): `Label ───` ... content ... `───`
+  // [^─`] matches any character that isn't a dash or backtick — captures the label.
+  text = text.replace(
+    /`([^─`]+?)─{3,}`([\s\S]*?)`─{5,}`/g,
+    (_m, label: string, content: string) =>
+      `\n\n<div class="cc-callout"><div class="cc-callout-header">${calloutHeader(label)}</div>\n\n${content.trim()}\n\n</div>\n\n`,
+  );
+
+  // Full callout blocks (no backticks, standalone lines)
+  text = text.replace(
+    /^([^─\n]+?)─{3,}\s*$([\s\S]*?)^─{5,}\s*$/gm,
+    (_m, label: string, content: string) =>
+      `\n\n<div class="cc-callout"><div class="cc-callout-header">${calloutHeader(label)}</div>\n\n${content.trim()}\n\n</div>\n\n`,
+  );
+
+  // Leftover unmatched backtick-wrapped headers (no closing rule found)
+  text = text.replace(
+    /`([^─`]+?)─{3,}`/g,
+    (_m, label: string) =>
+      `\n\n<div class="cc-callout-header">${calloutHeader(label)}</div>\n\n`,
+  );
+
+  // Leftover unmatched backtick-wrapped horizontal rules
+  text = text.replace(
+    /`─{5,}`/g,
+    '\n\n<hr class="cc-callout-rule" />\n\n',
+  );
+
+  return text;
+}
+
+/** Full pre-processing pipeline for assistant message content. */
+function preprocessContent(text: string): string {
+  return preprocessCallouts(ansiToHtml(text));
+}
+
+/** Semantic colors for tool names — makes tool activity scannable at a glance. */
+const TOOL_COLORS: Record<string, string> = {
+  Read: "#6cb6ff",
+  Glob: "#6cb6ff",
+  Grep: "#6cb6ff",
+  Write: "#f0a050",
+  Edit: "#e0c050",
+  Bash: "#7ee07e",
+  WebSearch: "#c0a0f0",
+  WebFetch: "#c0a0f0",
+  Agent: "#f08080",
+  AskUserQuestion: "var(--accent-primary)",
+};
+
+function toolColor(name: string): string {
+  return TOOL_COLORS[name] ?? "var(--text-muted)";
+}
+
+// Shared rehype plugin list (stable reference avoids re-creating on every render)
+const REHYPE_PLUGINS = [rehypeRaw, rehypeHighlight];
+const REMARK_PLUGINS = [remarkGfm];
 
 // Stable empty arrays to avoid Zustand selector re-renders when data is undefined.
 // Without these, `?? []` / `|| []` creates a new reference on every store update,
@@ -349,17 +447,16 @@ export function ChatPanel() {
                 key={msg.id}
                 className={`${styles.message} ${styles[`role_${msg.role}`]}`}
               >
-                <div className={styles.roleLabel}>
-                  {msg.role === "User"
-                    ? "You"
-                    : msg.role === "Assistant"
-                      ? "Claude"
-                      : "System"}
-                </div>
+                {msg.role === "User" && (
+                  <div className={styles.roleLabel}>You</div>
+                )}
                 <div className={styles.content}>
                   {msg.role === "Assistant" ? (
-                    <Markdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
+                    <Markdown
+                      remarkPlugins={REMARK_PLUGINS}
+                      rehypePlugins={REHYPE_PLUGINS}
+                    >
+                      {preprocessContent(msg.content)}
                     </Markdown>
                   ) : (
                     msg.content
@@ -468,9 +565,13 @@ const StreamingMessage = memo(function StreamingMessage({
 
   return (
     <div ref={elRef} className={`${styles.message} ${styles.role_Assistant}`}>
-      <div className={styles.roleLabel}>Claude</div>
       <div className={styles.content}>
-        <Markdown remarkPlugins={[remarkGfm]}>{displayed}</Markdown>
+        <Markdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
+        >
+          {preprocessContent(displayed)}
+        </Markdown>
         <span className={styles.cursor} />
       </div>
     </div>
@@ -528,7 +629,7 @@ const CompletedTurnsSection = memo(function CompletedTurnsSection({
                   className={styles.toolActivity}
                 >
                   <div className={styles.toolHeader}>
-                    <span className={styles.toolName}>
+                    <span className={styles.toolName} style={{ color: toolColor(act.toolName) }}>
                       {act.toolName}
                     </span>
                     {act.summary && (

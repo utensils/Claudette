@@ -1,22 +1,47 @@
+/* Agent question card — styled to match callout blocks */
 .card {
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
-  border-radius: 8px;
-  padding: 16px;
-  background: var(--accent-bg);
-  animation: fadeInUp 0.25s ease both;
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-primary-rgb), 0.06) 0%,
+    rgba(var(--accent-primary-rgb), 0.02) 100%
+  );
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 0 10px 10px 0;
+  padding: 18px 20px;
+  margin: 12px 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2),
+              inset 0 1px 0 rgba(var(--accent-primary-rgb), 0.06);
+  animation: fadeInUp 0.2s ease both;
 }
 
 .label {
   font-size: 11px;
-  font-weight: 600;
-  color: var(--accent-dim);
-  margin-bottom: 8px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.label::before {
+  content: "?";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(var(--accent-primary-rgb), 0.15);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .questionBlock {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .header {
@@ -29,10 +54,10 @@
 }
 
 .question {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--text-primary);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .options {
@@ -42,58 +67,71 @@
 }
 
 .option {
-  padding: 10px 12px;
-  background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
-  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   cursor: pointer;
   text-align: left;
   color: var(--text-primary);
   font-size: 13px;
-  line-height: 1.4;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  line-height: 1.5;
+  transition: border-color var(--transition-fast), background var(--transition-fast),
+              transform var(--transition-fast);
 }
 
 .option:hover {
-  border-color: var(--accent-dim);
-  background: var(--accent-bg);
+  border-color: rgba(var(--accent-primary-rgb), 0.3);
+  background: rgba(var(--accent-primary-rgb), 0.05);
+  transform: translateX(2px);
 }
 
 .optionLabel {
   font-weight: 500;
 }
 
+.optionDesc {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 .optionSelected {
   border-color: var(--accent-primary);
-  background: var(--accent-bg);
+  background: rgba(var(--accent-primary-rgb), 0.08);
+  box-shadow: 0 0 0 1px rgba(var(--accent-primary-rgb), 0.1);
 }
 
 .confirmBtn {
   display: block;
   width: 100%;
-  margin-bottom: 12px;
-  padding: 8px 14px;
-  background: var(--accent-bg-strong);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
-  border-radius: 6px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  border-radius: 8px;
   color: var(--accent-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
 
 .confirmBtn:hover {
-  background: rgba(var(--accent-primary-rgb), 0.2);
+  background: rgba(var(--accent-primary-rgb), 0.18);
 }
 
 .divider {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin: 14px 0 12px;
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .divider::before,
@@ -101,7 +139,7 @@
   content: "";
   flex: 1;
   height: 1px;
-  background: var(--divider);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .freeformRow {
@@ -111,46 +149,48 @@
 
 .freeformInput {
   flex: 1;
-  background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
-  border-radius: 6px;
-  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
+  line-height: 1.5;
   outline: none;
   resize: none;
-  min-height: 36px;
+  min-height: 38px;
   transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
 }
 
 .freeformInput:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.1);
+  border-color: rgba(var(--accent-primary-rgb), 0.3);
+  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.06);
 }
 
 .freeformInput::placeholder {
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 .submitBtn {
-  background: var(--accent-bg-strong);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
-  color: var(--accent-primary);
-  padding: 8px 14px;
-  border-radius: 6px;
+  background: transparent;
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  color: var(--accent-dim);
+  padding: 10px 16px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
   align-self: flex-end;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .submitBtn:hover:not(:disabled) {
-  background: rgba(var(--accent-primary-rgb), 0.2);
+  background: rgba(var(--accent-primary-rgb), 0.08);
+  color: var(--accent-primary);
 }
 
 .submitBtn:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }

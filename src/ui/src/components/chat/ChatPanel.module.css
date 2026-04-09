@@ -8,9 +8,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  padding: 10px 20px;
   background: var(--chat-header-bg);
-  border-bottom: 1px solid var(--sidebar-border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
 .headerLeft {
@@ -141,136 +142,418 @@
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
+  padding: 20px 28px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   scroll-behavior: smooth;
 }
 
 .empty {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--text-dim);
+  gap: 8px;
+  color: var(--text-faint);
   font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.empty::before {
+  content: ">";
+  display: block;
+  font-size: 28px;
+  font-weight: 200;
+  color: rgba(var(--accent-primary-rgb), 0.2);
+  font-family: var(--font-mono);
 }
 
 .errorBanner {
-  background: rgba(240, 72, 72, 0.1);
-  border: 1px solid rgba(240, 72, 72, 0.3);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 12px;
+  background: rgba(240, 72, 72, 0.08);
+  border: 1px solid rgba(240, 72, 72, 0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
   color: var(--status-stopped);
   white-space: pre-wrap;
   word-break: break-word;
-  animation: fadeInUp 0.2s ease;
+  animation: fadeInUp 0.15s ease;
 }
 
-/* Message bubbles */
+/* --- Block-based message layout ---
+ * User messages are compact "prompt" blocks.
+ * Assistant messages are clean prose that flows below.
+ * Turns are separated by whitespace, not borders.
+ */
+
 .message {
-  padding: 10px 14px;
-  border-radius: 8px;
-  animation: fadeInUp 0.2s ease both;
   max-width: 100%;
+  animation: fadeInUp 0.15s ease both;
 }
 
+/* User messages — compact input blocks */
 .role_User {
-  background: var(--chat-user-bg);
-  border-left: 3px solid var(--text-faint);
-  margin-left: 32px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 20px;
+}
+
+.messages > .role_User:first-child,
+.messages > .errorBanner + .role_User {
+  margin-top: 0;
 }
 
 .role_User .content {
   white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
 }
 
+/* Assistant messages — clean prose, no chrome */
 .role_Assistant {
   background: transparent;
-  border-left: 3px solid var(--accent-primary);
-  padding-left: 14px;
+  padding: 6px 2px;
 }
 
+/* System messages — subtle inline pill */
 .role_System {
-  background: var(--chat-system-bg);
+  background: rgba(255, 255, 255, 0.03);
   text-align: center;
   font-size: 12px;
-  color: var(--text-muted);
-  border-left: none;
+  color: var(--text-dim);
   border-radius: 20px;
-  padding: 6px 16px;
+  padding: 5px 14px;
   align-self: center;
   max-width: 80%;
+  margin: 12px 0;
 }
 
+/* Role labels */
 .roleLabel {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-faint);
   margin-bottom: 4px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.roleLabel::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(var(--accent-primary-rgb), 0.4);
+  flex-shrink: 0;
 }
 
 .role_Assistant .roleLabel {
-  color: var(--accent-dim);
+  display: none;
 }
 
+.role_System .roleLabel {
+  display: none;
+}
+
+/* Content typography */
 .content {
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 1.7;
   word-break: break-word;
+  color: var(--text-primary);
 }
 
+/* Headings */
+.content h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+}
+
+.content h2 {
+  font-size: 1.25em;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 18px 0 8px;
+}
+
+.content h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--accent-primary);
+  margin: 14px 0 6px;
+}
+
+.content h4,
+.content h5,
+.content h6 {
+  font-size: 1em;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 12px 0 4px;
+}
+
+/* Bold text — subtle brightness lift */
+.content strong {
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Italic — warm tint */
+.content em {
+  color: rgba(255, 255, 255, 0.78);
+  font-style: italic;
+}
+
+/* Code blocks — override highlight.js theme background */
 .content pre {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--divider);
-  border-radius: 6px;
-  padding: 10px 14px;
+  position: relative;
+  background: rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 2px solid rgba(var(--accent-primary-rgb), 0.2);
+  border-radius: 8px;
+  padding: 14px 16px;
   overflow-x: auto;
-  font-size: 12px;
+  font-size: 13px;
   font-family: var(--font-mono);
-  margin: 8px 0;
+  line-height: 1.55;
+  margin: 12px 0;
 }
 
+/* Inline code — teal tint */
 .content code {
-  background: rgba(255, 255, 255, 0.06);
-  padding: 2px 5px;
+  background: rgba(var(--accent-primary-rgb), 0.08);
+  color: #7dede0;
+  padding: 1px 6px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 0.88em;
   font-family: var(--font-mono);
 }
 
 .content pre code {
-  background: none;
+  background: none !important;
+  color: inherit;
   padding: 0;
+  font-size: inherit;
 }
 
 .content p {
-  margin: 4px 0;
+  margin: 6px 0;
 }
 
+.content p:first-child {
+  margin-top: 0;
+}
+
+.content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists — colored markers */
 .content ul,
 .content ol {
-  margin: 4px 0;
-  padding-left: 20px;
+  margin: 8px 0;
+  padding-left: 22px;
 }
 
+.content ul {
+  list-style: none;
+}
+
+.content ul > li {
+  position: relative;
+  padding-left: 4px;
+}
+
+.content ul > li::before {
+  content: "▸";
+  position: absolute;
+  left: -16px;
+  color: var(--accent-dim);
+  font-size: 12px;
+}
+
+.content ol {
+  list-style: none;
+  counter-reset: ol-counter;
+}
+
+.content ol > li {
+  position: relative;
+  padding-left: 4px;
+  counter-increment: ol-counter;
+}
+
+.content ol > li::before {
+  content: counter(ol-counter) ".";
+  position: absolute;
+  left: -22px;
+  width: 18px;
+  text-align: right;
+  color: var(--accent-dim);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.content li {
+  margin: 3px 0;
+}
+
+/* Nested lists — dimmer markers */
+.content li ul > li::before {
+  content: "·";
+  color: var(--text-faint);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Links */
 .content a {
   color: var(--accent-primary);
   text-decoration: none;
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  transition: border-color var(--transition-fast);
 }
 
 .content a:hover {
-  text-decoration: underline;
+  border-color: var(--accent-primary);
 }
 
+/* Horizontal rules — gradient */
 .content hr {
   border: none;
-  border-top: 1px solid var(--divider);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--accent-primary-rgb), 0.2) 0%,
+    rgba(var(--accent-primary-rgb), 0.05) 100%
+  );
+  margin: 18px 0;
+}
+
+/* Claude Code callout blocks (★ Insight, ⚠ Warning, etc.) */
+.content :global(.cc-callout) {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-primary-rgb), 0.07) 0%,
+    rgba(var(--accent-primary-rgb), 0.03) 100%
+  );
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.12);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 0 8px 8px 0;
+  padding: 14px 18px;
+  margin: 16px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15),
+              inset 0 1px 0 rgba(var(--accent-primary-rgb), 0.06);
+}
+
+.content :global(.cc-callout) p {
+  margin: 4px 0;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.content :global(.cc-callout) code {
+  background: rgba(var(--accent-primary-rgb), 0.1);
+  color: var(--accent-primary);
+}
+
+.content :global(.cc-callout-header) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding-bottom: 8px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+}
+
+.content :global(.cc-callout-icon) {
+  font-size: 15px;
+  filter: drop-shadow(0 0 4px rgba(var(--accent-primary-rgb), 0.5));
+}
+
+/* Standalone header (no wrapping callout container) */
+.content > :global(.cc-callout-header) {
+  color: var(--accent-primary);
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+}
+
+.content :global(hr.cc-callout-rule) {
+  border: none;
+  border-top: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  margin: 8px 0 16px;
+}
+
+/* Blockquotes — subtle card with left accent */
+.content blockquote {
+  border-left: 2px solid var(--text-faint);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0 6px 6px 0;
+  margin: 10px 0;
+  padding: 8px 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.content blockquote p {
+  margin: 2px 0;
+}
+
+/* Tables — accent header, alternating rows */
+.content table {
+  border-collapse: collapse;
   margin: 12px 0;
+  font-size: 13px;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.content th {
+  background: rgba(var(--accent-primary-rgb), 0.06);
+  color: var(--accent-primary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.12);
+}
+
+.content td {
+  padding: 7px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.content tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.content tr:last-child td {
+  border-bottom: none;
 }
 
 .cursor {
@@ -292,18 +575,23 @@
 .processing {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 10px;
+  padding: 10px 12px;
   font-size: 13px;
   animation: fadeIn 0.2s ease;
+  background: rgba(var(--accent-primary-rgb), 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.06);
+  margin-top: 4px;
 }
 
 .spinner {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--accent-primary);
-  width: 16px;
+  width: 14px;
   text-align: center;
   font-family: var(--font-mono);
+  filter: drop-shadow(0 0 3px rgba(var(--accent-primary-rgb), 0.4));
 }
 
 .elapsed {
@@ -313,7 +601,7 @@
   font-family: var(--font-mono);
 }
 
-/* Tool activity cards */
+/* Tool activities — compact inline annotations */
 .toolActivities {
   display: flex;
   flex-direction: column;
@@ -321,43 +609,44 @@
 }
 
 .turnSummary {
-  border: 1px solid var(--divider);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 6px;
-  margin: 2px 0;
+  margin: 4px 0;
   cursor: pointer;
   transition: border-color var(--transition-fast);
   overflow: hidden;
 }
 
 .turnSummary:hover {
-  border-color: var(--text-faint);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .turnHeader {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 10px;
+  background: transparent;
   font-size: 12px;
   transition: background var(--transition-fast);
 }
 
 .turnSummary:hover > .turnHeader {
-  background: var(--hover-bg);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .turnLabel {
-  color: var(--text-primary);
+  color: var(--text-dim);
   font-weight: 500;
+  font-size: 12px;
 }
 
 .turnActivities {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .turnActivities .toolActivity {
@@ -371,14 +660,14 @@
 }
 
 .toolActivity {
-  border: 1px solid var(--divider);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 6px;
   overflow: hidden;
   transition: border-color var(--transition-fast);
 }
 
 .toolActivity:hover {
-  border-color: var(--text-faint);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .toolHeader {
@@ -386,10 +675,10 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 5px 10px;
-  background: rgba(255, 255, 255, 0.02);
+  padding: 4px 10px;
+  background: transparent;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-dim);
   cursor: pointer;
   font-size: 12px;
   text-align: left;
@@ -397,7 +686,7 @@
 }
 
 .toolHeader:hover {
-  background: var(--hover-bg);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .toolChevron {
@@ -409,12 +698,14 @@
 
 .toolName {
   font-weight: 500;
-  color: var(--accent-dim);
+  color: var(--text-muted);
   flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .toolSummary {
-  color: var(--text-dim);
+  color: var(--text-faint);
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -430,7 +721,7 @@
 
 .toolContent {
   padding: 10px 12px;
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--text-dim);
   max-height: 200px;
@@ -438,8 +729,9 @@
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
-  border-top: 1px solid var(--divider);
-  background: rgba(0, 0, 0, 0.15);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.2);
+  line-height: 1.5;
 }
 
 /* Input area */
@@ -448,9 +740,9 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 12px 16px;
-  border-top: 1px solid var(--sidebar-border);
-  background: var(--chat-header-bg);
+  padding: 12px 28px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  background: transparent;
 }
 
 .inputControls {
@@ -458,28 +750,31 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-top: 4px;
+  padding-top: 6px;
 }
 
 .input {
   flex: 1;
-  background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
-  border-radius: 8px;
-  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 12px 16px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-family: inherit;
+  line-height: 1.5;
   outline: none;
   resize: none;
-  min-height: 40px;
-  max-height: 120px;
-  transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+  min-height: 44px;
+  max-height: 160px;
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal),
+              background var(--transition-normal);
 }
 
 .input:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.1), var(--accent-glow);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(var(--accent-primary-rgb), 0.3);
+  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.06);
 }
 
 .input::placeholder {
@@ -487,28 +782,30 @@
 }
 
 .sendBtn {
-  background: var(--accent-bg-strong);
+  background: transparent;
   border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
-  color: var(--accent-primary);
-  padding: 8px 18px;
+  color: var(--accent-dim);
+  padding: 7px 16px;
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
   align-self: flex-end;
-  transition: background var(--transition-fast), transform var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast),
+              border-color var(--transition-fast);
 }
 
 .sendBtn:hover:not(:disabled) {
-  background: var(--accent-bg-strong);
-  transform: translateY(-1px);
+  background: rgba(var(--accent-primary-rgb), 0.08);
+  color: var(--accent-primary);
+  border-color: rgba(var(--accent-primary-rgb), 0.3);
 }
 
 .sendBtn:active:not(:disabled) {
-  transform: translateY(0);
+  background: rgba(var(--accent-primary-rgb), 0.12);
 }
 
 .sendBtn:disabled {
-  opacity: 0.3;
+  opacity: 0.25;
   cursor: not-allowed;
 }
