@@ -110,6 +110,21 @@ export function TerminalPanel() {
     term.loadAddon(fit);
     term.loadAddon(links);
     term.open(tabContainer);
+
+    // Disable ligatures by applying CSS directly to xterm elements
+    const xtermRows = tabContainer.querySelector(".xterm-rows");
+    const xtermCache = tabContainer.querySelector(".xterm-width-cache-measure-container");
+    if (xtermRows) {
+      (xtermRows as HTMLElement).style.fontVariantLigatures = "none";
+      (xtermRows as HTMLElement).style.fontFeatureSettings = '"liga" 0, "calt" 0';
+      (xtermRows as HTMLElement).style.letterSpacing = "0";
+    }
+    if (xtermCache) {
+      (xtermCache as HTMLElement).style.fontVariantLigatures = "none";
+      (xtermCache as HTMLElement).style.fontFeatureSettings = '"liga" 0, "calt" 0';
+      (xtermCache as HTMLElement).style.letterSpacing = "0";
+    }
+
     fit.fit();
 
     const instance: TermInstance = {
