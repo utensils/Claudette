@@ -3,9 +3,11 @@ import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "../stores/useAppStore";
 import { loadChatHistory, saveTurnToolActivities } from "../services/tauri";
 import type { AgentStreamPayload } from "../types/agent-events";
+import type { ChatMessage } from "../types/chat";
 import type { ConversationCheckpoint } from "../types/checkpoint";
 import { extractToolSummary } from "./toolSummary";
 import { parseAskUserQuestion } from "./parseAgentQuestion";
+import { debugChat } from "../utils/chatDebug";
 
 const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 
@@ -31,6 +33,12 @@ export function useAgentStream() {
   >({});
   // Count assistant messages in the current turn for the summary.
   const turnMessageCountRef = useRef<Record<string, number>>({});
+  // Track whether the current turn has already been finalized (by the
+  // `result` event) so that `ProcessExited` doesn't double-finalize.
+  const turnFinalizedRef = useRef<Record<string, boolean>>({});
+  // Checkpoint IDs arrive before the `result` event; reuse them as the
+  // completed turn IDs so later DB hydration can merge without duplication.
+  const turnCheckpointIdRef = useRef<Record<string, string | undefined>>({});
   // Plan file path extracted from EnterPlanMode tool results, keyed by wsId.
   const planFilePathRef = useRef<Record<string, string>>({});
 
@@ -39,8 +47,24 @@ export function useAgentStream() {
       const { workspace_id: wsId, event: agentEvent } = event.payload;
 
       if ("ProcessExited" in agentEvent) {
-        finalizeTurn(wsId, turnMessageCountRef.current[wsId] || 0);
+        debugChat("stream", "ProcessExited", {
+          wsId,
+          alreadyFinalized: !!turnFinalizedRef.current[wsId],
+          checkpointId: turnCheckpointIdRef.current[wsId] ?? null,
+          pendingMessageCount: turnMessageCountRef.current[wsId] || 0,
+          pendingToolCount: (useAppStore.getState().toolActivities[wsId] || []).length,
+        });
+        // Only finalize if the `result` event hasn't already done so.
+        if (!turnFinalizedRef.current[wsId]) {
+          finalizeTurn(
+            wsId,
+            turnMessageCountRef.current[wsId] || 0,
+            turnCheckpointIdRef.current[wsId]
+          );
+        }
         turnMessageCountRef.current[wsId] = 0;
+        turnFinalizedRef.current[wsId] = false;
+        turnCheckpointIdRef.current[wsId] = undefined;
         updateWorkspace(wsId, { agent_status: "Idle" });
         setStreamingContent(wsId, "");
         blockToolMapRef.current = {};
@@ -249,6 +273,11 @@ export function useAgentStream() {
             if (text) {
               turnMessageCountRef.current[wsId] =
                 (turnMessageCountRef.current[wsId] || 0) + 1;
+              debugChat("stream", "assistant", {
+                wsId,
+                textLength: text.length,
+                turnMessageCount: turnMessageCountRef.current[wsId],
+              });
               addChatMessage(wsId, {
                 id: crypto.randomUUID(),
                 workspace_id: wsId,
@@ -263,8 +292,19 @@ export function useAgentStream() {
             break;
           }
           case "result": {
-            finalizeTurn(wsId, turnMessageCountRef.current[wsId] || 0);
+            debugChat("stream", "result", {
+              wsId,
+              checkpointId: turnCheckpointIdRef.current[wsId] ?? null,
+              pendingMessageCount: turnMessageCountRef.current[wsId] || 0,
+              pendingToolCount: (useAppStore.getState().toolActivities[wsId] || []).length,
+            });
+            finalizeTurn(
+              wsId,
+              turnMessageCountRef.current[wsId] || 0,
+              turnCheckpointIdRef.current[wsId]
+            );
             turnMessageCountRef.current[wsId] = 0;
+            turnFinalizedRef.current[wsId] = true;
             updateWorkspace(wsId, { agent_status: "Idle" });
             break;
           }
@@ -319,36 +359,71 @@ export function useAgentStream() {
     }>("checkpoint-created", (event) => {
       const { workspace_id: wsId, checkpoint } = event.payload;
       addCheckpoint(wsId, checkpoint);
+      turnCheckpointIdRef.current[wsId] = checkpoint.id;
 
-      // Persist tool activities for the just-completed turn.
+      // Persist tool activities for the just-completed turn, then reload
+      // messages so the store has DB-persisted IDs. The save MUST complete
+      // before any subsequent loadCompletedTurns() reads, otherwise the DB
+      // snapshot will be stale and overwrite the in-memory turns.
       // NOTE: checkpoint-created fires BEFORE the agent-stream result event,
       // so finalizeTurn() hasn't run yet. Read from toolActivities (pre-
       // finalization) and turnMessageCountRef instead of completedTurns.
       const currentActivities = useAppStore.getState().toolActivities[wsId] || [];
-      if (currentActivities.length > 0) {
-        const messageCount = turnMessageCountRef.current[wsId] || 0;
-        const activities = currentActivities.map((a, i) => ({
-          id: crypto.randomUUID(),
-          checkpoint_id: checkpoint.id,
-          tool_use_id: a.toolUseId,
-          tool_name: a.toolName,
-          input_json: a.inputJson,
-          result_text: a.resultText,
-          summary: a.summary,
-          sort_order: i,
-        }));
-        saveTurnToolActivities(checkpoint.id, messageCount, activities)
-          .catch((e) => console.error("Failed to save turn tool activities:", e));
-      }
+      debugChat("stream", "checkpoint-created", {
+        wsId,
+        checkpointId: checkpoint.id,
+        checkpointMessageId: checkpoint.message_id,
+        turnIndex: checkpoint.turn_index,
+        currentToolCount: currentActivities.length,
+        pendingMessageCount: turnMessageCountRef.current[wsId] || 0,
+      });
+      const savePromise = currentActivities.length > 0
+        ? (() => {
+            const messageCount = turnMessageCountRef.current[wsId] || 0;
+            const activities = currentActivities.map((a, i) => ({
+              id: crypto.randomUUID(),
+              checkpoint_id: checkpoint.id,
+              tool_use_id: a.toolUseId,
+              tool_name: a.toolName,
+              input_json: a.inputJson,
+              result_text: a.resultText,
+              summary: a.summary,
+              sort_order: i,
+            }));
+            return saveTurnToolActivities(checkpoint.id, messageCount, activities);
+          })()
+        : Promise.resolve();
 
-      // Reload messages from the backend so that the store has the
-      // persisted message IDs (the frontend assigns its own UUIDs during
+      // Wait for the save to finish, then reload messages so the store has
+      // the persisted message IDs (frontend assigns its own UUIDs during
       // streaming, which won't match checkpoint.message_id).
-      loadChatHistory(wsId)
+      savePromise
+        .then(() => {
+          debugChat("stream", "checkpoint-save-complete", {
+            wsId,
+            checkpointId: checkpoint.id,
+          });
+        })
+        .catch((e) => {
+          console.error("Failed to save turn tool activities:", e);
+          debugChat("stream", "checkpoint-save-failed", {
+            wsId,
+            checkpointId: checkpoint.id,
+            error: String(e),
+          });
+        })
+        .then(() => loadChatHistory(wsId))
         .then((msgs) => {
+          if (!msgs) return;
           const filtered = msgs.filter(
-            (m) => m.role !== "Assistant" || m.content.trim() !== "",
+            (m: ChatMessage) => m.role !== "Assistant" || m.content.trim() !== "",
           );
+          debugChat("stream", "checkpoint-reload-chat-history", {
+            wsId,
+            checkpointId: checkpoint.id,
+            messageCount: filtered.length,
+            messageIds: filtered.map((msg) => msg.id),
+          });
           setChatMessages(wsId, filtered);
         })
         .catch((e) => console.error("Failed to reload messages after checkpoint:", e));

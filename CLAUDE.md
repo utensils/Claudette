@@ -115,6 +115,22 @@ src-tauri/
 - P0 features: workspace management, agent chat, diff viewer, integrated terminal, checkpoints, git/GitHub integration, scripts, repo settings
 - Target platforms: macOS (Apple Silicon + Intel) and Linux (x86_64, Wayland + X11)
 
+## Debugging (dev builds only)
+
+A debug TCP eval server runs on `127.0.0.1:19432` in dev builds. It lets you execute JS in the webview and read results back from the terminal:
+
+```bash
+./scripts/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().workspaces.map(w => w.name)'
+```
+
+Use the `/claudette-debug` skill for guided debugging (state inspection, store tracing, watchers). See `.claude/skills/claudette-debug/SKILL.md` for full docs.
+
+Key globals exposed in dev mode:
+- `window.__CLAUDETTE_STORE__` — Zustand store (`.getState()` / `.setState()`)
+- `window.__CLAUDETTE_INVOKE__` — Tauri `invoke` function
+
+The debug server and all related code is gated behind `#[cfg(debug_assertions)]` / `import.meta.env.DEV` and is completely excluded from release builds.
+
 ## Dependencies
 
 - Add dependencies conservatively — binary size target is < 30 MB

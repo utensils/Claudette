@@ -101,6 +101,16 @@ describe("finalizeTurn afterMessageIndex", () => {
     });
   });
 
+  it("uses the checkpoint id provided by the stream lifecycle", () => {
+    addToolActivities();
+
+    useAppStore.getState().finalizeTurn(WS_ID, 1, "cp-new");
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].id).toBe("cp-new");
+  });
+
   it("records afterMessageIndex as current chatMessages length", () => {
     useAppStore.setState({
       chatMessages: {
@@ -150,6 +160,150 @@ describe("finalizeTurn afterMessageIndex", () => {
     expect(turns).toHaveLength(2);
     expect(turns[0].afterMessageIndex).toBe(1);
     expect(turns[1].afterMessageIndex).toBe(3);
+  });
+});
+
+describe("hydrateCompletedTurns", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      completedTurns: {},
+      toolActivities: {},
+      chatMessages: {},
+    });
+  });
+
+  it("preserves an in-memory turn when DB hydration is stale", () => {
+    useAppStore.setState({
+      completedTurns: {
+        [WS_ID]: [
+          {
+            id: "cp-new",
+            activities: [
+              {
+                toolUseId: "tool-1",
+                toolName: "Read",
+                inputJson: "{}",
+                resultText: "ok",
+                collapsed: true,
+                summary: "latest",
+              },
+            ],
+            messageCount: 2,
+            collapsed: false,
+            afterMessageIndex: 4,
+          },
+        ],
+      },
+    });
+
+    useAppStore.getState().hydrateCompletedTurns(WS_ID, []);
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].id).toBe("cp-new");
+  });
+
+  it("merges persisted data into the existing turn without duplicating it", () => {
+    useAppStore.setState({
+      completedTurns: {
+        [WS_ID]: [
+          {
+            id: "cp1",
+            activities: [
+              {
+                toolUseId: "tool-1",
+                toolName: "Read",
+                inputJson: "{}",
+                resultText: "old",
+                collapsed: false,
+                summary: "old summary",
+              },
+            ],
+            messageCount: 1,
+            collapsed: true,
+            afterMessageIndex: 2,
+          },
+        ],
+      },
+    });
+
+    useAppStore.getState().hydrateCompletedTurns(WS_ID, [
+      {
+        id: "cp1",
+        activities: [
+          {
+            toolUseId: "tool-1",
+            toolName: "Read",
+            inputJson: '{"path":"src/lib.rs"}',
+            resultText: "new",
+            collapsed: true,
+            summary: "new summary",
+          },
+        ],
+        messageCount: 3,
+        collapsed: false,
+        afterMessageIndex: 2,
+      },
+    ]);
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].collapsed).toBe(true);
+    expect(turns[0].messageCount).toBe(3);
+    expect(turns[0].activities[0].resultText).toBe("new");
+    expect(turns[0].activities[0].collapsed).toBe(false);
+  });
+});
+
+describe("finalizeTurn double-call guard", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      toolActivities: {},
+      completedTurns: {},
+      chatMessages: {},
+    });
+  });
+
+  it("second finalizeTurn is a no-op when activities were already cleared", () => {
+    addToolActivities();
+    useAppStore.getState().finalizeTurn(WS_ID, 2);
+
+    // Simulate ProcessExited firing after result already finalized.
+    useAppStore.getState().finalizeTurn(WS_ID, 0);
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].messageCount).toBe(2);
+  });
+
+  it("does not create a phantom turn with 0 activities", () => {
+    // No tool activities at all — finalizeTurn should be a no-op.
+    useAppStore.getState().finalizeTurn(WS_ID, 5);
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns).toBeUndefined();
+  });
+
+  it("preserves first turn's message count on double finalize", () => {
+    useAppStore.setState({
+      chatMessages: {
+        [WS_ID]: [
+          { id: "m1", workspace_id: WS_ID, role: "User", content: "hi", cost_usd: null, duration_ms: null, created_at: "" },
+          { id: "m2", workspace_id: WS_ID, role: "Assistant", content: "hello", cost_usd: null, duration_ms: null, created_at: "" },
+        ],
+      },
+    });
+    addToolActivities();
+
+    // First call (from result event): correct message count.
+    useAppStore.getState().finalizeTurn(WS_ID, 3);
+    // Second call (from ProcessExited): different count — should be ignored.
+    useAppStore.getState().finalizeTurn(WS_ID, 0);
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].messageCount).toBe(3);
+    expect(turns[0].afterMessageIndex).toBe(2);
   });
 });
 

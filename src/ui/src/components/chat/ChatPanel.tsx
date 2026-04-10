@@ -31,6 +31,7 @@ import { WorkspaceActions } from "./WorkspaceActions";
 import { HeaderMenu } from "./HeaderMenu";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
 import { checkpointHasFileChanges } from "../../utils/checkpointUtils";
+import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -165,6 +166,7 @@ export function ChatPanel() {
   const repositories = useAppStore((s) => s.repositories);
   const chatMessages = useAppStore((s) => s.chatMessages);
   const setChatMessages = useAppStore((s) => s.setChatMessages);
+  const hydrateCompletedTurns = useAppStore((s) => s.hydrateCompletedTurns);
   const addChatMessage = useAppStore((s) => s.addChatMessage);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -195,6 +197,9 @@ export function ChatPanel() {
   const activitiesCount = useAppStore(
     (s) => (selectedWorkspaceId ? (s.toolActivities[selectedWorkspaceId] || []).length : 0)
   );
+  const completedTurnsCount = useAppStore(
+    (s) => (selectedWorkspaceId ? (s.completedTurns[selectedWorkspaceId] || []).length : 0)
+  );
   const permissionLevelMap = useAppStore((s) => s.permissionLevel);
   const setPermissionLevel = useAppStore((s) => s.setPermissionLevel);
   const permissionLevel = selectedWorkspaceId
@@ -214,6 +219,7 @@ export function ChatPanel() {
   const [spinnerIdx, setSpinnerIdx] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const startTimeRef = useRef<number | null>(null);
+  const prevActivitiesCountRef = useRef(activitiesCount);
 
   useEffect(() => {
     if (!isRunning) {
@@ -264,6 +270,7 @@ export function ChatPanel() {
   // Load chat history when workspace changes, seed prompt history from it.
   useEffect(() => {
     if (!selectedWorkspaceId) return;
+    let cancelled = false;
     setError(null);
     historyIndexRef.current = -1;
     draftRef.current = "";
@@ -278,25 +285,57 @@ export function ChatPanel() {
     const wsId = selectedWorkspaceId;
     const isLocal = !currentWs?.remote_connection_id;
 
+    debugChat("ChatPanel", "load-history:start", {
+      wsId,
+      isLocal,
+      agentStatus: currentWs?.agent_status ?? null,
+    });
+
     loadHistory
       .then((msgs: ChatMessage[]) => {
+        if (cancelled) return;
         // Filter out empty assistant messages (legacy data).
         const filtered = msgs.filter(
           (m) => m.role !== "Assistant" || m.content.trim() !== ""
         );
+        debugChat("ChatPanel", "load-history:success", {
+          wsId,
+          rawMessageCount: msgs.length,
+          filteredMessageCount: filtered.length,
+          messageIds: filtered.map((msg) => msg.id),
+        });
         setChatMessages(wsId, filtered);
         historyRef.current[wsId] = filtered
           .filter((m) => m.role === "User")
           .map((m) => m.content);
 
         // Load persisted completed turns and reconstruct with correct positions.
+        // Skip if the agent is currently running — the in-memory state from
+        // finalizeTurn() is more current than the DB and must not be overwritten.
         if (isLocal) {
-          loadCompletedTurns(wsId)
-            .then((turnData) => {
-              const turns = reconstructCompletedTurns(filtered, turnData);
-              useAppStore.getState().setCompletedTurns(wsId, turns);
-            })
-            .catch((e) => console.error("Failed to load completed turns:", e));
+          const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId);
+          const isRunning = ws?.agent_status === "Running";
+          debugChat("ChatPanel", "load-completed-turns:gate", {
+            wsId,
+            isRunning,
+            currentCompletedTurnIds: (useAppStore.getState().completedTurns[wsId] || []).map(
+              (turn) => turn.id
+            ),
+          });
+          if (!isRunning) {
+            loadCompletedTurns(wsId)
+              .then((turnData) => {
+                if (cancelled) return;
+                const turns = reconstructCompletedTurns(filtered, turnData);
+                debugChat("ChatPanel", "load-completed-turns:success", {
+                  wsId,
+                  dbTurnIds: turnData.map((turn) => turn.checkpoint_id),
+                  reconstructedTurnIds: turns.map((turn) => turn.id),
+                });
+                hydrateCompletedTurns(wsId, turns);
+              })
+              .catch((e) => console.error("Failed to load completed turns:", e));
+          }
         }
       })
       .catch((e) => console.error("Failed to load chat history:", e));
@@ -305,22 +344,80 @@ export function ChatPanel() {
     if (isLocal) {
       const setCheckpoints = useAppStore.getState().setCheckpoints;
       listCheckpoints(wsId)
-        .then((cps) => setCheckpoints(wsId, cps))
+        .then((cps) => {
+          if (cancelled) return;
+          setCheckpoints(wsId, cps);
+        })
         .catch((e) => console.error("Failed to load checkpoints:", e));
     }
-  }, [selectedWorkspaceId, setChatMessages]);
 
-  // Auto-scroll to bottom (on new messages or workspace switch — streaming handles its own scroll)
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWorkspaceId, setChatMessages, hydrateCompletedTurns]);
+
+  // Auto-scroll to bottom only when a genuinely new message is added or the
+  // workspace changes. Do NOT scroll when messages are merely replaced with
+  // DB-persisted versions (same count, different IDs) — that causes a visible
+  // scroll bounce and makes completed-turn summaries appear to vanish.
+  const prevMsgCountRef = useRef<Record<string, number>>({});
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const wsId = selectedWorkspaceId;
+    if (!wsId) return;
+    const prev = prevMsgCountRef.current[wsId] ?? 0;
+    const cur = messages.length;
+    prevMsgCountRef.current[wsId] = cur;
+
+    // Scroll on workspace switch (prev === 0) or when count increases.
+    if (prev === 0 || cur > prev) {
+      debugChat("ChatPanel", "scroll:messages-end", {
+        wsId,
+        messageCount: cur,
+        prevCount: prev,
+      });
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    }
   }, [messages.length, selectedWorkspaceId]);
 
-  // Auto-scroll processing indicator into view when tool activities change
+  // Auto-scroll processing indicator into view when tool activity first appears.
   useEffect(() => {
-    if (isRunning && !pendingQuestion && activitiesCount > 0) {
-      processingRef.current?.scrollIntoView({ behavior: "smooth" });
+    const shouldScroll =
+      isRunning &&
+      !pendingQuestion &&
+      !pendingPlan &&
+      prevActivitiesCountRef.current === 0 &&
+      activitiesCount > 0;
+
+    if (shouldScroll) {
+      debugChat("ChatPanel", "scroll:processing", {
+        wsId: selectedWorkspaceId ?? null,
+        activitiesCount,
+        hasPendingQuestion: !!pendingQuestion,
+        hasPendingPlan: !!pendingPlan,
+      });
+      processingRef.current?.scrollIntoView({ behavior: "auto" });
     }
-  }, [isRunning, pendingQuestion, activitiesCount]);
+    prevActivitiesCountRef.current = activitiesCount;
+  }, [isRunning, pendingQuestion, pendingPlan, activitiesCount, selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (!selectedWorkspaceId) return;
+    debugChat("ChatPanel", "state", {
+      wsId: selectedWorkspaceId,
+      isRunning,
+      messageCount: messages.length,
+      activitiesCount,
+      completedTurnsCount,
+      hasStreaming,
+    });
+  }, [
+    selectedWorkspaceId,
+    isRunning,
+    messages.length,
+    activitiesCount,
+    completedTurnsCount,
+    hasStreaming,
+  ]);
 
   if (!ws) return null;
 
@@ -609,6 +706,7 @@ const StreamingMessage = memo(function StreamingMessage({
   latestRef.current = streaming;
   const [displayed, setDisplayed] = useState(streaming);
   const rafRef = useRef<number | null>(null);
+  const lastLoggedScrollLengthRef = useRef(0);
 
   useEffect(() => {
     let lastTime = 0;
@@ -629,8 +727,19 @@ const StreamingMessage = memo(function StreamingMessage({
   // Auto-scroll when streaming content grows
   const elRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    elRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [displayed]);
+    if (
+      displayed.length > 0 &&
+      (lastLoggedScrollLengthRef.current === 0 ||
+        displayed.length - lastLoggedScrollLengthRef.current >= 250)
+    ) {
+      debugChat("StreamingMessage", "scroll", {
+        wsId: workspaceId,
+        displayedLength: displayed.length,
+      });
+      lastLoggedScrollLengthRef.current = displayed.length;
+    }
+    elRef.current?.scrollIntoView({ behavior: "auto" });
+  }, [displayed, workspaceId]);
 
   if (!displayed) return null;
 
@@ -770,6 +879,19 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     }
     return result;
   }, [messages, checkpoints]);
+
+  useEffect(() => {
+    debugChat("MessagesWithTurns", "layout", {
+      workspaceId,
+      messageIds: messages.map((msg) => msg.id),
+      turnLayout: completedTurns.map((turn) => ({
+        id: turn.id,
+        afterMessageIndex: turn.afterMessageIndex,
+        postLastMessage: turn.afterMessageIndex >= messages.length,
+        toolCount: turn.activities.length,
+      })),
+    });
+  }, [workspaceId, messages, completedTurns]);
 
   const renderTurns = (position: number) => {
     const entries = turnsByPosition[position];

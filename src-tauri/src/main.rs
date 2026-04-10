@@ -51,7 +51,7 @@ fn main() {
     let app_state = state::AppState::new(db_path, worktree_base_dir);
     let remote_manager = remote::RemoteConnectionManager::new();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -62,6 +62,11 @@ fn main() {
             if let Err(e) = mdns::start_mdns_browser(app.handle(), saved_fingerprints) {
                 eprintln!("[mdns] Failed to start browser: {e}");
             }
+
+            // Start debug eval TCP server (dev builds only).
+            #[cfg(debug_assertions)]
+            commands::debug::start_debug_server(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -128,7 +133,14 @@ fn main() {
             commands::remote::start_local_server,
             commands::remote::stop_local_server,
             commands::remote::get_local_server_status,
-        ])
+            // Debug (dev builds only — cfg-gated in commands/debug.rs)
+            #[cfg(debug_assertions)]
+            commands::debug::debug_eval_js,
+            #[cfg(debug_assertions)]
+            commands::debug::debug_eval_result,
+        ]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running Claudette");
 }

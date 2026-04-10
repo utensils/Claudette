@@ -633,6 +633,7 @@
   cursor: pointer;
   transition: border-color var(--transition-fast);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .turnSummary:hover {

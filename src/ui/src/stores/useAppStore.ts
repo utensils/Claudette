@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { DEFAULT_THEME_ID } from "../styles/themes";
+import { debugChat } from "../utils/chatDebug";
 import type {
   Repository,
   Workspace,
@@ -89,7 +90,8 @@ interface AppState {
     updates: Partial<ToolActivity>
   ) => void;
   toggleToolActivityCollapsed: (wsId: string, index: number) => void;
-  finalizeTurn: (wsId: string, messageCount: number) => void;
+  finalizeTurn: (wsId: string, messageCount: number, turnId?: string) => void;
+  hydrateCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
   setCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
   toggleCompletedTurn: (wsId: string, turnIndex: number) => void;
   appendToolActivityInput: (
@@ -343,12 +345,20 @@ export const useAppStore = create<AppState>((set) => ({
         ),
       },
     })),
-  finalizeTurn: (wsId, messageCount) =>
+  finalizeTurn: (wsId, messageCount, turnId) =>
     set((s) => {
       const activities = s.toolActivities[wsId] || [];
-      if (activities.length === 0) return {};
+      if (activities.length === 0) {
+        debugChat("store", "finalizeTurn skipped", {
+          wsId,
+          messageCount,
+          turnId: turnId ?? null,
+          existingCompletedTurnIds: (s.completedTurns[wsId] || []).map((turn) => turn.id),
+        });
+        return {};
+      }
       const turn: CompletedTurn = {
-        id: crypto.randomUUID(),
+        id: turnId ?? crypto.randomUUID(),
         activities: activities.map((a) => ({
           toolUseId: a.toolUseId,
           toolName: a.toolName,
@@ -361,6 +371,15 @@ export const useAppStore = create<AppState>((set) => ({
         collapsed: false,
         afterMessageIndex: (s.chatMessages[wsId] || []).length,
       };
+      debugChat("store", "finalizeTurn", {
+        wsId,
+        turnId: turn.id,
+        messageCount,
+        afterMessageIndex: turn.afterMessageIndex,
+        toolCount: turn.activities.length,
+        toolUseIds: turn.activities.map((activity) => activity.toolUseId),
+        existingCompletedTurnIds: (s.completedTurns[wsId] || []).map((existingTurn) => existingTurn.id),
+      });
       return {
         completedTurns: {
           ...s.completedTurns,
@@ -369,10 +388,63 @@ export const useAppStore = create<AppState>((set) => ({
         toolActivities: { ...s.toolActivities, [wsId]: [] },
       };
     }),
+  hydrateCompletedTurns: (wsId, turns) =>
+    set((s) => {
+      const existing = s.completedTurns[wsId] || [];
+      const existingById = new Map(existing.map((turn) => [turn.id, turn]));
+      const incomingIds = new Set(turns.map((turn) => turn.id));
+
+      const merged = turns.map((turn) => {
+        const existingTurn = existingById.get(turn.id);
+        if (!existingTurn) return turn;
+
+        const existingActivitiesById = new Map(
+          existingTurn.activities.map((activity) => [activity.toolUseId, activity])
+        );
+
+        return {
+          ...turn,
+          collapsed: existingTurn.collapsed,
+          activities: turn.activities.map((activity) => ({
+            ...activity,
+            collapsed:
+              existingActivitiesById.get(activity.toolUseId)?.collapsed ??
+              activity.collapsed,
+          })),
+        };
+      });
+
+      const pendingTurns = existing.filter((turn) => !incomingIds.has(turn.id));
+      const nextTurns = [...merged, ...pendingTurns].sort(
+        (a, b) => a.afterMessageIndex - b.afterMessageIndex
+      );
+
+      debugChat("store", "hydrateCompletedTurns", {
+        wsId,
+        existingIds: existing.map((turn) => turn.id),
+        incomingIds: turns.map((turn) => turn.id),
+        pendingIds: pendingTurns.map((turn) => turn.id),
+        nextIds: nextTurns.map((turn) => turn.id),
+      });
+
+      return {
+        completedTurns: {
+          ...s.completedTurns,
+          [wsId]: nextTurns,
+        },
+      };
+    }),
   setCompletedTurns: (wsId, turns) =>
-    set((s) => ({
-      completedTurns: { ...s.completedTurns, [wsId]: turns },
-    })),
+    set((s) => {
+      debugChat("store", "setCompletedTurns", {
+        wsId,
+        turnIds: turns.map((turn) => turn.id),
+        previousIds: (s.completedTurns[wsId] || []).map((turn) => turn.id),
+      });
+      return {
+        completedTurns: { ...s.completedTurns, [wsId]: turns },
+      };
+    }),
   toggleCompletedTurn: (wsId, turnIndex) =>
     set((s) => ({
       completedTurns: {
@@ -672,3 +744,9 @@ export const useAppStore = create<AppState>((set) => ({
   setLocalServerConnectionString: (cs) =>
     set({ localServerConnectionString: cs }),
 }));
+
+// Expose store on window in dev builds for debug_eval_js access.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__CLAUDETTE_STORE__ =
+    useAppStore;
+}
