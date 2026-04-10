@@ -1252,7 +1252,7 @@ function ChatInputArea({
         value={chatInput}
         onChange={(e) => setChatInput(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={isRunning ? "Type to interrupt and send..." : "Send a message..."}
+        placeholder={isRunning ? "Type to queue a message..." : "Send a message..."}
       />
       <div className={styles.inputControls}>
         <ChatToolbar
