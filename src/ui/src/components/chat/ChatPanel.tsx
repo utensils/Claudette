@@ -425,7 +425,9 @@ export function ChatPanel() {
     const trimmed = content.trim();
     if (!trimmed || !selectedWorkspaceId) return;
 
-    // If the agent is running, stop it first before sending the new message.
+    // If the agent is running, stop it first and wait for it to exit
+    // before sending the new message. The backend also guards against
+    // overlapping processes, but waiting here avoids UI state races.
     if (isRunning) {
       try {
         if (ws?.remote_connection_id) {
@@ -435,8 +437,19 @@ export function ChatPanel() {
         } else {
           await stopAgent(selectedWorkspaceId);
         }
-        // Brief delay to let ProcessExited propagate before starting new turn.
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        // Wait for agent_status to become Idle (up to 3s).
+        const wsId = selectedWorkspaceId;
+        await new Promise<void>((resolve) => {
+          const unsub = useAppStore.subscribe((s) => {
+            const w = s.workspaces.find((w) => w.id === wsId);
+            if (w?.agent_status !== "Running") {
+              unsub();
+              resolve();
+            }
+          });
+          // Safety timeout — don't block forever.
+          setTimeout(() => { unsub(); resolve(); }, 3000);
+        });
       } catch (e) {
         console.error("Failed to stop agent before new message:", e);
       }

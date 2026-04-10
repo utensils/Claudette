@@ -363,4 +363,67 @@ mod tests {
         restore_to_commit(path, &head).await.unwrap();
         assert!(!extra.exists());
     }
+
+    #[tokio::test]
+    async fn test_branch_delete_force_deletes_checkpoint_only_branch() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Create a branch with only checkpoint commits.
+        run_git(path, &["checkout", "-b", "ws-branch"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "[checkpoint] Turn 0"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "[checkpoint] Turn 1"])
+            .await
+            .unwrap();
+        run_git(path, &["checkout", "main"]).await.unwrap();
+
+        // Branch has unmerged checkpoint commits — should force-delete.
+        branch_delete(path, "ws-branch").await.unwrap();
+
+        // Confirm branch is gone.
+        let branches = run_git(path, &["branch", "--list", "ws-branch"])
+            .await
+            .unwrap();
+        assert!(branches.trim().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_branch_delete_preserves_branch_with_real_commits() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Create a branch with a mix of checkpoint and real commits.
+        run_git(path, &["checkout", "-b", "ws-branch"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "[checkpoint] Turn 0"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "feat: user's real commit"])
+            .await
+            .unwrap();
+        run_git(path, &["checkout", "main"]).await.unwrap();
+
+        // Branch has a real commit — should NOT force-delete.
+        let result = branch_delete(path, "ws-branch").await;
+        assert!(result.is_err());
+
+        // Confirm branch still exists.
+        let branches = run_git(path, &["branch", "--list", "ws-branch"])
+            .await
+            .unwrap();
+        assert!(!branches.trim().is_empty());
+    }
 }

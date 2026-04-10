@@ -119,6 +119,21 @@ pub async fn send_chat_message(
         }
     });
 
+    // If a previous turn is still running, stop it before starting a new one.
+    // This prevents overlapping processes for the same workspace.
+    if let Some(old_pid) = session.active_pid.take() {
+        eprintln!("[chat] Stopping stale process {old_pid} before new turn");
+        drop(agents); // release lock while waiting
+        let _ = agent::stop_agent(old_pid).await;
+        // Brief wait for process cleanup.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        agents = state.agents.write().await;
+        // Re-borrow session after re-acquiring lock.
+        let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+        session.active_pid = None;
+    }
+    let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+
     let is_resume = session.turn_count > 0;
     let session_id = session.session_id.clone();
     let custom_instructions = session.custom_instructions.clone();
