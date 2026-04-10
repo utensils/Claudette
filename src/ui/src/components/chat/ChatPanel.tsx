@@ -405,6 +405,13 @@ export function ChatPanel() {
     prevActivitiesCountRef.current = activitiesCount;
   }, [isRunning, pendingQuestion, pendingPlan, activitiesCount, selectedWorkspaceId]);
 
+  // Scroll interactive cards (agent question, plan approval) into view when they appear.
+  useEffect(() => {
+    if (pendingQuestion || pendingPlan) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [pendingQuestion, pendingPlan]);
+
   useEffect(() => {
     if (!selectedWorkspaceId) return;
     debugChat("ChatPanel", "state", {
