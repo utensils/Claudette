@@ -234,9 +234,19 @@ impl Database {
     // --- Repositories ---
 
     pub fn insert_repository(&self, repo: &Repository) -> Result<(), rusqlite::Error> {
+        // New repos append at the end of the list.
+        let max_order: i32 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM repositories",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(-1);
         self.conn.execute(
-            "INSERT INTO repositories (id, path, name, path_slug) VALUES (?1, ?2, ?3, ?4)",
-            params![repo.id, repo.path, repo.name, repo.path_slug],
+            "INSERT INTO repositories (id, path, name, path_slug, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![repo.id, repo.path, repo.name, repo.path_slug, max_order + 1],
         )?;
         Ok(())
     }

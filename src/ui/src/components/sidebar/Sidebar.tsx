@@ -152,6 +152,7 @@ export function Sidebar() {
               onDragStart={(e) => {
                 setDraggedRepoId(repo.id);
                 e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", repo.id);
                 dragCounterRef.current = {};
               }}
               onDragEnter={() => {
