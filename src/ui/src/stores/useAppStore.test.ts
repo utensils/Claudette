@@ -167,6 +167,7 @@ function makeCheckpoint(
     message_id: messageId,
     commit_hash: `hash-${turnIndex}`,
     turn_index: turnIndex,
+    message_count: 1,
     created_at: "",
   };
 }

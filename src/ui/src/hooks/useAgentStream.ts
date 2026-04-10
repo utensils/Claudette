@@ -321,10 +321,13 @@ export function useAgentStream() {
       addCheckpoint(wsId, checkpoint);
 
       // Persist tool activities for the just-completed turn.
-      const turns = useAppStore.getState().completedTurns[wsId] || [];
-      const lastTurn = turns[turns.length - 1];
-      if (lastTurn && lastTurn.activities.length > 0) {
-        const activities = lastTurn.activities.map((a, i) => ({
+      // NOTE: checkpoint-created fires BEFORE the agent-stream result event,
+      // so finalizeTurn() hasn't run yet. Read from toolActivities (pre-
+      // finalization) and turnMessageCountRef instead of completedTurns.
+      const currentActivities = useAppStore.getState().toolActivities[wsId] || [];
+      if (currentActivities.length > 0) {
+        const messageCount = turnMessageCountRef.current[wsId] || 0;
+        const activities = currentActivities.map((a, i) => ({
           id: crypto.randomUUID(),
           checkpoint_id: checkpoint.id,
           tool_use_id: a.toolUseId,
@@ -334,7 +337,7 @@ export function useAgentStream() {
           summary: a.summary,
           sort_order: i,
         }));
-        saveTurnToolActivities(checkpoint.id, lastTurn.messageCount, activities)
+        saveTurnToolActivities(checkpoint.id, messageCount, activities)
           .catch((e) => console.error("Failed to save turn tool activities:", e));
       }
 

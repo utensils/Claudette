@@ -13,6 +13,7 @@ function cp(
     message_id: `m-${id}`,
     commit_hash: commitHash,
     turn_index: turnIndex,
+    message_count: 1,
     created_at: "",
   };
 }

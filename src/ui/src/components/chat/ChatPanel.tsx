@@ -742,22 +742,12 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
         if (i === 0 && checkpoints.length > 0) {
           result.set(0, null);
         } else if (i > 0) {
-          // Check the preceding message (assistant or user for tool-only turns).
+          // Check the immediately preceding message for a matching checkpoint.
+          // Do NOT scan backward — if the preceding turn has no checkpoint
+          // (e.g. agent stopped before Result), suppress rollback for this gap.
           const prev = messages[i - 1];
           const cp = msgIdToCp.get(prev.id);
-          if (cp) {
-            result.set(i, cp);
-          } else {
-            // Also check the user message at i-1 for tool-only turn checkpoints
-            // where the checkpoint anchors to the user message itself.
-            for (let j = i - 1; j >= 0; j--) {
-              const earlier = msgIdToCp.get(messages[j].id);
-              if (earlier) {
-                result.set(i, earlier);
-                break;
-              }
-            }
-          }
+          if (cp) result.set(i, cp);
         }
       }
     }

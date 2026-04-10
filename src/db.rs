@@ -743,15 +743,20 @@ impl Database {
 
         Ok(checkpoints
             .into_iter()
-            .map(|cp| {
+            .filter_map(|cp| {
                 let acts = activity_map.remove(&cp.id).unwrap_or_default();
-                CompletedTurnData {
+                // Only return turns that actually had tool activities.
+                // Checkpoints for assistant-only turns don't need summaries.
+                if acts.is_empty() {
+                    return None;
+                }
+                Some(CompletedTurnData {
                     checkpoint_id: cp.id,
                     message_id: cp.message_id,
                     turn_index: cp.turn_index,
                     message_count: cp.message_count,
                     activities: acts,
-                }
+                })
             })
             .collect())
     }
