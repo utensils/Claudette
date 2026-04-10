@@ -312,7 +312,8 @@ pub async fn delete_workspace(id: String, state: State<'_, AppState>) -> Result<
         let _ = git::remove_worktree(&repo.path, wt_path, true).await;
     }
 
-    // Best-effort branch delete.
+    // Best-effort branch delete. Force-deletes only if all unmerged commits
+    // are synthetic [checkpoint] commits; preserves branches with real work.
     let _ = git::branch_delete(&repo.path, &ws.branch_name).await;
 
     // Cascade deletes chat messages and terminal tabs.

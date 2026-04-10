@@ -5,11 +5,13 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeHighlight from "rehype-highlight";
 import { AnsiUp } from "ansi_up";
-import { GitBranch, LayoutDashboard } from "lucide-react";
+import { GitBranch, LayoutDashboard, RotateCcw } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
 import {
   loadChatHistory,
+  listCheckpoints,
+  loadCompletedTurns,
   listSlashCommands,
   recordSlashCommandUsage,
   sendChatMessage,
@@ -18,15 +20,19 @@ import {
   getAppSetting,
   setAppSetting,
 } from "../../services/tauri";
+import { reconstructCompletedTurns } from "../../utils/reconstructTurns";
 import type { SlashCommand } from "../../services/tauri";
 import type { ChatMessage } from "../../types/chat";
 import { useAgentStream } from "../../hooks/useAgentStream";
+import { extractToolSummary } from "../../hooks/toolSummary";
 import { AgentQuestionCard } from "./AgentQuestionCard";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { HeaderMenu } from "./HeaderMenu";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
+import { checkpointHasFileChanges } from "../../utils/checkpointUtils";
+import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -161,6 +167,7 @@ export function ChatPanel() {
   const repositories = useAppStore((s) => s.repositories);
   const chatMessages = useAppStore((s) => s.chatMessages);
   const setChatMessages = useAppStore((s) => s.setChatMessages);
+  const hydrateCompletedTurns = useAppStore((s) => s.hydrateCompletedTurns);
   const addChatMessage = useAppStore((s) => s.addChatMessage);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -191,6 +198,9 @@ export function ChatPanel() {
   const activitiesCount = useAppStore(
     (s) => (selectedWorkspaceId ? (s.toolActivities[selectedWorkspaceId] || []).length : 0)
   );
+  const completedTurnsCount = useAppStore(
+    (s) => (selectedWorkspaceId ? (s.completedTurns[selectedWorkspaceId] || []).length : 0)
+  );
   const permissionLevelMap = useAppStore((s) => s.permissionLevel);
   const setPermissionLevel = useAppStore((s) => s.setPermissionLevel);
   const permissionLevel = selectedWorkspaceId
@@ -204,12 +214,18 @@ export function ChatPanel() {
     (s) => (selectedWorkspaceId ? s.planApprovals[selectedWorkspaceId] ?? null : null)
   );
   const clearPlanApproval = useAppStore((s) => s.clearPlanApproval);
+  const queuedMessage = useAppStore(
+    (s) => (selectedWorkspaceId ? s.queuedMessages[selectedWorkspaceId] ?? null : null)
+  );
+  const setQueuedMessage = useAppStore((s) => s.setQueuedMessage);
+  const clearQueuedMessage = useAppStore((s) => s.clearQueuedMessage);
   const isRunning = ws?.agent_status === "Running";
 
   // Spinner and elapsed timer for running agent.
   const [spinnerIdx, setSpinnerIdx] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const startTimeRef = useRef<number | null>(null);
+  const prevActivitiesCountRef = useRef(activitiesCount);
 
   useEffect(() => {
     if (!isRunning) {
@@ -260,6 +276,7 @@ export function ChatPanel() {
   // Load chat history when workspace changes, seed prompt history from it.
   useEffect(() => {
     if (!selectedWorkspaceId) return;
+    let cancelled = false;
     setError(null);
     historyIndexRef.current = -1;
     draftRef.current = "";
@@ -271,37 +288,182 @@ export function ChatPanel() {
         }).then((data) => (data as { messages?: ChatMessage[] })?.messages ?? data as ChatMessage[])
       : loadChatHistory(selectedWorkspaceId);
 
+    const wsId = selectedWorkspaceId;
+    const isLocal = !currentWs?.remote_connection_id;
+
+    debugChat("ChatPanel", "load-history:start", {
+      wsId,
+      isLocal,
+      agentStatus: currentWs?.agent_status ?? null,
+    });
+
     loadHistory
       .then((msgs: ChatMessage[]) => {
+        if (cancelled) return;
         // Filter out empty assistant messages (legacy data).
         const filtered = msgs.filter(
           (m) => m.role !== "Assistant" || m.content.trim() !== ""
         );
-        setChatMessages(selectedWorkspaceId, filtered);
-        historyRef.current[selectedWorkspaceId] = filtered
+        debugChat("ChatPanel", "load-history:success", {
+          wsId,
+          rawMessageCount: msgs.length,
+          filteredMessageCount: filtered.length,
+          messageIds: filtered.map((msg) => msg.id),
+        });
+        setChatMessages(wsId, filtered);
+        historyRef.current[wsId] = filtered
           .filter((m) => m.role === "User")
           .map((m) => m.content);
+
+        // Load persisted completed turns and reconstruct with correct positions.
+        // Skip if the agent is currently running — the in-memory state from
+        // finalizeTurn() is more current than the DB and must not be overwritten.
+        if (isLocal) {
+          const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId);
+          const isRunning = ws?.agent_status === "Running";
+          debugChat("ChatPanel", "load-completed-turns:gate", {
+            wsId,
+            isRunning,
+            currentCompletedTurnIds: (useAppStore.getState().completedTurns[wsId] || []).map(
+              (turn) => turn.id
+            ),
+          });
+          if (!isRunning) {
+            loadCompletedTurns(wsId)
+              .then((turnData) => {
+                if (cancelled) return;
+                const turns = reconstructCompletedTurns(filtered, turnData);
+                debugChat("ChatPanel", "load-completed-turns:success", {
+                  wsId,
+                  dbTurnIds: turnData.map((turn) => turn.checkpoint_id),
+                  reconstructedTurnIds: turns.map((turn) => turn.id),
+                });
+                hydrateCompletedTurns(wsId, turns);
+              })
+              .catch((e) => console.error("Failed to load completed turns:", e));
+          }
+        }
       })
       .catch((e) => console.error("Failed to load chat history:", e));
-  }, [selectedWorkspaceId, setChatMessages]);
 
-  // Auto-scroll to bottom (on new messages or workspace switch — streaming handles its own scroll)
+    // Load checkpoints for rollback support.
+    if (isLocal) {
+      const setCheckpoints = useAppStore.getState().setCheckpoints;
+      listCheckpoints(wsId)
+        .then((cps) => {
+          if (cancelled) return;
+          setCheckpoints(wsId, cps);
+        })
+        .catch((e) => console.error("Failed to load checkpoints:", e));
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWorkspaceId, setChatMessages, hydrateCompletedTurns]);
+
+  // Auto-scroll to bottom only when a genuinely new message is added or the
+  // workspace changes. Do NOT scroll when messages are merely replaced with
+  // DB-persisted versions (same count, different IDs) — that causes a visible
+  // scroll bounce and makes completed-turn summaries appear to vanish.
+  const prevMsgCountRef = useRef<Record<string, number>>({});
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const wsId = selectedWorkspaceId;
+    if (!wsId) return;
+    const prev = prevMsgCountRef.current[wsId] ?? 0;
+    const cur = messages.length;
+    prevMsgCountRef.current[wsId] = cur;
+
+    // Scroll on workspace switch (prev === 0) or when count increases.
+    if (prev === 0 || cur > prev) {
+      debugChat("ChatPanel", "scroll:messages-end", {
+        wsId,
+        messageCount: cur,
+        prevCount: prev,
+      });
+      messagesEndRef.current?.scrollIntoView({ behavior: prev === 0 ? "instant" : "smooth" });
+    }
   }, [messages.length, selectedWorkspaceId]);
 
-  // Auto-scroll processing indicator into view when tool activities change
+  // Scroll to bottom when a turn finalizes (completedTurns count increases),
+  // since the TurnSummary adds height below the last message.
   useEffect(() => {
-    if (isRunning && !pendingQuestion && activitiesCount > 0) {
+    if (completedTurnsCount > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [completedTurnsCount]);
+
+  // Auto-scroll processing indicator into view when tool activity first appears.
+  useEffect(() => {
+    const shouldScroll =
+      isRunning &&
+      !pendingQuestion &&
+      !pendingPlan &&
+      prevActivitiesCountRef.current === 0 &&
+      activitiesCount > 0;
+
+    if (shouldScroll) {
+      debugChat("ChatPanel", "scroll:processing", {
+        wsId: selectedWorkspaceId ?? null,
+        activitiesCount,
+        hasPendingQuestion: !!pendingQuestion,
+        hasPendingPlan: !!pendingPlan,
+      });
       processingRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [isRunning, pendingQuestion, activitiesCount]);
+    prevActivitiesCountRef.current = activitiesCount;
+  }, [isRunning, pendingQuestion, pendingPlan, activitiesCount, selectedWorkspaceId]);
+
+  // Scroll interactive cards (agent question, plan approval) into view when they appear.
+  useEffect(() => {
+    if (pendingQuestion || pendingPlan) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [pendingQuestion, pendingPlan]);
+
+  useEffect(() => {
+    if (!selectedWorkspaceId) return;
+    debugChat("ChatPanel", "state", {
+      wsId: selectedWorkspaceId,
+      isRunning,
+      messageCount: messages.length,
+      activitiesCount,
+      completedTurnsCount,
+      hasStreaming,
+    });
+  }, [
+    selectedWorkspaceId,
+    isRunning,
+    messages.length,
+    activitiesCount,
+    completedTurnsCount,
+    hasStreaming,
+  ]);
+
+  // Auto-dispatch queued message when agent becomes idle.
+  const handleSendRef = useRef<((content: string) => void) | null>(null);
+  useEffect(() => {
+    if (isRunning || !selectedWorkspaceId || !queuedMessage) return;
+    // Agent just finished — dispatch the queued message.
+    const content = queuedMessage;
+    clearQueuedMessage(selectedWorkspaceId);
+    // Use a microtask to avoid calling handleSend during render.
+    queueMicrotask(() => handleSendRef.current?.(content));
+  }, [isRunning, selectedWorkspaceId, queuedMessage, clearQueuedMessage]);
 
   if (!ws) return null;
 
   const handleSend = async (content: string) => {
     const trimmed = content.trim();
     if (!trimmed || !selectedWorkspaceId) return;
+
+    // If the agent is running, queue the message instead of interrupting.
+    // The user can press Escape to stop the agent if they want to interrupt.
+    // Queued messages are auto-sent when the current turn finishes.
+    if (isRunning) {
+      setQueuedMessage(selectedWorkspaceId, trimmed);
+      return;
+    }
 
     // Clear any pending agent question or plan approval — the user is sending
     // a new message (answer from a card or manual override).
@@ -365,8 +527,12 @@ export function ChatPanel() {
     }
   };
 
+  handleSendRef.current = handleSend;
+
   const handleStop = async () => {
     if (!selectedWorkspaceId) return;
+    // Clear queued message — stopping means the user wants to take control.
+    clearQueuedMessage(selectedWorkspaceId);
     try {
       if (ws?.remote_connection_id) {
         await sendRemoteCommand(ws.remote_connection_id, "stop_agent", {
@@ -483,6 +649,7 @@ export function ChatPanel() {
               <MessagesWithTurns
                 messages={messages}
                 workspaceId={selectedWorkspaceId}
+                isRunning={isRunning}
               />
             )}
 
@@ -529,6 +696,20 @@ export function ChatPanel() {
                 <span className={styles.elapsed}>{formatElapsed(elapsed)}</span>
               </div>
             )}
+
+            {queuedMessage && selectedWorkspaceId && (
+              <div className={styles.queuedMessage}>
+                <span className={styles.queuedLabel}>Queued</span>
+                <span className={styles.queuedContent}>{queuedMessage}</span>
+                <button
+                  className={styles.queuedCancel}
+                  onClick={() => clearQueuedMessage(selectedWorkspaceId)}
+                  title="Cancel queued message"
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </>
         )}
         <div ref={messagesEndRef} />
@@ -566,6 +747,7 @@ const StreamingMessage = memo(function StreamingMessage({
   latestRef.current = streaming;
   const [displayed, setDisplayed] = useState(streaming);
   const rafRef = useRef<number | null>(null);
+  const lastLoggedScrollLengthRef = useRef(0);
 
   useEffect(() => {
     let lastTime = 0;
@@ -586,8 +768,24 @@ const StreamingMessage = memo(function StreamingMessage({
   // Auto-scroll when streaming content grows
   const elRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    elRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [displayed]);
+    if (
+      displayed.length > 0 &&
+      (lastLoggedScrollLengthRef.current === 0 ||
+        displayed.length - lastLoggedScrollLengthRef.current >= 250)
+    ) {
+      debugChat("StreamingMessage", "scroll", {
+        wsId: workspaceId,
+        displayedLength: displayed.length,
+      });
+      lastLoggedScrollLengthRef.current = displayed.length;
+    }
+    // Scroll the messages container to the bottom. Using scrollIntoView on the
+    // element itself scrolls to its top, which falls behind as the element grows.
+    const container = elRef.current?.closest('[class*="messages"]');
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [displayed, workspaceId]);
 
   if (!displayed) return null;
 
@@ -650,16 +848,12 @@ function TurnSummary({
                 <span className={styles.toolName} style={{ color: toolColor(act.toolName) }}>
                   {act.toolName}
                 </span>
-                {act.summary && (
-                  <span className={styles.toolSummary}>{act.summary}</span>
+                {(act.summary || act.inputJson) && (
+                  <span className={styles.toolSummary}>
+                    {act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                  </span>
                 )}
               </div>
-              {act.inputJson && (
-                <pre className={styles.toolDetail}>{act.inputJson}</pre>
-              )}
-              {act.resultText && (
-                <pre className={styles.toolDetail}>{act.resultText}</pre>
-              )}
             </div>
           ))}
         </div>
@@ -673,17 +867,25 @@ function TurnSummary({
  * chronological position. Uses a single store subscription + useMemo to avoid
  * per-message selectors and redundant re-renders during streaming.
  */
+const EMPTY_CHECKPOINTS: import("../../types/checkpoint").ConversationCheckpoint[] = [];
+
 const MessagesWithTurns = memo(function MessagesWithTurns({
   messages,
   workspaceId,
+  isRunning,
 }: {
   messages: ChatMessage[];
   workspaceId: string;
+  isRunning: boolean;
 }) {
   const completedTurns = useAppStore(
     (s) => s.completedTurns[workspaceId] ?? EMPTY_COMPLETED_TURNS
   );
   const toggleCompletedTurn = useAppStore((s) => s.toggleCompletedTurn);
+  const checkpoints = useAppStore(
+    (s) => s.checkpoints[workspaceId] ?? EMPTY_CHECKPOINTS
+  );
+  const openModal = useAppStore((s) => s.openModal);
 
   // Build an index: afterMessageIndex → array of (turn, globalIndex) pairs.
   // Only recomputed when completedTurns changes, not on every streaming update.
@@ -695,6 +897,43 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     });
     return map;
   }, [completedTurns]);
+
+  // Map user message index → checkpoint for the preceding turn.
+  // Checks the message immediately before this user message (assistant or
+  // user for tool-only turns) for a matching checkpoint. Index 0 always
+  // maps to null (clear-all) when any checkpoints exist.
+  const rollbackCheckpointByIdx = useMemo(() => {
+    const msgIdToCp = new Map(checkpoints.map((cp) => [cp.message_id, cp]));
+    const result = new Map<number, typeof checkpoints[number] | null>();
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role === "User") {
+        if (i === 0 && checkpoints.length > 0) {
+          result.set(0, null);
+        } else if (i > 0) {
+          // Check the immediately preceding message for a matching checkpoint.
+          // Do NOT scan backward — if the preceding turn has no checkpoint
+          // (e.g. agent stopped before Result), suppress rollback for this gap.
+          const prev = messages[i - 1];
+          const cp = msgIdToCp.get(prev.id);
+          if (cp) result.set(i, cp);
+        }
+      }
+    }
+    return result;
+  }, [messages, checkpoints]);
+
+  useEffect(() => {
+    debugChat("MessagesWithTurns", "layout", {
+      workspaceId,
+      messageIds: messages.map((msg) => msg.id),
+      turnLayout: completedTurns.map((turn) => ({
+        id: turn.id,
+        afterMessageIndex: turn.afterMessageIndex,
+        postLastMessage: turn.afterMessageIndex >= messages.length,
+        toolCount: turn.activities.length,
+      })),
+    });
+  }, [workspaceId, messages, completedTurns]);
 
   const renderTurns = (position: number) => {
     const entries = turnsByPosition[position];
@@ -718,6 +957,29 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             {msg.role === "User" && (
               <div className={styles.roleLabel}>You</div>
             )}
+            {msg.role === "User" &&
+              !isRunning &&
+              rollbackCheckpointByIdx.has(idx) && (
+                <button
+                  className={styles.rollbackBtn}
+                  title="Roll back to before this message"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const cp = rollbackCheckpointByIdx.get(idx);
+                    openModal("rollback", {
+                      workspaceId,
+                      checkpointId: cp ? cp.id : null,
+                      messagePreview: msg.content.slice(0, 100),
+                      messageContent: msg.content,
+                      hasFileChanges: cp
+                        ? checkpointHasFileChanges(cp, checkpoints)
+                        : checkpoints.some((c) => !!c.commit_hash),
+                    });
+                  }}
+                >
+                  <RotateCcw size={14} />
+                </button>
+              )}
             <div className={styles.content}>
               {msg.role === "Assistant" ? (
                 <Markdown
@@ -843,6 +1105,29 @@ function ChatInputArea({
   const [slashPickerDismissed, setSlashPickerDismissed] = useState(false);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the textarea when switching or creating workspaces.
+  useEffect(() => {
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [selectedWorkspaceId]);
+
+  // Consume prefill text (e.g. from rollback) and focus the textarea.
+  const chatInputPrefill = useAppStore((s) => s.chatInputPrefill);
+  const setChatInputPrefill = useAppStore((s) => s.setChatInputPrefill);
+  useEffect(() => {
+    if (chatInputPrefill) {
+      setChatInput(chatInputPrefill);
+      setChatInputPrefill(null);
+      // Focus and move cursor to end after React re-renders.
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = ta.value.length;
+        }
+      });
+    }
+  }, [chatInputPrefill, setChatInputPrefill]);
 
   const refreshSlashCommands = useCallback(() => {
     listSlashCommands(projectPath, selectedWorkspaceId)
@@ -997,8 +1282,7 @@ function ChatInputArea({
         value={chatInput}
         onChange={(e) => setChatInput(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Send a message..."
-        disabled={isRunning}
+        placeholder={isRunning ? "Type to queue a message..." : "Send a message..."}
       />
       <div className={styles.inputControls}>
         <ChatToolbar
@@ -1008,7 +1292,7 @@ function ChatInputArea({
         <button
           className={styles.sendBtn}
           onClick={handleSend}
-          disabled={!chatInput.trim() || isRunning}
+          disabled={!chatInput.trim()}
         >
           Send
         </button>

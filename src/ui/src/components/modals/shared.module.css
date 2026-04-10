@@ -89,3 +89,17 @@
   color: var(--text-muted);
   margin-bottom: 12px;
 }
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.checkboxRow input:disabled + span {
+  opacity: 0.4;
+  cursor: default;
+}

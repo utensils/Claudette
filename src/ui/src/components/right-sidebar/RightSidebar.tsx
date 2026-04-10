@@ -67,15 +67,30 @@ export function RightSidebar() {
       .catch(() => setDiffLoading(false));
   }, [selectedWorkspaceId, loadDiff, setDiffFiles, setDiffLoading]);
 
-  // Refresh diff files when agent stops running (after making changes)
+  // Live-refresh diff files while agent is running (every 3s).
+  useEffect(() => {
+    if (!selectedWorkspaceId || !isRunning) return;
+
+    const interval = setInterval(() => {
+      loadDiff(selectedWorkspaceId)
+        .then((result) => {
+          if (result) {
+            setDiffFiles(result.files, result.merge_base);
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isRunning, selectedWorkspaceId, loadDiff, setDiffFiles]);
+
+  // Final refresh when agent stops running (after making changes).
   useEffect(() => {
     const wasRunning = prevIsRunning.current;
     prevIsRunning.current = isRunning;
 
-    // Only refresh on the Running → stopped transition
     if (!selectedWorkspaceId || wasRunning !== true || isRunning) return;
 
-    // Debounce: wait a bit after agent stops to let file writes complete
     const timer = setTimeout(() => {
       setDiffLoading(true);
       loadDiff(selectedWorkspaceId)

@@ -10,6 +10,7 @@ import {
   createWorkspace as createWorkspaceService,
 } from "../../services/tauri";
 import type { ThemeDefinition } from "../../types/theme";
+import { scoreCommand } from "./searchScore";
 import {
   buildCommands,
   buildThemeCommands,
@@ -169,20 +170,29 @@ export function CommandPalette() {
 
   const filteredCommands = useMemo(() => {
     if (!query.trim()) return activeCommands;
-    const q = query.toLowerCase();
-    return activeCommands.filter(
-      (cmd) =>
-        cmd.name.toLowerCase().includes(q) ||
-        cmd.description?.toLowerCase().includes(q) ||
-        cmd.keywords?.some((k) => k.includes(q)),
-    );
+
+    const scored = activeCommands
+      .map((cmd) => ({
+        cmd,
+        score: scoreCommand(cmd.name, cmd.description, cmd.keywords, query),
+      }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    return scored.map(({ cmd }) => cmd);
   }, [activeCommands, query]);
 
   const grouped = useMemo<GroupedCommands[]>(() => {
     if (mode === "theme") {
-      // Theme mode: flat list, no category grouping
       return filteredCommands.length > 0
         ? [{ category: "theme", label: "Select a Theme", commands: filteredCommands }]
+        : [];
+    }
+    // When searching, show a flat ranked list (no category grouping)
+    // so the relevance sort isn't overridden by category order.
+    if (query.trim()) {
+      return filteredCommands.length > 0
+        ? [{ category: "general", label: "Results", commands: filteredCommands }]
         : [];
     }
     const map = new Map<CommandCategory, Command[]>();

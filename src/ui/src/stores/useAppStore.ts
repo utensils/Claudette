@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { DEFAULT_THEME_ID } from "../styles/themes";
+import { debugChat } from "../utils/chatDebug";
 import type {
   Repository,
   Workspace,
@@ -10,6 +11,7 @@ import type {
   TerminalTab,
   RemoteConnectionInfo,
   DiscoveredServer,
+  ConversationCheckpoint,
 } from "../types";
 import type { RemoteInitialData } from "../types/remote";
 
@@ -88,7 +90,9 @@ interface AppState {
     updates: Partial<ToolActivity>
   ) => void;
   toggleToolActivityCollapsed: (wsId: string, index: number) => void;
-  finalizeTurn: (wsId: string, messageCount: number) => void;
+  finalizeTurn: (wsId: string, messageCount: number, turnId?: string) => void;
+  hydrateCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
+  setCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
   toggleCompletedTurn: (wsId: string, turnIndex: number) => void;
   appendToolActivityInput: (
     wsId: string,
@@ -105,6 +109,21 @@ interface AppState {
   planApprovals: Record<string, PlanApproval>;
   setPlanApproval: (p: PlanApproval) => void;
   clearPlanApproval: (wsId: string) => void;
+
+  // -- Queued Messages (sent while agent is running, dispatched when idle) --
+  queuedMessages: Record<string, string>;
+  setQueuedMessage: (wsId: string, content: string) => void;
+  clearQueuedMessage: (wsId: string) => void;
+
+  // -- Checkpoints --
+  checkpoints: Record<string, ConversationCheckpoint[]>;
+  setCheckpoints: (wsId: string, cps: ConversationCheckpoint[]) => void;
+  addCheckpoint: (wsId: string, cp: ConversationCheckpoint) => void;
+  rollbackConversation: (
+    wsId: string,
+    checkpointId: string,
+    messages: ChatMessage[]
+  ) => void;
 
   // -- Notifications --
   unreadCompletions: Set<string>; // workspace IDs with unread completions
@@ -154,6 +173,8 @@ interface AppState {
   toggleTerminalPanel: () => void;
 
   // -- UI --
+  metaKeyHeld: boolean;
+  setMetaKeyHeld: (held: boolean) => void;
   sidebarVisible: boolean;
   rightSidebarVisible: boolean;
   sidebarWidth: number;
@@ -179,6 +200,10 @@ interface AppState {
   openModal: (name: string, data?: Record<string, unknown>) => void;
   closeModal: () => void;
 
+  // -- Chat input prefill (e.g. after rollback) --
+  chatInputPrefill: string | null;
+  setChatInputPrefill: (text: string | null) => void;
+
   // -- Settings --
   worktreeBaseDir: string;
   setWorktreeBaseDir: (dir: string) => void;
@@ -186,6 +211,8 @@ interface AppState {
   setDefaultBranches: (branches: Record<string, string>) => void;
   terminalFontSize: number;
   setTerminalFontSize: (size: number) => void;
+  audioNotifications: boolean;
+  setAudioNotifications: (enabled: boolean) => void;
   currentThemeId: string;
   setCurrentThemeId: (id: string) => void;
   lastMessages: Record<string, ChatMessage>;
@@ -323,12 +350,20 @@ export const useAppStore = create<AppState>((set) => ({
         ),
       },
     })),
-  finalizeTurn: (wsId, messageCount) =>
+  finalizeTurn: (wsId, messageCount, turnId) =>
     set((s) => {
       const activities = s.toolActivities[wsId] || [];
-      if (activities.length === 0) return {};
+      if (activities.length === 0) {
+        debugChat("store", "finalizeTurn skipped", {
+          wsId,
+          messageCount,
+          turnId: turnId ?? null,
+          existingCompletedTurnIds: (s.completedTurns[wsId] || []).map((turn) => turn.id),
+        });
+        return {};
+      }
       const turn: CompletedTurn = {
-        id: crypto.randomUUID(),
+        id: turnId ?? crypto.randomUUID(),
         activities: activities.map((a) => ({
           toolUseId: a.toolUseId,
           toolName: a.toolName,
@@ -341,12 +376,78 @@ export const useAppStore = create<AppState>((set) => ({
         collapsed: false,
         afterMessageIndex: (s.chatMessages[wsId] || []).length,
       };
+      debugChat("store", "finalizeTurn", {
+        wsId,
+        turnId: turn.id,
+        messageCount,
+        afterMessageIndex: turn.afterMessageIndex,
+        toolCount: turn.activities.length,
+        toolUseIds: turn.activities.map((activity) => activity.toolUseId),
+        existingCompletedTurnIds: (s.completedTurns[wsId] || []).map((existingTurn) => existingTurn.id),
+      });
       return {
         completedTurns: {
           ...s.completedTurns,
           [wsId]: [...(s.completedTurns[wsId] || []), turn],
         },
         toolActivities: { ...s.toolActivities, [wsId]: [] },
+      };
+    }),
+  hydrateCompletedTurns: (wsId, turns) =>
+    set((s) => {
+      const existing = s.completedTurns[wsId] || [];
+      const existingById = new Map(existing.map((turn) => [turn.id, turn]));
+      const incomingIds = new Set(turns.map((turn) => turn.id));
+
+      const merged = turns.map((turn) => {
+        const existingTurn = existingById.get(turn.id);
+        if (!existingTurn) return turn;
+
+        const existingActivitiesById = new Map(
+          existingTurn.activities.map((activity) => [activity.toolUseId, activity])
+        );
+
+        return {
+          ...turn,
+          collapsed: existingTurn.collapsed,
+          activities: turn.activities.map((activity) => ({
+            ...activity,
+            collapsed:
+              existingActivitiesById.get(activity.toolUseId)?.collapsed ??
+              activity.collapsed,
+          })),
+        };
+      });
+
+      const pendingTurns = existing.filter((turn) => !incomingIds.has(turn.id));
+      const nextTurns = [...merged, ...pendingTurns].sort(
+        (a, b) => a.afterMessageIndex - b.afterMessageIndex
+      );
+
+      debugChat("store", "hydrateCompletedTurns", {
+        wsId,
+        existingIds: existing.map((turn) => turn.id),
+        incomingIds: turns.map((turn) => turn.id),
+        pendingIds: pendingTurns.map((turn) => turn.id),
+        nextIds: nextTurns.map((turn) => turn.id),
+      });
+
+      return {
+        completedTurns: {
+          ...s.completedTurns,
+          [wsId]: nextTurns,
+        },
+      };
+    }),
+  setCompletedTurns: (wsId, turns) =>
+    set((s) => {
+      debugChat("store", "setCompletedTurns", {
+        wsId,
+        turnIds: turns.map((turn) => turn.id),
+        previousIds: (s.completedTurns[wsId] || []).map((turn) => turn.id),
+      });
+      return {
+        completedTurns: { ...s.completedTurns, [wsId]: turns },
       };
     }),
   toggleCompletedTurn: (wsId, turnIndex) =>
@@ -381,6 +482,62 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const { [wsId]: _, ...rest } = s.planApprovals;
       return { planApprovals: rest };
+    }),
+
+  // -- Queued Messages --
+  queuedMessages: {},
+  setQueuedMessage: (wsId, content) =>
+    set((s) => ({
+      queuedMessages: { ...s.queuedMessages, [wsId]: content },
+    })),
+  clearQueuedMessage: (wsId) =>
+    set((s) => {
+      const { [wsId]: _, ...rest } = s.queuedMessages;
+      return { queuedMessages: rest };
+    }),
+
+  // -- Checkpoints --
+  checkpoints: {},
+  setCheckpoints: (wsId, cps) =>
+    set((s) => ({
+      checkpoints: { ...s.checkpoints, [wsId]: cps },
+    })),
+  addCheckpoint: (wsId, cp) =>
+    set((s) => ({
+      checkpoints: {
+        ...s.checkpoints,
+        [wsId]: [...(s.checkpoints[wsId] || []), cp],
+      },
+    })),
+  rollbackConversation: (wsId, checkpointId, messages) =>
+    set((s) => {
+      const { [wsId]: _q, ...restQuestions } = s.agentQuestions;
+      const { [wsId]: _p, ...restApprovals } = s.planApprovals;
+      // Update lastMessages so workspace preview cards stay in sync.
+      const lastMsg = messages.length > 0 ? messages[messages.length - 1] : undefined;
+      const { [wsId]: _lm, ...restLastMessages } = s.lastMessages;
+      const updatedLastMessages = lastMsg
+        ? { ...s.lastMessages, [wsId]: lastMsg }
+        : restLastMessages;
+      return {
+        chatMessages: { ...s.chatMessages, [wsId]: messages },
+        lastMessages: updatedLastMessages,
+        completedTurns: { ...s.completedTurns, [wsId]: [] },
+        toolActivities: { ...s.toolActivities, [wsId]: [] },
+        streamingContent: { ...s.streamingContent, [wsId]: "" },
+        agentQuestions: restQuestions,
+        planApprovals: restApprovals,
+        checkpoints: {
+          ...s.checkpoints,
+          [wsId]: (() => {
+            const current = s.checkpoints[wsId] || [];
+            const target = current.find((c) => c.id === checkpointId);
+            // If target not found (e.g. clear-all sentinel), clear everything.
+            if (!target) return [];
+            return current.filter((cp) => cp.turn_index <= target.turn_index);
+          })(),
+        },
+      };
     }),
 
   // -- Notifications --
@@ -486,6 +643,8 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({ terminalPanelVisible: !s.terminalPanelVisible })),
 
   // -- UI --
+  metaKeyHeld: false,
+  setMetaKeyHeld: (held) => set({ metaKeyHeld: held }),
   sidebarVisible: true,
   rightSidebarVisible: false,
   sidebarWidth: 260,
@@ -521,6 +680,10 @@ export const useAppStore = create<AppState>((set) => ({
   openModal: (name, data = {}) => set({ activeModal: name, modalData: data }),
   closeModal: () => set({ activeModal: null, modalData: {} }),
 
+  // -- Chat input prefill (e.g. after rollback) --
+  chatInputPrefill: null,
+  setChatInputPrefill: (text) => set({ chatInputPrefill: text }),
+
   // -- Settings --
   worktreeBaseDir: "",
   setWorktreeBaseDir: (dir) => set({ worktreeBaseDir: dir }),
@@ -528,6 +691,8 @@ export const useAppStore = create<AppState>((set) => ({
   setDefaultBranches: (branches) => set({ defaultBranches: branches }),
   terminalFontSize: 11,
   setTerminalFontSize: (size) => set({ terminalFontSize: size }),
+  audioNotifications: false,
+  setAudioNotifications: (enabled) => set({ audioNotifications: enabled }),
   currentThemeId: DEFAULT_THEME_ID,
   setCurrentThemeId: (id) => set({ currentThemeId: id }),
   lastMessages: {},
@@ -596,3 +761,9 @@ export const useAppStore = create<AppState>((set) => ({
   setLocalServerConnectionString: (cs) =>
     set({ localServerConnectionString: cs }),
 }));
+
+// Expose store on window in dev builds for debug_eval_js access.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__CLAUDETTE_STORE__ =
+    useAppStore;
+}

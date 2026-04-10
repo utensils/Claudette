@@ -69,6 +69,10 @@ export function getDefaultBranch(repoId: string): Promise<string | null> {
   return invoke("get_default_branch", { repoId });
 }
 
+export function reorderRepositories(ids: string[]): Promise<void> {
+  return invoke("reorder_repositories", { ids });
+}
+
 // -- Workspace --
 
 export function createWorkspace(
@@ -168,6 +172,58 @@ export function stopAgent(workspaceId: string): Promise<void> {
 
 export function resetAgentSession(workspaceId: string): Promise<void> {
   return invoke("reset_agent_session", { workspaceId });
+}
+
+// -- Checkpoints --
+
+import type { ConversationCheckpoint } from "../types/checkpoint";
+
+export function listCheckpoints(
+  workspaceId: string,
+): Promise<ConversationCheckpoint[]> {
+  return invoke("list_checkpoints", { workspaceId });
+}
+
+export function rollbackToCheckpoint(
+  workspaceId: string,
+  checkpointId: string,
+  restoreFiles: boolean,
+): Promise<ChatMessage[]> {
+  return invoke("rollback_to_checkpoint", {
+    workspaceId,
+    checkpointId,
+    restoreFiles,
+  });
+}
+
+export function clearConversation(
+  workspaceId: string,
+  restoreFiles: boolean,
+): Promise<ChatMessage[]> {
+  return invoke("clear_conversation", {
+    workspaceId,
+    restoreFiles,
+  });
+}
+
+import type { TurnToolActivityData, CompletedTurnData } from "../types/checkpoint";
+
+export function saveTurnToolActivities(
+  checkpointId: string,
+  messageCount: number,
+  activities: TurnToolActivityData[],
+): Promise<void> {
+  return invoke("save_turn_tool_activities", {
+    checkpointId,
+    messageCount,
+    activities,
+  });
+}
+
+export function loadCompletedTurns(
+  workspaceId: string,
+): Promise<CompletedTurnData[]> {
+  return invoke("load_completed_turns", { workspaceId });
 }
 
 // -- Plan --
@@ -323,4 +379,15 @@ export function stopLocalServer(): Promise<void> {
 
 export function getLocalServerStatus(): Promise<LocalServerInfo> {
   return invoke("get_local_server_status");
+}
+
+// -- Debug (dev builds only) --
+
+export function debugEvalJs(js: string): Promise<string> {
+  return invoke("debug_eval_js", { js });
+}
+
+// Expose invoke on window in dev builds so debug_eval_js can call back.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__CLAUDETTE_INVOKE__ = invoke;
 }

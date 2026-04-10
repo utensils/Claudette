@@ -3,7 +3,8 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::model::{
-    ChatMessage, RemoteConnection, Repository, TerminalTab, Workspace, WorkspaceStatus,
+    ChatMessage, CompletedTurnData, ConversationCheckpoint, RemoteConnection, Repository,
+    TerminalTab, TurnToolActivity, Workspace, WorkspaceStatus,
 };
 
 pub struct Database {
@@ -173,60 +174,116 @@ impl Database {
             )?;
         }
 
+        if version < 10 {
+            self.conn.execute_batch(
+                "CREATE TABLE conversation_checkpoints (
+                    id            TEXT PRIMARY KEY,
+                    workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                    message_id    TEXT NOT NULL,
+                    commit_hash   TEXT,
+                    turn_index    INTEGER NOT NULL,
+                    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+
+                CREATE INDEX idx_checkpoints_workspace
+                    ON conversation_checkpoints(workspace_id, turn_index);
+
+                PRAGMA user_version = 10;",
+            )?;
+        }
+
+        if version < 11 {
+            self.conn.execute_batch(
+                "CREATE TABLE turn_tool_activities (
+                    id              TEXT PRIMARY KEY,
+                    checkpoint_id   TEXT NOT NULL REFERENCES conversation_checkpoints(id) ON DELETE CASCADE,
+                    tool_use_id     TEXT NOT NULL,
+                    tool_name       TEXT NOT NULL,
+                    input_json      TEXT NOT NULL DEFAULT '',
+                    result_text     TEXT NOT NULL DEFAULT '',
+                    summary         TEXT NOT NULL DEFAULT '',
+                    sort_order      INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE INDEX idx_turn_tool_activities_checkpoint
+                    ON turn_tool_activities(checkpoint_id, sort_order);
+
+                ALTER TABLE conversation_checkpoints ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
+
+                PRAGMA user_version = 11;",
+            )?;
+        }
+
+        if version < 12 {
+            // Single batch so the column add, backfill, and version bump are
+            // atomic — a partial apply won't leave user_version stale.
+            self.conn.execute_batch(
+                "ALTER TABLE repositories ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+
+                UPDATE repositories SET sort_order = (
+                    SELECT COUNT(*) FROM repositories r2 WHERE r2.name < repositories.name
+                );
+
+                PRAGMA user_version = 12;",
+            )?;
+        }
+
         Ok(())
     }
 
     // --- Repositories ---
 
     pub fn insert_repository(&self, repo: &Repository) -> Result<(), rusqlite::Error> {
+        // New repos append at the end of the list.
+        let max_order: i32 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM repositories",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(-1);
         self.conn.execute(
-            "INSERT INTO repositories (id, path, name, path_slug) VALUES (?1, ?2, ?3, ?4)",
-            params![repo.id, repo.path, repo.name, repo.path_slug],
+            "INSERT INTO repositories (id, path, name, path_slug, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![repo.id, repo.path, repo.name, repo.path_slug, max_order + 1],
         )?;
         Ok(())
     }
 
+    fn parse_repo_row(row: &rusqlite::Row) -> rusqlite::Result<Repository> {
+        Ok(Repository {
+            id: row.get(0)?,
+            path: row.get(1)?,
+            name: row.get(2)?,
+            icon: row.get(3)?,
+            path_slug: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            created_at: row.get(5)?,
+            setup_script: row.get(6)?,
+            custom_instructions: row.get(7)?,
+            sort_order: row.get(8)?,
+            path_valid: true, // validated after load
+        })
+    }
+
     pub fn list_repositories(&self) -> Result<Vec<Repository>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions
-             FROM repositories ORDER BY name",
+            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order
+             FROM repositories ORDER BY sort_order, name",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(Repository {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                icon: row.get(3)?,
-                path_slug: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                created_at: row.get(5)?,
-                setup_script: row.get(6)?,
-                custom_instructions: row.get(7)?,
-                path_valid: true, // validated after load
-            })
-        })?;
+        let rows = stmt.query_map([], Self::parse_repo_row)?;
         rows.collect()
     }
 
     pub fn get_repository(&self, id: &str) -> Result<Option<Repository>, rusqlite::Error> {
-        self.conn.query_row(
-            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions
-             FROM repositories WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(Repository {
-                    id: row.get(0)?,
-                    path: row.get(1)?,
-                    name: row.get(2)?,
-                    icon: row.get(3)?,
-                    path_slug: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    created_at: row.get(5)?,
-                    setup_script: row.get(6)?,
-                    custom_instructions: row.get(7)?,
-                    path_valid: true,
-                })
-            },
-        )
-        .optional()
+        self.conn
+            .query_row(
+                "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order
+                 FROM repositories WHERE id = ?1",
+                params![id],
+                Self::parse_repo_row,
+            )
+            .optional()
     }
 
     pub fn update_repository_path(&self, id: &str, path: &str) -> Result<(), rusqlite::Error> {
@@ -234,6 +291,19 @@ impl Database {
             "UPDATE repositories SET path = ?1 WHERE id = ?2",
             params![path, id],
         )?;
+        Ok(())
+    }
+
+    /// Batch-update sort_order for repositories based on the provided ID order.
+    pub fn reorder_repositories(&self, ids: &[String]) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE repositories SET sort_order = ?1 WHERE id = ?2")?;
+            for (i, id) in ids.iter().enumerate() {
+                stmt.execute(params![i as i32, id])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -531,6 +601,245 @@ impl Database {
         Ok(())
     }
 
+    // --- Conversation Checkpoints ---
+
+    pub fn insert_checkpoint(&self, cp: &ConversationCheckpoint) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "INSERT INTO conversation_checkpoints (id, workspace_id, message_id, commit_hash, turn_index, message_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                cp.id,
+                cp.workspace_id,
+                cp.message_id,
+                cp.commit_hash,
+                cp.turn_index,
+                cp.message_count
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn parse_checkpoint_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationCheckpoint> {
+        Ok(ConversationCheckpoint {
+            id: row.get(0)?,
+            workspace_id: row.get(1)?,
+            message_id: row.get(2)?,
+            commit_hash: row.get(3)?,
+            turn_index: row.get(4)?,
+            message_count: row.get(5)?,
+            created_at: row.get(6)?,
+        })
+    }
+
+    pub fn list_checkpoints(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<ConversationCheckpoint>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, workspace_id, message_id, commit_hash, turn_index, message_count, created_at
+             FROM conversation_checkpoints WHERE workspace_id = ?1 ORDER BY turn_index",
+        )?;
+        let rows = stmt.query_map(params![workspace_id], Self::parse_checkpoint_row)?;
+        rows.collect()
+    }
+
+    pub fn get_checkpoint(
+        &self,
+        id: &str,
+    ) -> Result<Option<ConversationCheckpoint>, rusqlite::Error> {
+        self.conn
+            .query_row(
+                "SELECT id, workspace_id, message_id, commit_hash, turn_index, message_count, created_at
+                 FROM conversation_checkpoints WHERE id = ?1",
+                params![id],
+                Self::parse_checkpoint_row,
+            )
+            .optional()
+    }
+
+    pub fn latest_checkpoint(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Option<ConversationCheckpoint>, rusqlite::Error> {
+        self.conn
+            .query_row(
+                "SELECT id, workspace_id, message_id, commit_hash, turn_index, message_count, created_at
+                 FROM conversation_checkpoints
+                 WHERE workspace_id = ?1
+                 ORDER BY turn_index DESC
+                 LIMIT 1",
+                params![workspace_id],
+                Self::parse_checkpoint_row,
+            )
+            .optional()
+    }
+
+    pub fn delete_checkpoints_after(
+        &self,
+        workspace_id: &str,
+        turn_index: i32,
+    ) -> Result<usize, rusqlite::Error> {
+        let deleted = self.conn.execute(
+            "DELETE FROM conversation_checkpoints WHERE workspace_id = ?1 AND turn_index > ?2",
+            params![workspace_id, turn_index],
+        )?;
+        Ok(deleted)
+    }
+
+    // --- Turn Tool Activities ---
+
+    pub fn insert_turn_tool_activities(
+        &self,
+        activities: &[TurnToolActivity],
+    ) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO turn_tool_activities (id, checkpoint_id, tool_use_id, tool_name, input_json, result_text, summary, sort_order)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for a in activities {
+                stmt.execute(params![
+                    a.id,
+                    a.checkpoint_id,
+                    a.tool_use_id,
+                    a.tool_name,
+                    a.input_json,
+                    a.result_text,
+                    a.summary,
+                    a.sort_order,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn update_checkpoint_message_count(
+        &self,
+        checkpoint_id: &str,
+        message_count: i32,
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE conversation_checkpoints SET message_count = ?1 WHERE id = ?2",
+            params![message_count, checkpoint_id],
+        )?;
+        Ok(())
+    }
+
+    /// Atomically update the checkpoint message count and insert tool activities.
+    pub fn save_turn_tool_activities(
+        &self,
+        checkpoint_id: &str,
+        message_count: i32,
+        activities: &[TurnToolActivity],
+    ) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE conversation_checkpoints SET message_count = ?1 WHERE id = ?2",
+            params![message_count, checkpoint_id],
+        )?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO turn_tool_activities (id, checkpoint_id, tool_use_id, tool_name, input_json, result_text, summary, sort_order)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for a in activities {
+                stmt.execute(params![
+                    a.id,
+                    a.checkpoint_id,
+                    a.tool_use_id,
+                    a.tool_name,
+                    a.input_json,
+                    a.result_text,
+                    a.summary,
+                    a.sort_order,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Load all completed turns for a workspace: checkpoints joined with their
+    /// tool activities, grouped by checkpoint and ordered by turn_index.
+    pub fn list_completed_turns(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<CompletedTurnData>, rusqlite::Error> {
+        // First get the checkpoints.
+        let checkpoints = self.list_checkpoints(workspace_id)?;
+
+        // Then load all activities for this workspace in one query.
+        let mut stmt = self.conn.prepare(
+            "SELECT ta.id, ta.checkpoint_id, ta.tool_use_id, ta.tool_name,
+                    ta.input_json, ta.result_text, ta.summary, ta.sort_order
+             FROM turn_tool_activities ta
+             JOIN conversation_checkpoints cp ON ta.checkpoint_id = cp.id
+             WHERE cp.workspace_id = ?1
+             ORDER BY cp.turn_index, ta.sort_order",
+        )?;
+        let activities: Vec<TurnToolActivity> = stmt
+            .query_map(params![workspace_id], |row| {
+                Ok(TurnToolActivity {
+                    id: row.get(0)?,
+                    checkpoint_id: row.get(1)?,
+                    tool_use_id: row.get(2)?,
+                    tool_name: row.get(3)?,
+                    input_json: row.get(4)?,
+                    result_text: row.get(5)?,
+                    summary: row.get(6)?,
+                    sort_order: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Group activities by checkpoint_id.
+        let mut activity_map: std::collections::HashMap<String, Vec<TurnToolActivity>> =
+            std::collections::HashMap::new();
+        for a in activities {
+            activity_map
+                .entry(a.checkpoint_id.clone())
+                .or_default()
+                .push(a);
+        }
+
+        Ok(checkpoints
+            .into_iter()
+            .filter_map(|cp| {
+                let acts = activity_map.remove(&cp.id).unwrap_or_default();
+                // Only return turns that actually had tool activities.
+                // Checkpoints for assistant-only turns don't need summaries.
+                if acts.is_empty() {
+                    return None;
+                }
+                Some(CompletedTurnData {
+                    checkpoint_id: cp.id,
+                    message_id: cp.message_id,
+                    turn_index: cp.turn_index,
+                    message_count: cp.message_count,
+                    activities: acts,
+                })
+            })
+            .collect())
+    }
+
+    /// Delete all chat messages inserted after the given message (by rowid order).
+    /// Returns the number of messages deleted.
+    pub fn delete_messages_after(
+        &self,
+        workspace_id: &str,
+        after_message_id: &str,
+    ) -> Result<usize, rusqlite::Error> {
+        let deleted = self.conn.execute(
+            "DELETE FROM chat_messages
+             WHERE workspace_id = ?1
+               AND rowid > (SELECT rowid FROM chat_messages WHERE id = ?2)",
+            params![workspace_id, after_message_id],
+        )?;
+        Ok(deleted)
+    }
+
     // --- Terminal Tabs ---
 
     pub fn insert_terminal_tab(&self, tab: &TerminalTab) -> Result<(), rusqlite::Error> {
@@ -749,6 +1058,7 @@ mod tests {
             created_at: String::new(),
             setup_script: None,
             custom_instructions: None,
+            sort_order: 0,
             path_valid: true,
         }
     }
@@ -1040,6 +1350,7 @@ mod tests {
             created_at: String::new(),
             setup_script: None,
             custom_instructions: None,
+            sort_order: 0,
             path_valid: true,
         };
         db.insert_repository(&repo).unwrap();
@@ -1352,5 +1663,229 @@ mod tests {
         // After workspace deletion, usage rows should be gone.
         let usage = db.get_slash_command_usage("w1").unwrap();
         assert!(usage.is_empty());
+    }
+
+    // --- Conversation checkpoint tests ---
+
+    fn make_checkpoint(id: &str, ws_id: &str, msg_id: &str, turn: i32) -> ConversationCheckpoint {
+        ConversationCheckpoint {
+            id: id.into(),
+            workspace_id: ws_id.into(),
+            message_id: msg_id.into(),
+            commit_hash: Some(format!("abc{turn}")),
+            turn_index: turn,
+            message_count: 1,
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_crud() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::User, "q2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m4", "w1", ChatRole::Assistant, "a2"))
+            .unwrap();
+
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m2", 0))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp2", "w1", "m4", 1))
+            .unwrap();
+
+        // list
+        let cps = db.list_checkpoints("w1").unwrap();
+        assert_eq!(cps.len(), 2);
+        assert_eq!(cps[0].turn_index, 0);
+        assert_eq!(cps[1].turn_index, 1);
+
+        // get
+        let cp = db.get_checkpoint("cp1").unwrap().unwrap();
+        assert_eq!(cp.message_id, "m2");
+
+        // latest
+        let latest = db.latest_checkpoint("w1").unwrap().unwrap();
+        assert_eq!(latest.id, "cp2");
+        assert_eq!(latest.turn_index, 1);
+    }
+
+    #[test]
+    fn test_delete_messages_after() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::User, "q2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m4", "w1", ChatRole::Assistant, "a2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m5", "w1", ChatRole::User, "q3"))
+            .unwrap();
+
+        let deleted = db.delete_messages_after("w1", "m2").unwrap();
+        assert_eq!(deleted, 3);
+
+        let msgs = db.list_chat_messages("w1").unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].id, "m1");
+        assert_eq!(msgs[1].id, "m2");
+    }
+
+    #[test]
+    fn test_delete_messages_after_last_message_deletes_nothing() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+
+        let deleted = db.delete_messages_after("w1", "m2").unwrap();
+        assert_eq!(deleted, 0);
+
+        let msgs = db.list_chat_messages("w1").unwrap();
+        assert_eq!(msgs.len(), 2);
+    }
+
+    #[test]
+    fn test_delete_checkpoints_after() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a2"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::Assistant, "a3"))
+            .unwrap();
+
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp2", "w1", "m2", 1))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp3", "w1", "m3", 2))
+            .unwrap();
+
+        let deleted = db.delete_checkpoints_after("w1", 0).unwrap();
+        assert_eq!(deleted, 2);
+
+        let cps = db.list_checkpoints("w1").unwrap();
+        assert_eq!(cps.len(), 1);
+        assert_eq!(cps[0].id, "cp1");
+    }
+
+    #[test]
+    fn test_checkpoint_cascade_on_workspace_delete() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+
+        db.delete_workspace("w1").unwrap();
+
+        let cps = db.list_checkpoints("w1").unwrap();
+        assert!(cps.is_empty());
+    }
+
+    #[test]
+    fn test_latest_checkpoint_returns_none_when_empty() {
+        let db = setup_db_with_workspace();
+        let result = db.latest_checkpoint("w1").unwrap();
+        assert!(result.is_none());
+    }
+
+    // --- Turn tool activity tests ---
+
+    fn make_tool_activity(id: &str, cp_id: &str, tool: &str, order: i32) -> TurnToolActivity {
+        TurnToolActivity {
+            id: id.into(),
+            checkpoint_id: cp_id.into(),
+            tool_use_id: format!("tu_{id}"),
+            tool_name: tool.into(),
+            input_json: r#"{"file":"test.rs"}"#.to_string(),
+            result_text: "ok".into(),
+            summary: format!("{tool} test.rs"),
+            sort_order: order,
+        }
+    }
+
+    #[test]
+    fn test_insert_and_list_tool_activities() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+
+        let activities = vec![
+            make_tool_activity("a1", "cp1", "Read", 0),
+            make_tool_activity("a2", "cp1", "Edit", 1),
+        ];
+        db.insert_turn_tool_activities(&activities).unwrap();
+
+        let turns = db.list_completed_turns("w1").unwrap();
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].activities.len(), 2);
+        assert_eq!(turns[0].activities[0].tool_name, "Read");
+        assert_eq!(turns[0].activities[1].tool_name, "Edit");
+    }
+
+    #[test]
+    fn test_tool_activities_cascade_on_checkpoint_delete() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+        db.insert_turn_tool_activities(&[make_tool_activity("a1", "cp1", "Read", 0)])
+            .unwrap();
+
+        db.delete_checkpoints_after("w1", -1).unwrap();
+
+        let turns = db.list_completed_turns("w1").unwrap();
+        assert!(turns.is_empty());
+    }
+
+    #[test]
+    fn test_list_completed_turns_groups_by_checkpoint() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "a2"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp2", "w1", "m2", 1))
+            .unwrap();
+
+        db.insert_turn_tool_activities(&[
+            make_tool_activity("a1", "cp1", "Read", 0),
+            make_tool_activity("a2", "cp1", "Edit", 1),
+        ])
+        .unwrap();
+        db.insert_turn_tool_activities(&[make_tool_activity("a3", "cp2", "Bash", 0)])
+            .unwrap();
+
+        let turns = db.list_completed_turns("w1").unwrap();
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].activities.len(), 2);
+        assert_eq!(turns[1].activities.len(), 1);
+        assert_eq!(turns[1].activities[0].tool_name, "Bash");
+    }
+
+    #[test]
+    fn test_update_checkpoint_message_count() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+
+        db.update_checkpoint_message_count("cp1", 3).unwrap();
+
+        let cp = db.get_checkpoint("cp1").unwrap().unwrap();
+        assert_eq!(cp.message_count, 3);
     }
 }

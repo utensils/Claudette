@@ -2,6 +2,7 @@ import { useRef, useState, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   archiveWorkspace,
+  reorderRepositories,
   restoreWorkspace,
   generateWorkspaceName,
   createWorkspace,
@@ -31,6 +32,17 @@ export function Sidebar() {
   const openModal = useAppStore((s) => s.openModal);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const unreadCompletions = useAppStore((s) => s.unreadCompletions);
+  const setRepositories = useAppStore((s) => s.setRepositories);
+  const metaKeyHeld = useAppStore((s) => s.metaKeyHeld);
+  const isMac = navigator.platform.startsWith("Mac");
+
+  // Pointer-based reorder state (HTML5 drag-and-drop doesn't work in WKWebView)
+  const [draggedRepoId, setDraggedRepoId] = useState<string | null>(null);
+  const [dropTargetIdx, setDropTargetIdx] = useState<number | null>(null);
+  const repoGroupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const dragStartPos = useRef<{ x: number; y: number; id: string; pointerId: number } | null>(null);
+  const didDragRef = useRef(false);
+  const DRAG_THRESHOLD = 5; // px before drag activates
   const clearUnreadCompletion = useAppStore((s) => s.clearUnreadCompletion);
 
   const creatingRef = useRef(false);
@@ -126,7 +138,7 @@ export function Sidebar() {
       </div>
 
       <div className={styles.list}>
-        {repositories.filter((r) => !r.remote_connection_id).map((repo) => {
+        {repositories.filter((r) => !r.remote_connection_id).map((repo, repoIdx) => {
           const collapsed = repoCollapsed[repo.id];
           const repoWorkspaces = filteredWorkspaces.filter(
             (ws) => ws.repository_id === repo.id
@@ -136,10 +148,98 @@ export function Sidebar() {
           ).length;
 
           return (
-            <div key={repo.id} className={styles.repoGroup}>
+            <div
+              key={repo.id}
+              ref={(el) => {
+                if (el) repoGroupRefs.current.set(repo.id, el);
+                else repoGroupRefs.current.delete(repo.id);
+              }}
+              className={`${styles.repoGroup} ${draggedRepoId === repo.id ? styles.dragging : ""} ${dropTargetIdx === repoIdx && draggedRepoId && draggedRepoId !== repo.id ? styles.dropTarget : ""}`}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                // Don't initiate drag from interactive elements (buttons, links).
+                const target = e.target as HTMLElement;
+                if (target.closest("button, a, input, select")) return;
+                const header = target.closest(`.${styles.repoHeader}`);
+                if (!header) return;
+                // Record start position — don't activate drag until threshold
+                dragStartPos.current = { x: e.clientX, y: e.clientY, id: repo.id, pointerId: e.pointerId };
+                e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (!dragStartPos.current) return;
+                if (dragStartPos.current.id !== repo.id) return;
+
+                // Activate drag after threshold
+                if (!draggedRepoId) {
+                  const dx = e.clientX - dragStartPos.current.x;
+                  const dy = e.clientY - dragStartPos.current.y;
+                  if (Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+                  setDraggedRepoId(repo.id);
+                  didDragRef.current = true;
+                  // Prevent text selection while dragging
+                  window.getSelection()?.removeAllRanges();
+                }
+                e.preventDefault();
+
+                // Hit-test: find which repo the pointer is over using midpoint
+                const localRepos = repositories.filter((r) => !r.remote_connection_id);
+                let targetIdx: number | null = null;
+                for (let i = 0; i < localRepos.length; i++) {
+                  const el = repoGroupRefs.current.get(localRepos[i].id);
+                  if (!el) continue;
+                  const rect = el.getBoundingClientRect();
+                  const mid = rect.top + rect.height / 2;
+                  if (e.clientY < mid) {
+                    targetIdx = i;
+                    break;
+                  }
+                  targetIdx = i + 1;
+                }
+                // Clamp and skip if same position
+                if (targetIdx !== null) {
+                  const fromIdx = localRepos.findIndex((r) => r.id === repo.id);
+                  if (targetIdx === fromIdx || targetIdx === fromIdx + 1) targetIdx = null;
+                }
+                setDropTargetIdx(targetIdx);
+              }}
+              onPointerUp={() => {
+                const wasActive = draggedRepoId === repo.id;
+                if (wasActive && dropTargetIdx !== null) {
+                  const localRepos = repositories.filter((r) => !r.remote_connection_id);
+                  const fromIdx = localRepos.findIndex((r) => r.id === repo.id);
+                  if (fromIdx >= 0) {
+                    const reordered = [...localRepos];
+                    const [moved] = reordered.splice(fromIdx, 1);
+                    const insertIdx = dropTargetIdx > fromIdx ? dropTargetIdx - 1 : dropTargetIdx;
+                    reordered.splice(insertIdx, 0, moved);
+                    setRepositories([
+                      ...reordered,
+                      ...repositories.filter((r) => !!r.remote_connection_id),
+                    ]);
+                    reorderRepositories(reordered.map((r) => r.id)).catch(console.error);
+                  }
+                }
+                dragStartPos.current = null;
+                setDraggedRepoId(null);
+                setDropTargetIdx(null);
+                // Reset didDrag after click fires (click follows pointerup).
+                if (didDragRef.current) {
+                  requestAnimationFrame(() => { didDragRef.current = false; });
+                }
+              }}
+              onPointerCancel={() => {
+                dragStartPos.current = null;
+                setDraggedRepoId(null);
+                setDropTargetIdx(null);
+              }}
+            >
+              {draggedRepoId && dropTargetIdx === repoIdx && draggedRepoId !== repo.id && (
+                <div className={styles.dropIndicator} />
+              )}
               <div
                 className={styles.repoHeader}
-                onClick={() => toggleRepoCollapsed(repo.id)}
+                onClick={() => { if (!didDragRef.current) toggleRepoCollapsed(repo.id); }}
               >
                 <span className={styles.chevron}>
                   {collapsed ? "›" : "⌄"}
@@ -206,6 +306,11 @@ export function Sidebar() {
                       <X size={12} />
                     </button>
                   </>
+                )}
+                {metaKeyHeld && repoIdx < 9 && (
+                  <kbd className={styles.shortcutBadge}>
+                    {isMac ? "⌘" : "Ctrl+"}{repoIdx + 1}
+                  </kbd>
                 )}
               </div>
 
@@ -287,6 +392,9 @@ export function Sidebar() {
             </div>
           );
         })}
+        {draggedRepoId && dropTargetIdx === repositories.filter((r) => !r.remote_connection_id).length && (
+          <div className={styles.dropIndicator} />
+        )}
       </div>
 
       <RemoteSections />

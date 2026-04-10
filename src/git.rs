@@ -182,10 +182,83 @@ pub async fn has_unmerged_commits(
     Ok(count > 0)
 }
 
-/// Safe branch delete — fails if the branch has unmerged commits.
-/// Callers should treat failure as non-fatal (the branch is preserved).
+/// Delete a branch. Tries safe `-d` first. If that fails (unmerged commits),
+/// checks whether all unmerged commits are synthetic `[checkpoint]` commits.
+/// Force-deletes only in that case; otherwise preserves real user work.
 pub async fn branch_delete(repo_path: &str, branch: &str) -> Result<(), GitError> {
-    run_git(repo_path, &["branch", "-d", branch]).await?;
+    // Try safe delete first.
+    if run_git(repo_path, &["branch", "-d", branch]).await.is_ok() {
+        return Ok(());
+    }
+
+    // Safe delete failed — check if only checkpoint commits are unmerged.
+    if has_only_checkpoint_commits(repo_path, branch).await {
+        run_git(repo_path, &["branch", "-D", branch]).await?;
+        return Ok(());
+    }
+
+    // Real unmerged work exists — leave the branch intact.
+    Err(GitError::CommandFailed(
+        "Branch has unmerged commits".into(),
+    ))
+}
+
+/// Returns true if every commit on `branch` that is not reachable from the
+/// default branch has a message starting with `[checkpoint]`.
+async fn has_only_checkpoint_commits(repo_path: &str, branch: &str) -> bool {
+    // Determine the default branch to compare against.
+    let base = match default_branch(repo_path).await {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+
+    let log = match run_git(
+        repo_path,
+        &["log", "--format=%s", &format!("{base}..{branch}")],
+    )
+    .await
+    {
+        Ok(output) => output,
+        Err(_) => return false,
+    };
+
+    if log.trim().is_empty() {
+        return true; // no ahead commits at all
+    }
+
+    log.lines().all(|line| line.starts_with("[checkpoint]"))
+}
+
+/// Create a checkpoint commit in a worktree, staging all changes first.
+/// If there are no changes to commit, returns the current HEAD hash.
+/// On commit failure (hooks, missing config, etc.) unstages changes so
+/// the worktree is not left in a surprising half-staged state.
+pub async fn create_checkpoint_commit(
+    worktree_path: &str,
+    message: &str,
+) -> Result<String, GitError> {
+    // Stage all changes (including untracked files).
+    run_git(worktree_path, &["add", "-A"]).await?;
+
+    // Check if there are staged changes.
+    let status = run_git(worktree_path, &["status", "--porcelain"]).await?;
+    if !status.is_empty() {
+        let commit_msg = format!("[checkpoint] {message}");
+        if let Err(e) = run_git(worktree_path, &["commit", "-m", &commit_msg]).await {
+            // Unstage so the worktree isn't left with everything added.
+            let _ = run_git(worktree_path, &["reset"]).await;
+            return Err(e);
+        }
+    }
+
+    // Return current HEAD hash regardless.
+    run_git(worktree_path, &["rev-parse", "HEAD"]).await
+}
+
+/// Hard-reset a worktree to a specific commit and clean untracked files.
+pub async fn restore_to_commit(worktree_path: &str, commit_hash: &str) -> Result<(), GitError> {
+    run_git(worktree_path, &["reset", "--hard", commit_hash]).await?;
+    run_git(worktree_path, &["clean", "-fd"]).await?;
     Ok(())
 }
 
@@ -200,4 +273,157 @@ pub async fn current_branch(repo_path: &str) -> Result<String, GitError> {
         ));
     }
     Ok(branch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a temporary git repo for testing.
+    async fn setup_temp_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        run_git(path, &["init", "-b", "main"]).await.unwrap();
+        run_git(path, &["config", "user.email", "test@test.com"])
+            .await
+            .unwrap();
+        run_git(path, &["config", "user.name", "Test"])
+            .await
+            .unwrap();
+
+        // Create an initial commit so HEAD exists.
+        let readme = dir.path().join("README.md");
+        std::fs::write(&readme, "# test").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "initial"]).await.unwrap();
+
+        dir
+    }
+
+    #[tokio::test]
+    async fn test_create_checkpoint_commit_with_changes() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Create a new file.
+        std::fs::write(dir.path().join("file.txt"), "hello").unwrap();
+
+        let hash = create_checkpoint_commit(path, "Turn 0").await.unwrap();
+        assert!(!hash.is_empty());
+
+        // Verify the commit message.
+        let log = run_git(path, &["log", "-1", "--format=%s"]).await.unwrap();
+        assert_eq!(log, "[checkpoint] Turn 0");
+    }
+
+    #[tokio::test]
+    async fn test_create_checkpoint_commit_no_changes() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        let head_before = run_git(path, &["rev-parse", "HEAD"]).await.unwrap();
+        let hash = create_checkpoint_commit(path, "Turn 0").await.unwrap();
+
+        // No new commit should be created — hash should match HEAD.
+        assert_eq!(hash, head_before);
+    }
+
+    #[tokio::test]
+    async fn test_restore_to_commit() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let file = dir.path().join("data.txt");
+
+        // First checkpoint.
+        std::fs::write(&file, "version 1").unwrap();
+        let hash1 = create_checkpoint_commit(path, "Turn 0").await.unwrap();
+
+        // Second checkpoint.
+        std::fs::write(&file, "version 2").unwrap();
+        let _hash2 = create_checkpoint_commit(path, "Turn 1").await.unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "version 2");
+
+        // Restore to first checkpoint.
+        restore_to_commit(path, &hash1).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "version 1");
+    }
+
+    #[tokio::test]
+    async fn test_restore_to_commit_cleans_untracked() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        let head = run_git(path, &["rev-parse", "HEAD"]).await.unwrap();
+
+        // Create an untracked file.
+        let extra = dir.path().join("extra.txt");
+        std::fs::write(&extra, "should be cleaned").unwrap();
+        assert!(extra.exists());
+
+        restore_to_commit(path, &head).await.unwrap();
+        assert!(!extra.exists());
+    }
+
+    #[tokio::test]
+    async fn test_branch_delete_force_deletes_checkpoint_only_branch() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Create a branch with only checkpoint commits.
+        run_git(path, &["checkout", "-b", "ws-branch"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "[checkpoint] Turn 0"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "[checkpoint] Turn 1"])
+            .await
+            .unwrap();
+        run_git(path, &["checkout", "main"]).await.unwrap();
+
+        // Branch has unmerged checkpoint commits — should force-delete.
+        branch_delete(path, "ws-branch").await.unwrap();
+
+        // Confirm branch is gone.
+        let branches = run_git(path, &["branch", "--list", "ws-branch"])
+            .await
+            .unwrap();
+        assert!(branches.trim().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_branch_delete_preserves_branch_with_real_commits() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Create a branch with a mix of checkpoint and real commits.
+        run_git(path, &["checkout", "-b", "ws-branch"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "[checkpoint] Turn 0"])
+            .await
+            .unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "feat: user's real commit"])
+            .await
+            .unwrap();
+        run_git(path, &["checkout", "main"]).await.unwrap();
+
+        // Branch has a real commit — should NOT force-delete.
+        let result = branch_delete(path, "ws-branch").await;
+        assert!(result.is_err());
+
+        // Confirm branch still exists.
+        let branches = run_git(path, &["branch", "--list", "ws-branch"])
+            .await
+            .unwrap();
+        assert!(!branches.trim().is_empty());
+    }
 }

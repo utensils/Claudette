@@ -3,7 +3,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use claudette::agent::{self, AgentEvent, AgentSettings, StreamEvent};
 use claudette::db::Database;
-use claudette::model::{ChatMessage, ChatRole};
+use claudette::git;
+use claudette::model::{
+    ChatMessage, ChatRole, CompletedTurnData, ConversationCheckpoint, TurnToolActivity,
+};
 
 use crate::state::{AgentSessionState, AppState};
 
@@ -116,6 +119,21 @@ pub async fn send_chat_message(
         }
     });
 
+    // If a previous turn is still running, stop it before starting a new one.
+    // This prevents overlapping processes for the same workspace.
+    if let Some(old_pid) = session.active_pid.take() {
+        eprintln!("[chat] Stopping stale process {old_pid} before new turn");
+        drop(agents); // release lock while waiting
+        let _ = agent::stop_agent(old_pid).await;
+        // Brief wait for process cleanup.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        agents = state.agents.write().await;
+        // Re-borrow session after re-acquiring lock.
+        let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+        session.active_pid = None;
+    }
+    let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+
     let is_resume = session.turn_count > 0;
     let session_id = session.session_id.clone();
     let custom_instructions = session.custom_instructions.clone();
@@ -152,9 +170,15 @@ pub async fn send_chat_message(
     // Bridge: read from mpsc receiver, emit Tauri events.
     let ws_id = workspace_id.clone();
     let db_path = state.db_path.clone();
+    let wt_path = worktree_path.clone();
+    let user_msg_id = user_msg.id.clone();
     tokio::spawn(async move {
         let mut rx = turn_handle.event_rx;
         let mut got_init = false;
+        // Track the last assistant message inserted in THIS turn. Falls back
+        // to the user message ID for tool-only turns (AskUserQuestion, plan
+        // approval) so that checkpoint creation isn't skipped entirely.
+        let mut last_assistant_msg_id: Option<String> = None;
         while let Some(event) = rx.recv().await {
             // Track whether the CLI initialized successfully.
             if let AgentEvent::Stream(StreamEvent::System { subtype, .. }) = &event
@@ -163,19 +187,19 @@ pub async fn send_chat_message(
                 got_init = true;
             }
 
-            // If the process exits without ever initializing, reset the session
-            // so the next attempt starts fresh instead of trying --resume.
-            // A non-zero exit AFTER successful init is normal (e.g. user stop,
-            // transient error) — the session is still valid for resumption.
-            if let AgentEvent::ProcessExited(_code) = &event
-                && !got_init
-            {
+            if let AgentEvent::ProcessExited(_code) = &event {
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
-                agents.remove(&ws_id);
-                // Also clear persisted session so restart doesn't try --resume.
-                if let Ok(db) = Database::open(&db_path) {
-                    let _ = db.clear_agent_session(&ws_id);
+                if !got_init {
+                    // Failed to initialize — clear the entire session so the
+                    // next attempt starts fresh instead of trying --resume.
+                    agents.remove(&ws_id);
+                    if let Ok(db) = Database::open(&db_path) {
+                        let _ = db.clear_agent_session(&ws_id);
+                    }
+                } else if let Some(session) = agents.get_mut(&ws_id) {
+                    // Normal exit — clear active_pid so rollback isn't blocked.
+                    session.active_pid = None;
                 }
             }
             // Persist assistant messages to DB on completion.
@@ -196,8 +220,9 @@ pub async fn send_chat_message(
                 if !full_text.trim().is_empty()
                     && let Ok(db) = Database::open(&db_path)
                 {
+                    let msg_id = uuid::Uuid::new_v4().to_string();
                     let msg = ChatMessage {
-                        id: uuid::Uuid::new_v4().to_string(),
+                        id: msg_id.clone(),
                         workspace_id: ws_id.clone(),
                         role: ChatRole::Assistant,
                         content: full_text,
@@ -205,22 +230,68 @@ pub async fn send_chat_message(
                         duration_ms: None,
                         created_at: now_iso(),
                     };
-                    let _ = db.insert_chat_message(&msg);
+                    if db.insert_chat_message(&msg).is_ok() {
+                        last_assistant_msg_id = Some(msg_id);
+                    }
                 }
             }
 
-            // Update cost/duration on result events.
+            // Update cost/duration on result events, then create a checkpoint.
             if let AgentEvent::Stream(StreamEvent::Result {
                 total_cost_usd,
                 duration_ms,
                 ..
             }) = &event
-                && let (Some(cost), Some(dur)) = (total_cost_usd, duration_ms)
                 && let Ok(db) = Database::open(&db_path)
-                && let Ok(msgs) = db.list_chat_messages(&ws_id)
-                && let Some(last) = msgs.iter().rfind(|m| m.role == ChatRole::Assistant)
             {
-                let _ = db.update_chat_message_cost(&last.id, *cost, *dur);
+                // Update cost on the assistant message from this turn (if any).
+                if let (Some(cost), Some(dur)) = (total_cost_usd, duration_ms)
+                    && let Some(ref msg_id) = last_assistant_msg_id
+                {
+                    let _ = db.update_chat_message_cost(msg_id, *cost, *dur);
+                }
+
+                // Create a checkpoint anchored to the assistant message from
+                // this turn, or the user message for tool-only turns.
+                let anchor_msg_id = last_assistant_msg_id.as_deref().unwrap_or(&user_msg_id);
+
+                let turn_index = db
+                    .latest_checkpoint(&ws_id)
+                    .ok()
+                    .flatten()
+                    .map(|cp| cp.turn_index + 1)
+                    .unwrap_or(0);
+
+                let commit_hash =
+                    match git::create_checkpoint_commit(&wt_path, &format!("Turn {turn_index}"))
+                        .await
+                    {
+                        Ok(hash) => Some(hash),
+                        Err(e) => {
+                            eprintln!(
+                                "[chat] Checkpoint commit failed for {ws_id}: {e} \
+                             — checkpoint will be recorded without file restore capability"
+                            );
+                            None
+                        }
+                    };
+
+                let checkpoint = ConversationCheckpoint {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    workspace_id: ws_id.clone(),
+                    message_id: anchor_msg_id.to_string(),
+                    commit_hash,
+                    turn_index,
+                    message_count: 0, // Updated by frontend after finalizeTurn
+                    created_at: now_iso(),
+                };
+                if db.insert_checkpoint(&checkpoint).is_ok() {
+                    let payload = serde_json::json!({
+                        "workspace_id": &ws_id,
+                        "checkpoint": &checkpoint,
+                    });
+                    let _ = app.emit("checkpoint-created", &payload);
+                }
             }
 
             let payload = AgentStreamPayload {
@@ -272,6 +343,172 @@ pub async fn reset_agent_session(
     db.clear_agent_session(&workspace_id)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_checkpoints(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ConversationCheckpoint>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.list_checkpoints(&workspace_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn rollback_to_checkpoint(
+    workspace_id: String,
+    checkpoint_id: String,
+    restore_files: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChatMessage>, String> {
+    // Guard: reject if agent is running.
+    {
+        let agents = state.agents.read().await;
+        if let Some(session) = agents.get(&workspace_id)
+            && session.active_pid.is_some()
+        {
+            return Err("Cannot rollback while the agent is running".into());
+        }
+    }
+
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+
+    // Load the target checkpoint and verify ownership.
+    let checkpoint = db
+        .get_checkpoint(&checkpoint_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Checkpoint not found")?;
+    if checkpoint.workspace_id != workspace_id {
+        return Err("Checkpoint does not belong to this workspace".into());
+    }
+
+    // Attempt file restore BEFORE any destructive DB writes so that a git
+    // failure does not leave the DB truncated while the frontend still shows
+    // the full conversation.
+    if restore_files && let Some(ref commit_hash) = checkpoint.commit_hash {
+        let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+        let ws = workspaces
+            .iter()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        let wt = ws
+            .worktree_path
+            .as_ref()
+            .ok_or("Workspace has no worktree")?;
+        git::restore_to_commit(wt, commit_hash)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Now perform the destructive DB writes — safe because the risky git
+    // operation (if requested) has already succeeded above.
+    db.delete_messages_after(&workspace_id, &checkpoint.message_id)
+        .map_err(|e| e.to_string())?;
+    db.delete_checkpoints_after(&workspace_id, checkpoint.turn_index)
+        .map_err(|e| e.to_string())?;
+
+    // Reset agent session so the next turn starts fresh.
+    {
+        let mut agents = state.agents.write().await;
+        agents.remove(&workspace_id);
+    }
+    db.clear_agent_session(&workspace_id)
+        .map_err(|e| e.to_string())?;
+
+    // Return the truncated message list.
+    db.list_chat_messages(&workspace_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Clear the entire conversation for a workspace, optionally restoring files
+/// to the merge-base (initial state before any agent work).
+#[tauri::command]
+pub async fn clear_conversation(
+    workspace_id: String,
+    restore_files: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChatMessage>, String> {
+    // Guard: reject if agent is running.
+    {
+        let agents = state.agents.read().await;
+        if let Some(session) = agents.get(&workspace_id)
+            && session.active_pid.is_some()
+        {
+            return Err("Cannot clear conversation while the agent is running".into());
+        }
+    }
+
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+
+    // Optionally restore files to the merge-base before clearing.
+    if restore_files {
+        let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+        let ws = workspaces
+            .iter()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        let wt = ws
+            .worktree_path
+            .as_ref()
+            .ok_or("Workspace has no worktree")?;
+        let repos = db.list_repositories().map_err(|e| e.to_string())?;
+        let repo = repos
+            .iter()
+            .find(|r| r.id == ws.repository_id)
+            .ok_or("Repository not found")?;
+        let base = git::default_branch(&repo.path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let merge_base = claudette::diff::merge_base(wt, &ws.branch_name, &base)
+            .await
+            .map_err(|e| e.to_string())?;
+        git::restore_to_commit(wt, &merge_base)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Delete all messages and checkpoints.
+    db.delete_chat_messages_for_workspace(&workspace_id)
+        .map_err(|e| e.to_string())?;
+    // Checkpoints cascade via FK, but delete explicitly for clarity.
+    db.delete_checkpoints_after(&workspace_id, -1)
+        .map_err(|e| e.to_string())?;
+
+    // Reset agent session.
+    {
+        let mut agents = state.agents.write().await;
+        agents.remove(&workspace_id);
+    }
+    db.clear_agent_session(&workspace_id)
+        .map_err(|e| e.to_string())?;
+
+    // Return empty list.
+    db.list_chat_messages(&workspace_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_turn_tool_activities(
+    checkpoint_id: String,
+    message_count: i32,
+    activities: Vec<TurnToolActivity>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.save_turn_tool_activities(&checkpoint_id, message_count, &activities)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn load_completed_turns(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<CompletedTurnData>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.list_completed_turns(&workspace_id)
+        .map_err(|e| e.to_string())
 }
 
 fn now_iso() -> String {

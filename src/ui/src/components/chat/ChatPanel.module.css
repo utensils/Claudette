@@ -122,7 +122,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  scroll-behavior: smooth;
 }
 
 .empty {
@@ -171,6 +170,7 @@
 
 /* User messages — compact input blocks */
 .role_User {
+  position: relative;
   background: var(--chat-user-bg);
   border-radius: 8px;
   padding: 10px 14px;
@@ -187,6 +187,29 @@
   font-size: 13px;
   line-height: 1.55;
   color: var(--text-muted);
+}
+
+/* Rollback button — always visible on eligible user messages */
+.rollbackBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0.4;
+  transition: opacity var(--transition-fast), color var(--transition-fast),
+    background var(--transition-fast);
+  line-height: 1;
+}
+
+.rollbackBtn:hover {
+  opacity: 1;
+  color: var(--accent-primary);
+  background: var(--accent-bg);
 }
 
 /* Assistant messages — clean prose, no chrome */
@@ -609,6 +632,7 @@
   cursor: pointer;
   transition: border-color var(--transition-fast);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .turnSummary:hover {
@@ -741,6 +765,52 @@
   line-height: 1.4;
   border-top: 1px solid var(--divider);
   background: var(--chat-input-bg);
+}
+
+/* Queued message indicator */
+.queuedMessage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin: 4px 0;
+  background: rgba(var(--accent-primary-rgb), 0.06);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.queuedLabel {
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-primary);
+  white-space: nowrap;
+}
+
+.queuedContent {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.queuedCancel {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--text-faint);
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.queuedCancel:hover {
+  color: var(--text-primary);
 }
 
 /* Input area */

@@ -40,3 +40,6 @@ tags
 
 # Conductor
 .context/
+
+# Claude Code
+.claude/worktrees/

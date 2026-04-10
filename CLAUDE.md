@@ -115,6 +115,29 @@ src-tauri/
 - P0 features: workspace management, agent chat, diff viewer, integrated terminal, checkpoints, git/GitHub integration, scripts, repo settings
 - Target platforms: macOS (Apple Silicon + Intel) and Linux (x86_64, Wayland + X11)
 
+## Debugging (dev builds only)
+
+A debug TCP eval server runs on `127.0.0.1:19432` in dev builds. It executes JS in the webview and returns results over TCP. **Always use the `/claudette-debug` skill for debugging** — it has recipes for state inspection, store tracing, session monitoring, and UAT.
+
+```bash
+/claudette-debug state                    # Store overview
+/claudette-debug state completedTurns     # Dump a specific slice
+/claudette-debug eval 'return 1+1'        # Arbitrary JS
+/claudette-debug monitor start            # Background session monitor → /tmp/claudette-debug/monitor.log
+/claudette-debug monitor read             # Tail monitor log
+/claudette-debug snapshot                 # Full store dump
+```
+
+Helper scripts (use relative paths from project root):
+- `.claude/skills/claudette-debug/debug-eval.sh` — single-shot JS eval
+- `.claude/skills/claudette-debug/debug-monitor.sh` — long-running session monitor
+
+Key globals exposed in dev mode:
+- `window.__CLAUDETTE_STORE__` — Zustand store (`.getState()` / `.setState()`)
+- `window.__CLAUDETTE_INVOKE__` — Tauri `invoke` function
+
+All debug code is gated behind `#[cfg(debug_assertions)]` / `import.meta.env.DEV` and excluded from release builds. See `.claude/skills/claudette-debug/SKILL.md` for full docs.
+
 ## Dependencies
 
 - Add dependencies conservatively — binary size target is < 30 MB
