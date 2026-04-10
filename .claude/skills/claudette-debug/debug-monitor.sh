@@ -15,7 +15,7 @@ MAX_ITER=3600  # 1 hour at 1s interval
 LOGFILE="/tmp/claudette-debug/monitor.log"
 
 # Default JS expression: comprehensive session state
-JS_EXPR='const s=window.__CLAUDETTE_STORE__.getState();const w=s.selectedWorkspaceId;const acts=s.toolActivities[w]||[];const ct=(s.completedTurns[w]||[]).length;const st=s.workspaces.find(x=>x.id===w)?.agent_status?.substring(0,4);const c=document.querySelector("[class*=messages_]");const gap=c?Math.round(c.scrollHeight-c.scrollTop-c.clientHeight):-1;const msgs=(s.chatMessages[w]||[]).length;const last=acts[acts.length-1];const jsonOk=last?.inputJson?((()=>{try{JSON.parse(last.inputJson);return true}catch{return false}})()):null;return JSON.stringify({n:acts.length,ct,st,gap,msgs,sum:last?.summary?.substring(0,40)||"",jsonOk})'
+JS_EXPR='const s=window.__CLAUDETTE_STORE__.getState();const w=s.selectedWorkspaceId;const acts=s.toolActivities[w]||[];const completedTurns=(s.completedTurns[w]||[]).length;const agentStatus=s.workspaces.find(x=>x.id===w)?.agent_status||"unknown";const c=document.querySelector("[class*=messages_]");const scrollGap=c?Math.round(c.scrollHeight-c.scrollTop-c.clientHeight):-1;const messageCount=(s.chatMessages[w]||[]).length;const last=acts[acts.length-1];const inputJsonValid=last?.inputJson?((()=>{try{JSON.parse(last.inputJson);return true}catch{return false}})()):null;const streaming=(s.streamingContent[w]||"").length>0;return JSON.stringify({toolCount:acts.length,completedTurns,agentStatus,scrollGap,messageCount,lastToolSummary:last?.summary?.substring(0,60)||"",inputJsonValid,streaming})'
 
 # Parse args
 while [[ $# -gt 0 ]]; do

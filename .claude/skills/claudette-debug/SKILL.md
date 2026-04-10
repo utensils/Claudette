@@ -1,10 +1,8 @@
 ---
 name: claudette-debug
-description: Debug the running Claudette Tauri app by executing JavaScript in the webview and reading results back. Inspect Zustand store state, trace state changes, monitor sessions long-term, run end-to-end UAT, and diagnose UI bugs in real-time. Only works in dev builds (cargo tauri dev).
-argument-hint: "[action] [target-or-js...]"
-disable-model-invocation: false
-user-invocable: true
-allowed-tools: Bash, Read, Grep, Glob
+description: Debug the running Claudette Tauri app by executing JavaScript in the webview and reading results back. Inspect Zustand store state, trace state changes, monitor sessions long-term, run end-to-end UAT, and diagnose UI bugs in real-time. Only works in dev builds.
+argument-hint: "[action] [args...]"
+allowed-tools: Bash Read Grep Glob
 ---
 
 # Claudette Debug
@@ -14,12 +12,15 @@ Execute JavaScript inside the running Claudette Tauri webview via a TCP debug se
 ## Quick Start
 
 ```bash
-/claudette-debug state                    # Store overview (all slices)
-/claudette-debug state completedTurns     # Dump a specific slice
+/claudette-debug status                   # One-shot workspace status (agent, messages, scroll, tools)
+/claudette-debug discover actions         # List all store functions with parameter names
+/claudette-debug discover state           # List all state slices with types and values
+/claudette-debug send "read README.md"    # Send a chat message to the active workspace
+/claudette-debug wait                     # Block until agent goes idle (run_in_background)
+/claudette-debug screenshot               # Capture screen, return image path for Read tool
+/claudette-debug state                    # Contextual store overview
 /claudette-debug eval 'return 1+1'        # Execute arbitrary JS
 /claudette-debug monitor start            # Start background session monitor
-/claudette-debug monitor read             # Tail monitor log
-/claudette-debug snapshot                 # Full store state dump
 ```
 
 ## Prerequisites
@@ -30,14 +31,15 @@ Execute JavaScript inside the running Claudette Tauri webview via a TCP debug se
 
 ## Scripts
 
-Two helper scripts are bundled with this skill:
-
 | Script | Purpose |
 |--------|---------|
-| `.claude/skills/claudette-debug/debug-eval.sh` | Single-shot JS eval via TCP |
-| `.claude/skills/claudette-debug/debug-monitor.sh` | Long-running session monitor |
+| `debug-eval.sh` | Single-shot JS eval via TCP |
+| `debug-monitor.sh` | Long-running session monitor (readable key names) |
+| `debug-wait.sh` | Poll until agent idle, return summary JSON |
+| `debug-screenshot.sh` | Cross-platform screenshot capture |
 
-**IMPORTANT**: Always call scripts using paths relative to the project root. Never use absolute paths like `/Users/.../scripts/...`.
+**IMPORTANT**: Always call scripts using paths relative to the project root:
+`.claude/skills/claudette-debug/debug-eval.sh`
 
 ## Architecture
 
@@ -47,25 +49,22 @@ Terminal ──TCP:19432──> debug server ──eval()──> webview JS cont
 Terminal <──TCP────── debug server <──invoke── webview (result callback)
 ```
 
-- **TCP server**: `src-tauri/src/commands/debug.rs` — listens on `127.0.0.1:19432`, wraps JS to capture return value, evals in webview, waits for result callback (10s timeout).
-- **Round-trip**: Wrapped JS calls `window.__CLAUDETTE_INVOKE__('debug_eval_result', { requestId, data })` to send results back.
-- **Input cap**: 1 MB max per eval request.
+- **TCP server**: `src-tauri/src/commands/debug.rs` — wraps JS in async IIFE, evals in webview, 10s timeout
+- **Input cap**: 1 MB max per eval request
 
 ## How to Execute JS
 
 JS must use `return` to send a value back:
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh 'return 1 + 1'
 .claude/skills/claudette-debug/debug-eval.sh 'return document.title'
-.claude/skills/claudette-debug/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().workspaces.map(w => w.name)'
 ```
 
 For multiline JS, use heredoc:
 ```bash
 .claude/skills/claudette-debug/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
-return Object.keys(s.completedTurns);
+return s.workspaces.map(w => w.name);
 JS
 ```
 
@@ -73,33 +72,46 @@ JS
 
 | Global | Type | Description |
 |--------|------|-------------|
-| `window.__CLAUDETTE_STORE__` | Zustand `useAppStore` | `.getState()` to read, `.setState()` to write |
-| `window.__CLAUDETTE_INVOKE__` | Tauri `invoke` function | Call any Tauri command from eval'd JS |
+| `window.__CLAUDETTE_STORE__` | Zustand store | `.getState()` to read, `.subscribe()` to watch |
+| `window.__CLAUDETTE_INVOKE__` | Tauri `invoke` | Call any Tauri command from eval'd JS |
 | `window.__CLAUDETTE_CHAT_DEBUG__` | `boolean` | Toggle `[chat-debug]` console logging |
+
+---
 
 ## Actions
 
 `/claudette-debug [action] [args...]`
 
-| Action | Description |
-|--------|-------------|
-| `state` | Summary of all store slices (keys + sizes) |
-| `state <slice>` | Dump a specific slice |
-| `eval <js>` | Execute arbitrary JS and return the result |
-| `monitor start` | Start background session monitor (writes to log file) |
-| `monitor read` | Read last 50 lines of monitor log |
-| `monitor read <N>` | Read last N lines of monitor log |
-| `watch <slice>` | Subscribe to slice changes (logs to webview console) |
-| `unwatch` | Remove all watch subscriptions |
-| `trace <action>` | Monkey-patch a store action to log calls |
-| `untrace` | Remove all traces |
-| `snapshot` | Dump full store state as JSON |
+### `discover actions` — list all store functions with params
 
----
+Runtime introspection — always reflects the current app, even after code changes.
 
-## Action Implementations
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const s = window.__CLAUDETTE_STORE__.getState();
+return Object.entries(s)
+  .filter(([, v]) => typeof v === 'function')
+  .map(([name, fn]) => {
+    const match = fn.toString().match(/^\(([^)]*)\)/);
+    const params = match ? match[1].trim() : '';
+    return name + '(' + params + ')';
+  })
+  .sort()
+  .join('\n');
+JS
+```
 
-### `state` — store overview
+### `discover commands` — show Tauri invoke commands
+
+Read [reference/tauri-commands.md](reference/tauri-commands.md) for the complete list. Key commands for UAT:
+
+- `sendChatMessage(workspaceId, content, permissionLevel?, model?, fastMode?, thinkingEnabled?, planMode?)`
+- `createWorkspace(repoId, name)` -> CreateWorkspaceResult
+- `loadInitialData()` -> repos, workspaces, branches
+- `loadDiffFiles(workspaceId)` -> DiffFilesResult
+- `stopAgent(workspaceId)`
+
+### `discover state` — list all state slices
 
 ```bash
 .claude/skills/claudette-debug/debug-eval.sh <<'JS'
@@ -107,11 +119,143 @@ const s = window.__CLAUDETTE_STORE__.getState();
 return Object.entries(s)
   .filter(([, v]) => typeof v !== 'function')
   .map(([k, v]) => {
-    const size = Array.isArray(v) ? v.length
-      : v && typeof v === 'object' ? Object.keys(v).length
-      : String(v).length;
-    return k + ': ' + (Array.isArray(v) ? '[' + size + ']' : typeof v === 'object' && v ? '{' + Object.keys(v).length + ' keys}' : JSON.stringify(v));
-  }).join('\n');
+    const type = Array.isArray(v) ? 'array' : v instanceof Set ? 'Set' : v === null ? 'null' : typeof v;
+    const size = Array.isArray(v) ? v.length : v instanceof Set ? v.size : v && typeof v === 'object' ? Object.keys(v).length : null;
+    const sizeStr = size !== null ? ' (' + size + ')' : '';
+    const preview = JSON.stringify(v, (_, val) => val instanceof Set ? [...val] : val);
+    return k + ': ' + type + sizeStr + ' = ' + (preview || 'undefined').substring(0, 80);
+  })
+  .sort()
+  .join('\n');
+JS
+```
+
+### `status` — one-shot comprehensive status
+
+Returns everything needed to assess the active workspace in a single eval.
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const s = window.__CLAUDETTE_STORE__.getState();
+const wsId = s.selectedWorkspaceId;
+if (!wsId) return { error: 'no workspace selected' };
+const ws = s.workspaces.find(w => w.id === wsId);
+const msgs = s.chatMessages[wsId] || [];
+const stream = s.streamingContent[wsId] || '';
+const acts = s.toolActivities[wsId] || [];
+const turns = s.completedTurns[wsId] || [];
+const last = acts[acts.length - 1];
+const c = document.querySelector('[class*="messages_"]');
+const gap = c ? Math.round(c.scrollHeight - c.scrollTop - c.clientHeight) : -1;
+return {
+  workspace: ws?.name,
+  agentStatus: ws?.agent_status,
+  messageCount: msgs.length,
+  lastMessageRole: msgs[msgs.length - 1]?.role,
+  streaming: stream.length > 0,
+  streamingLength: stream.length,
+  activeTools: acts.length,
+  lastTool: last ? last.toolName + ': ' + (last.summary || '').substring(0, 60) : null,
+  completedTurns: turns.length,
+  scrollGap: gap,
+  atBottom: gap >= 0 && gap < 50,
+  pendingQuestion: !!s.agentQuestions[wsId],
+  pendingPlanApproval: !!s.planApprovals[wsId],
+  planMode: s.planMode[wsId] || false,
+  fastMode: s.fastMode[wsId] || false,
+};
+JS
+```
+
+### `send "message"` — send chat message to active workspace
+
+Substitute `MESSAGE_TEXT_HERE` with the actual message. Escape backticks with `\``.
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const s = window.__CLAUDETTE_STORE__.getState();
+const wsId = s.selectedWorkspaceId;
+if (!wsId) return 'ERROR: no workspace selected';
+const ws = s.workspaces.find(w => w.id === wsId);
+if (ws?.agent_status === 'Running') return 'ERROR: agent already running';
+await window.__CLAUDETTE_INVOKE__('send_chat_message', {
+  workspaceId: wsId,
+  content: `MESSAGE_TEXT_HERE`,
+  permissionLevel: null,
+  model: null,
+  fastMode: null,
+  thinkingEnabled: null,
+  planMode: null,
+});
+return 'Sent to ' + ws.name;
+JS
+```
+
+### `wait` — block until agent idle
+
+Polls every 2s until done. **Must use `run_in_background: true`**.
+
+```bash
+# MUST use run_in_background: true
+.claude/skills/claudette-debug/debug-wait.sh
+```
+
+Options: `--timeout N` (default 600s), `--interval N` (default 2s), `--workspace ID`
+
+Returns: `{ running: false, agentStatus, messageCount, completedTurns, lastTurnTools, lastToolSummary, durationSeconds }`
+
+### `screenshot` — capture screen for visual inspection
+
+```bash
+.claude/skills/claudette-debug/debug-screenshot.sh
+```
+
+Returns image path. Use the Read tool to view it. Options: `--output PATH`
+
+- **macOS**: `screencapture -x` (silent full-screen)
+- **Linux/Wayland**: `grim`
+- **Linux/X11**: `import -window root` or `scrot`
+
+### `state` — contextual store overview
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const s = window.__CLAUDETTE_STORE__.getState();
+const wsId = s.selectedWorkspaceId;
+const lines = [];
+if (wsId) {
+  const ws = s.workspaces.find(w => w.id === wsId);
+  const msgs = s.chatMessages[wsId] || [];
+  const stream = s.streamingContent[wsId] || '';
+  const acts = s.toolActivities[wsId] || [];
+  const turns = s.completedTurns[wsId] || [];
+  lines.push('=== Active: ' + ws?.name + ' (' + wsId.substring(0, 8) + ') ===');
+  lines.push('  agentStatus: ' + ws?.agent_status);
+  lines.push('  messages: ' + msgs.length + (msgs.length > 0 ? ' (last: ' + msgs[msgs.length-1].role + ')' : ''));
+  lines.push('  streaming: ' + (stream.length > 0 ? stream.length + ' chars' : 'false'));
+  lines.push('  activeTools: ' + acts.length + (acts.length > 0 ? ' (last: ' + acts[acts.length-1].toolName + ')' : ''));
+  lines.push('  completedTurns: ' + turns.length);
+  lines.push('  planMode: ' + (s.planMode[wsId] || false));
+} else {
+  lines.push('=== No workspace selected ===');
+}
+const others = s.workspaces.filter(w => w.id !== wsId);
+if (others.length > 0) {
+  lines.push('');
+  lines.push('=== Other Workspaces ===');
+  others.forEach(w => {
+    const mc = (s.chatMessages[w.id] || []).length;
+    lines.push('  ' + w.name + ': ' + w.agent_status + ', ' + mc + ' msgs');
+  });
+}
+lines.push('');
+lines.push('=== Global ===');
+lines.push('  repositories: ' + s.repositories.length);
+lines.push('  sidebar: ' + s.sidebarVisible + ', rightSidebar: ' + s.rightSidebarVisible);
+lines.push('  terminal: ' + s.terminalPanelVisible);
+lines.push('  diffFiles: ' + s.diffFiles.length);
+lines.push('  theme: ' + s.currentThemeId);
+return lines.join('\n');
 JS
 ```
 
@@ -127,60 +271,23 @@ JS
 .claude/skills/claudette-debug/debug-eval.sh 'USER_JS_HERE'
 ```
 
-### `snapshot` — full store state dump
-
-```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
-const state = window.__CLAUDETTE_STORE__.getState();
-return Object.fromEntries(
-  Object.entries(state).filter(([, v]) => typeof v !== 'function')
-);
-JS
-```
-
 ### `monitor start` — background session monitor
 
-Run the monitor script with `run_in_background: true`. This is **critical** — the monitor must run in the background so the user can interact with the app while it observes.
+Run with `run_in_background: true`. Logs state changes with readable keys.
 
 ```bash
 # MUST use run_in_background: true
 .claude/skills/claudette-debug/debug-monitor.sh
 ```
 
-The monitor:
-- Polls the debug server every 1 second
-- Only logs when state changes (deduplicates identical readings)
-- Writes to both stdout and `/tmp/claudette-debug/monitor.log`
-- Runs for up to 1 hour by default
-- Tracks: tool activity count, completed turns, agent status, scroll gap, message count, last tool summary, JSON validity
+Output keys: `toolCount`, `completedTurns`, `agentStatus`, `scrollGap`, `messageCount`, `lastToolSummary`, `inputJsonValid`, `streaming`
 
-**Custom expressions**: Pass `--expr` to monitor a specific JS expression instead of the default:
-
-```bash
-.claude/skills/claudette-debug/debug-monitor.sh --expr 'const c=document.querySelector("[class*=messages_]");return c?Math.round(c.scrollHeight-c.scrollTop-c.clientHeight):-1'
-```
-
-**Options**:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--expr 'JS'` | comprehensive state | JS expression to evaluate each tick |
-| `--interval N` | `1` | Seconds between polls |
-| `--max N` | `3600` | Max iterations before auto-stop |
-| `--logfile PATH` | `/tmp/claudette-debug/monitor.log` | Log file path |
+Options: `--expr 'JS'`, `--interval N`, `--max N`, `--logfile PATH`
 
 ### `monitor read` — tail monitor log
 
-Read the log file directly. Default: last 50 lines.
-
 ```bash
 tail -50 /tmp/claudette-debug/monitor.log
-```
-
-For more lines:
-
-```bash
-tail -200 /tmp/claudette-debug/monitor.log
 ```
 
 ### `watch <slice>` — subscribe to changes
@@ -192,11 +299,10 @@ window.__CLAUDETTE_DEBUG_UNSUB__ = window.__CLAUDETTE_STORE__.subscribe(
   (state, prev) => {
     if (state.SLICE_NAME !== prev.SLICE_NAME) {
       console.log('[debug] SLICE_NAME changed:', { prev: prev.SLICE_NAME, next: state.SLICE_NAME });
-      console.trace('[debug] change origin');
     }
   }
 );
-return 'Watching SLICE_NAME — check webview console for changes';
+return 'Watching SLICE_NAME — check webview console';
 JS
 ```
 
@@ -220,7 +326,6 @@ if (typeof orig !== 'function') return 'ERROR: ACTION_NAME is not a function';
 store.setState({
   ACTION_NAME: (...args) => {
     console.log('[debug] ACTION_NAME called:', args);
-    console.trace('[debug] call origin');
     return orig(...args);
   }
 });
@@ -242,62 +347,23 @@ return 'All traces removed';
 JS
 ```
 
+### `snapshot` — full store state dump
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const state = window.__CLAUDETTE_STORE__.getState();
+return Object.fromEntries(
+  Object.entries(state).filter(([, v]) => typeof v !== 'function')
+);
+JS
+```
+
 ---
 
-## UAT Recipes
+## Supporting Files
 
-### Verify tool call summaries after a turn
+Detailed reference material in the `reference/` directory:
 
-```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
-const s = window.__CLAUDETTE_STORE__.getState();
-const wsId = s.selectedWorkspaceId;
-const turns = s.completedTurns[wsId] || [];
-const t = turns[turns.length - 1];
-if (!t) return 'no completed turns';
-return {
-  acts: t.activities.length,
-  jsonAllValid: t.activities.every(a => { try { JSON.parse(a.inputJson); return true } catch { return false } }),
-  summariesPresent: t.activities.filter(a => a.summary).length,
-  samples: t.activities.slice(0, 5).map(a => a.toolName + ': ' + (a.summary || '(empty)')),
-};
-JS
-```
-
-### Verify no doubled streaming content
-
-```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
-const s = window.__CLAUDETTE_STORE__.getState();
-const wsId = s.selectedWorkspaceId;
-const msgs = s.chatMessages[wsId] || [];
-const doubled = msgs.filter(m => m.role === 'Assistant' && m.content.length > 40).find(m => {
-  const q = Math.floor(m.content.length / 4);
-  return m.content.substring(0, q) === m.content.substring(q, q * 2);
-});
-return doubled ? { doubled: true, preview: doubled.content.substring(0, 80) } : { doubled: false };
-JS
-```
-
-### Check scroll position
-
-```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
-const c = document.querySelector('[class*="messages_"]');
-if (!c) return 'no container';
-return {
-  atBottom: c.scrollHeight - c.scrollTop - c.clientHeight < 50,
-  gap: Math.round(c.scrollHeight - c.scrollTop - c.clientHeight),
-};
-JS
-```
-
-### Wait for turn completion then verify
-
-```bash
-# Run with run_in_background: true
-for i in $(seq 1 600); do
-  result=$(.claude/skills/claudette-debug/debug-eval.sh 'const s=window.__CLAUDETTE_STORE__.getState();const w=s.selectedWorkspaceId;const st=s.workspaces.find(x=>x.id===w)?.agent_status;if(st!=="Running"){const ct=(s.completedTurns[w]||[]).length;if(ct>0){const t=s.completedTurns[w][ct-1];return JSON.stringify({done:true,st,acts:t.activities.length,jsonOk:t.activities.every(a=>{try{JSON.parse(a.inputJson);return true}catch{return false}})})}return JSON.stringify({done:true,st,ct})}' 2>/dev/null)
-  if [ -n "$result" ]; then echo "$result"; break; fi
-done
-```
+- **[reference/tauri-commands.md](reference/tauri-commands.md)** — All Tauri invoke commands with JS camelCase parameter names
+- **[reference/store-actions.md](reference/store-actions.md)** — All Zustand store actions with parameters
+- **[reference/recipes.md](reference/recipes.md)** — UAT verification recipes (tool summaries, doubled content, scroll, post-turn checks)
