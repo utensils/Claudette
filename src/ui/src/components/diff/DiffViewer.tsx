@@ -7,7 +7,6 @@ export function DiffViewer() {
   const diffSelectedFile = useAppStore((s) => s.diffSelectedFile);
   const diffContent = useAppStore((s) => s.diffContent);
   const diffMergeBase = useAppStore((s) => s.diffMergeBase);
-  const diffViewMode = useAppStore((s) => s.diffViewMode);
   const diffLoading = useAppStore((s) => s.diffLoading);
   const setDiffContent = useAppStore((s) => s.setDiffContent);
   const setDiffLoading = useAppStore((s) => s.setDiffLoading);
@@ -75,26 +74,22 @@ export function DiffViewer() {
                           : ""
                     }`}
                   >
-                    {diffViewMode === "Unified" && (
-                      <>
-                        <span className={styles.lineNum}>
-                          {line.old_line_number ?? ""}
-                        </span>
-                        <span className={styles.lineNum}>
-                          {line.new_line_number ?? ""}
-                        </span>
-                        <span className={styles.linePrefix}>
-                          {line.line_type === "Added"
-                            ? "+"
-                            : line.line_type === "Removed"
-                              ? "-"
-                              : " "}
-                        </span>
-                        <span className={styles.lineContent}>
-                          {line.content}
-                        </span>
-                      </>
-                    )}
+                    <span className={styles.lineNum}>
+                      {line.old_line_number ?? ""}
+                    </span>
+                    <span className={styles.lineNum}>
+                      {line.new_line_number ?? ""}
+                    </span>
+                    <span className={styles.linePrefix}>
+                      {line.line_type === "Added"
+                        ? "+"
+                        : line.line_type === "Removed"
+                          ? "-"
+                          : " "}
+                    </span>
+                    <span className={styles.lineContent}>
+                      {line.content}
+                    </span>
                   </div>
                 ))}
               </div>
