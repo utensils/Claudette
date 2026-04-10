@@ -20,6 +20,10 @@ export function useAutoUpdater() {
       if (update) {
         updateRef.current = update;
         setUpdateAvailable(true, update.version);
+      } else {
+        // No update available — clear any stale state (e.g. release withdrawn).
+        updateRef.current = null;
+        setUpdateAvailable(false, null);
       }
     } catch (e) {
       console.error("[updater] Check failed:", e);
