@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore } from "../stores/useAppStore";
-import { stopAgent } from "../services/tauri";
+import { stopAgent, sendRemoteCommand } from "../services/tauri";
 
 export function useKeyboardShortcuts() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
@@ -55,7 +55,15 @@ export function useKeyboardShortcuts() {
             (w) => w.id === selectedWorkspaceId,
           );
           if (ws?.agent_status === "Running") {
-            stopAgent(selectedWorkspaceId).catch(console.error);
+            // Clear queued message — user is taking manual control.
+            useAppStore.getState().clearQueuedMessage(selectedWorkspaceId);
+            // Route through remote or local stop path.
+            const stopPromise = ws.remote_connection_id
+              ? sendRemoteCommand(ws.remote_connection_id, "stop_agent", {
+                  workspace_id: selectedWorkspaceId,
+                })
+              : stopAgent(selectedWorkspaceId);
+            stopPromise.catch(console.error);
             useAppStore.getState().updateWorkspace(selectedWorkspaceId, {
               agent_status: "Stopped",
             });

@@ -263,9 +263,18 @@ pub async fn send_chat_message(
                     .unwrap_or(0);
 
                 let commit_hash =
-                    git::create_checkpoint_commit(&wt_path, &format!("Turn {turn_index}"))
+                    match git::create_checkpoint_commit(&wt_path, &format!("Turn {turn_index}"))
                         .await
-                        .ok();
+                    {
+                        Ok(hash) => Some(hash),
+                        Err(e) => {
+                            eprintln!(
+                                "[chat] Checkpoint commit failed for {ws_id}: {e} \
+                             — checkpoint will be recorded without file restore capability"
+                            );
+                            None
+                        }
+                    };
 
                 let checkpoint = ConversationCheckpoint {
                     id: uuid::Uuid::new_v4().to_string(),
