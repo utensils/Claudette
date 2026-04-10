@@ -283,7 +283,7 @@ mod tests {
     async fn setup_temp_repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
-        run_git(path, &["init"]).await.unwrap();
+        run_git(path, &["init", "-b", "main"]).await.unwrap();
         run_git(path, &["config", "user.email", "test@test.com"])
             .await
             .unwrap();
