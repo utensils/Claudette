@@ -24,6 +24,7 @@ import { reconstructCompletedTurns } from "../../utils/reconstructTurns";
 import type { SlashCommand } from "../../services/tauri";
 import type { ChatMessage } from "../../types/chat";
 import { useAgentStream } from "../../hooks/useAgentStream";
+import { extractToolSummary } from "../../hooks/toolSummary";
 import { AgentQuestionCard } from "./AgentQuestionCard";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { ChatToolbar } from "./ChatToolbar";
@@ -383,6 +384,14 @@ export function ChatPanel() {
       messagesEndRef.current?.scrollIntoView({ behavior: prev === 0 ? "instant" : "smooth" });
     }
   }, [messages.length, selectedWorkspaceId]);
+
+  // Scroll to bottom when a turn finalizes (completedTurns count increases),
+  // since the TurnSummary adds height below the last message.
+  useEffect(() => {
+    if (completedTurnsCount > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [completedTurnsCount]);
 
   // Auto-scroll processing indicator into view when tool activity first appears.
   useEffect(() => {
@@ -770,7 +779,12 @@ const StreamingMessage = memo(function StreamingMessage({
       });
       lastLoggedScrollLengthRef.current = displayed.length;
     }
-    elRef.current?.scrollIntoView({ behavior: "instant" });
+    // Scroll the messages container to the bottom. Using scrollIntoView on the
+    // element itself scrolls to its top, which falls behind as the element grows.
+    const container = elRef.current?.closest('[class*="messages"]');
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, [displayed, workspaceId]);
 
   if (!displayed) return null;
@@ -834,8 +848,10 @@ function TurnSummary({
                 <span className={styles.toolName} style={{ color: toolColor(act.toolName) }}>
                   {act.toolName}
                 </span>
-                {act.summary && (
-                  <span className={styles.toolSummary}>{act.summary}</span>
+                {(act.summary || act.inputJson) && (
+                  <span className={styles.toolSummary}>
+                    {act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                  </span>
                 )}
               </div>
             </div>
@@ -1009,9 +1025,16 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
   const activities = useAppStore(
     (s) => s.toolActivities[workspaceId] ?? EMPTY_ACTIVITIES
   );
-  const toolExpanded = useAppStore((s) => s.toolActivitiesExpanded);
-  const setToolExpanded = useAppStore((s) => s.setToolActivitiesExpanded);
-  const collapsed = !toolExpanded;
+  const [collapsed, setCollapsed] = useState(true);
+
+  // Auto-collapse when a new turn starts (activities goes from 0 to non-zero)
+  const prevLengthRef = useRef(0);
+  useEffect(() => {
+    if (isRunning && activities.length > 0 && prevLengthRef.current === 0) {
+      setCollapsed(true);
+    }
+    prevLengthRef.current = activities.length;
+  }, [isRunning, activities.length]);
 
   if (activities.length === 0) return null;
 
@@ -1022,11 +1045,11 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
           className={styles.turnHeader}
           role="button"
           tabIndex={0}
-          onClick={() => setToolExpanded(collapsed)}
+          onClick={() => setCollapsed(!collapsed)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              setToolExpanded(collapsed);
+              setCollapsed(!collapsed);
             }
           }}
         >

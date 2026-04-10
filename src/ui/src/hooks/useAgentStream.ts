@@ -43,7 +43,13 @@ export function useAgentStream() {
   const planFilePathRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
+    // Guard against StrictMode double-mount: the async unlisten() promise
+    // can't block React's synchronous remount, so a stale listener may
+    // briefly coexist with the new one. This flag prevents the stale
+    // listener from processing events.
+    let active = true;
     const unlisten = listen<AgentStreamPayload>("agent-stream", (event) => {
+      if (!active) return;
       const { workspace_id: wsId, event: agentEvent } = event.payload;
 
       if ("ProcessExited" in agentEvent) {
@@ -334,6 +340,7 @@ export function useAgentStream() {
     });
 
     return () => {
+      active = false;
       unlisten.then((fn) => fn());
     };
   }, [
@@ -354,10 +361,12 @@ export function useAgentStream() {
   const addCheckpoint = useAppStore((s) => s.addCheckpoint);
   const setChatMessages = useAppStore((s) => s.setChatMessages);
   useEffect(() => {
+    let active = true;
     const unlisten = listen<{
       workspace_id: string;
       checkpoint: ConversationCheckpoint;
     }>("checkpoint-created", (event) => {
+      if (!active) return;
       const { workspace_id: wsId, checkpoint } = event.payload;
       addCheckpoint(wsId, checkpoint);
       turnCheckpointIdRef.current[wsId] = checkpoint.id;
@@ -430,6 +439,7 @@ export function useAgentStream() {
         .catch((e) => console.error("Failed to reload messages after checkpoint:", e));
     });
     return () => {
+      active = false;
       unlisten.then((fn) => fn());
     };
   }, [addCheckpoint, setChatMessages]);

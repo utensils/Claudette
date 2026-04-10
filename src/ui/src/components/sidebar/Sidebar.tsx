@@ -157,7 +157,10 @@ export function Sidebar() {
               className={`${styles.repoGroup} ${draggedRepoId === repo.id ? styles.dragging : ""} ${dropTargetIdx === repoIdx && draggedRepoId && draggedRepoId !== repo.id ? styles.dropTarget : ""}`}
               onPointerDown={(e) => {
                 if (e.button !== 0) return;
-                const header = (e.target as HTMLElement).closest(`.${styles.repoHeader}`);
+                // Don't initiate drag from interactive elements (buttons, links).
+                const target = e.target as HTMLElement;
+                if (target.closest("button, a, input, select")) return;
+                const header = target.closest(`.${styles.repoHeader}`);
                 if (!header) return;
                 // Record start position — don't activate drag until threshold
                 dragStartPos.current = { x: e.clientX, y: e.clientY, id: repo.id, pointerId: e.pointerId };

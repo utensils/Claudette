@@ -1,6 +1,6 @@
 ---
 name: claudette-debug
-description: Debug the running Claudette Tauri app by executing JavaScript in the webview and reading results back. Inspect Zustand store state, trace state changes, and diagnose UI bugs in real-time. Only works in dev builds (cargo tauri dev).
+description: Debug the running Claudette Tauri app by executing JavaScript in the webview and reading results back. Inspect Zustand store state, trace state changes, monitor sessions long-term, run end-to-end UAT, and diagnose UI bugs in real-time. Only works in dev builds (cargo tauri dev).
 argument-hint: "[action] [target-or-js...]"
 disable-model-invocation: false
 user-invocable: true
@@ -9,7 +9,37 @@ allowed-tools: Bash, Read, Grep, Glob
 
 # Claudette Debug
 
-Execute JavaScript inside the running Claudette Tauri webview and get results back via a TCP debug server on `127.0.0.1:19432`. Dev-build only (`#[cfg(debug_assertions)]`).
+Execute JavaScript inside the running Claudette Tauri webview via a TCP debug server on `127.0.0.1:19432`. Dev-build only (`#[cfg(debug_assertions)]`).
+
+## Quick Start
+
+```bash
+/claudette-debug state                    # Store overview (all slices)
+/claudette-debug state completedTurns     # Dump a specific slice
+/claudette-debug eval 'return 1+1'        # Execute arbitrary JS
+/claudette-debug monitor start            # Start background session monitor
+/claudette-debug monitor read             # Tail monitor log
+/claudette-debug snapshot                 # Full store state dump
+```
+
+## Prerequisites
+
+- App running via `cargo tauri dev` (debug TCP server starts automatically)
+- Port 19432 available on localhost
+- `python3` in PATH (used by eval helper)
+
+## Scripts
+
+Two helper scripts are bundled with this skill:
+
+| Script | Purpose |
+|--------|---------|
+| `.claude/skills/claudette-debug/debug-eval.sh` | Single-shot JS eval via TCP |
+| `.claude/skills/claudette-debug/debug-monitor.sh` | Long-running session monitor |
+
+A copy of `debug-eval.sh` also exists at `scripts/debug-eval.sh` in the project root.
+
+**IMPORTANT**: Always call scripts using paths relative to the project root. Never use absolute paths like `/Users/.../scripts/...`.
 
 ## Architecture
 
@@ -19,28 +49,23 @@ Terminal ──TCP:19432──> debug server ──eval()──> webview JS cont
 Terminal <──TCP────── debug server <──invoke── webview (result callback)
 ```
 
-- **TCP server**: `src-tauri/src/commands/debug.rs` — `start_debug_server()` spawns a tokio TCP listener in the Tauri `setup()` hook. Accepts JS, wraps it to capture the return value, evals in the webview, waits for the result callback, returns it over TCP.
-- **Round-trip**: The wrapped JS calls `window.__CLAUDETTE_INVOKE__('debug_eval_result', { requestId, data })` to send results back. The Rust side receives this via a oneshot channel + Tauri event listener.
-- **Helper script**: `scripts/debug-eval.sh` handles the TCP socket lifecycle.
+- **TCP server**: `src-tauri/src/commands/debug.rs` — listens on `127.0.0.1:19432`, wraps JS to capture return value, evals in webview, waits for result callback (10s timeout).
+- **Round-trip**: Wrapped JS calls `window.__CLAUDETTE_INVOKE__('debug_eval_result', { requestId, data })` to send results back.
+- **Input cap**: 1 MB max per eval request.
 
 ## How to Execute JS
 
-Use `scripts/debug-eval.sh` via the Bash tool. The JS must use `return` to send a value back:
+JS must use `return` to send a value back:
 
 ```bash
-./scripts/debug-eval.sh 'return 1 + 1'
-# => 2
-
-./scripts/debug-eval.sh 'return document.title'
-# => Claudette
-
-./scripts/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().workspaces.map(w => w.name)'
-# => ["zealous-myrtle", "sulky-holly", ...]
+scripts/debug-eval.sh 'return 1 + 1'
+scripts/debug-eval.sh 'return document.title'
+scripts/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().workspaces.map(w => w.name)'
 ```
 
 For multiline JS, use heredoc:
 ```bash
-./scripts/debug-eval.sh <<'JS'
+scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 return Object.keys(s.completedTurns);
 JS
@@ -54,27 +79,32 @@ JS
 | `window.__CLAUDETTE_INVOKE__` | Tauri `invoke` function | Call any Tauri command from eval'd JS |
 | `window.__CLAUDETTE_CHAT_DEBUG__` | `boolean` | Toggle `[chat-debug]` console logging |
 
-## Argument Parsing
+## Actions
 
 `/claudette-debug [action] [args...]`
 
 | Action | Description |
 |--------|-------------|
 | `state` | Summary of all store slices (keys + sizes) |
-| `state <slice>` | Dump a specific slice: `completedTurns`, `chatMessages`, `toolActivities`, `workspaces`, `checkpoints`, etc. |
+| `state <slice>` | Dump a specific slice |
 | `eval <js>` | Execute arbitrary JS and return the result |
-| `watch <slice>` | Subscribe to slice changes (logs to webview console, returns confirmation) |
+| `monitor start` | Start background session monitor (writes to log file) |
+| `monitor read` | Read last 50 lines of monitor log |
+| `monitor read <N>` | Read last N lines of monitor log |
+| `watch <slice>` | Subscribe to slice changes (logs to webview console) |
 | `unwatch` | Remove all watch subscriptions |
-| `trace <action>` | Monkey-patch a store action to log calls to webview console |
+| `trace <action>` | Monkey-patch a store action to log calls |
 | `untrace` | Remove all traces |
-| `snapshot` | Dump full store state (non-function values) as JSON |
+| `snapshot` | Dump full store state as JSON |
 
-## Action Implementation
+---
 
-### `state` (no args) — store overview
+## Action Implementations
+
+### `state` — store overview
 
 ```bash
-./scripts/debug-eval.sh <<'JS'
+scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 return Object.entries(s)
   .filter(([, v]) => typeof v !== 'function')
@@ -90,31 +120,80 @@ JS
 ### `state <slice>` — dump specific slice
 
 ```bash
-./scripts/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().SLICE_NAME'
+scripts/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().SLICE_NAME'
 ```
-
-Replace `SLICE_NAME` with the actual slice name (e.g., `completedTurns`, `chatMessages`, `workspaces`).
 
 ### `eval <js>` — arbitrary JS
 
 ```bash
-./scripts/debug-eval.sh 'USER_JS_HERE'
+scripts/debug-eval.sh 'USER_JS_HERE'
 ```
 
-Pass the user's JS directly. Wrap in `return` if they want a value back.
+### `snapshot` — full store state dump
+
+```bash
+scripts/debug-eval.sh <<'JS'
+const state = window.__CLAUDETTE_STORE__.getState();
+return Object.fromEntries(
+  Object.entries(state).filter(([, v]) => typeof v !== 'function')
+);
+JS
+```
+
+### `monitor start` — background session monitor
+
+Run the monitor script with `run_in_background: true`. This is **critical** — the monitor must run in the background so the user can interact with the app while it observes.
+
+```bash
+# MUST use run_in_background: true
+.claude/skills/claudette-debug/debug-monitor.sh
+```
+
+The monitor:
+- Polls the debug server every 1 second
+- Only logs when state changes (deduplicates identical readings)
+- Writes to both stdout and `/tmp/claudette-debug/monitor.log`
+- Runs for up to 1 hour by default
+- Tracks: tool activity count, completed turns, agent status, scroll gap, message count, last tool summary, JSON validity
+
+**Custom expressions**: Pass `--expr` to monitor a specific JS expression instead of the default:
+
+```bash
+.claude/skills/claudette-debug/debug-monitor.sh --expr 'const c=document.querySelector("[class*=messages_]");return c?Math.round(c.scrollHeight-c.scrollTop-c.clientHeight):-1'
+```
+
+**Options**:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--expr 'JS'` | comprehensive state | JS expression to evaluate each tick |
+| `--interval N` | `1` | Seconds between polls |
+| `--max N` | `3600` | Max iterations before auto-stop |
+| `--logfile PATH` | `/tmp/claudette-debug/monitor.log` | Log file path |
+
+### `monitor read` — tail monitor log
+
+Read the log file directly. Default: last 50 lines.
+
+```bash
+tail -50 /tmp/claudette-debug/monitor.log
+```
+
+For more lines:
+
+```bash
+tail -200 /tmp/claudette-debug/monitor.log
+```
 
 ### `watch <slice>` — subscribe to changes
 
 ```bash
-./scripts/debug-eval.sh <<'JS'
+scripts/debug-eval.sh <<'JS'
 window.__CLAUDETTE_DEBUG_UNSUB__?.();
 window.__CLAUDETTE_DEBUG_UNSUB__ = window.__CLAUDETTE_STORE__.subscribe(
   (state, prev) => {
     if (state.SLICE_NAME !== prev.SLICE_NAME) {
-      console.log('[debug] SLICE_NAME changed:', {
-        prev: prev.SLICE_NAME,
-        next: state.SLICE_NAME,
-      });
+      console.log('[debug] SLICE_NAME changed:', { prev: prev.SLICE_NAME, next: state.SLICE_NAME });
       console.trace('[debug] change origin');
     }
   }
@@ -126,7 +205,7 @@ JS
 ### `unwatch`
 
 ```bash
-./scripts/debug-eval.sh <<'JS'
+scripts/debug-eval.sh <<'JS'
 window.__CLAUDETTE_DEBUG_UNSUB__?.();
 delete window.__CLAUDETTE_DEBUG_UNSUB__;
 return 'All watchers removed';
@@ -136,7 +215,7 @@ JS
 ### `trace <action>` — monkey-patch store action
 
 ```bash
-./scripts/debug-eval.sh <<'JS'
+scripts/debug-eval.sh <<'JS'
 const store = window.__CLAUDETTE_STORE__;
 const orig = store.getState().ACTION_NAME;
 if (typeof orig !== 'function') return 'ERROR: ACTION_NAME is not a function';
@@ -156,7 +235,7 @@ JS
 ### `untrace`
 
 ```bash
-./scripts/debug-eval.sh <<'JS'
+scripts/debug-eval.sh <<'JS'
 (window.__CLAUDETTE_DEBUG_TRACED__ || []).forEach(({ name, orig }) => {
   window.__CLAUDETTE_STORE__.setState({ [name]: orig });
 });
@@ -165,88 +244,62 @@ return 'All traces removed';
 JS
 ```
 
-### `snapshot` — full store state dump
+---
+
+## UAT Recipes
+
+### Verify tool call summaries after a turn
 
 ```bash
-./scripts/debug-eval.sh <<'JS'
-const state = window.__CLAUDETTE_STORE__.getState();
-return Object.fromEntries(
-  Object.entries(state).filter(([, v]) => typeof v !== 'function')
-);
+scripts/debug-eval.sh <<'JS'
+const s = window.__CLAUDETTE_STORE__.getState();
+const wsId = s.selectedWorkspaceId;
+const turns = s.completedTurns[wsId] || [];
+const t = turns[turns.length - 1];
+if (!t) return 'no completed turns';
+return {
+  acts: t.activities.length,
+  jsonAllValid: t.activities.every(a => { try { JSON.parse(a.inputJson); return true } catch { return false } }),
+  summariesPresent: t.activities.filter(a => a.summary).length,
+  samples: t.activities.slice(0, 5).map(a => a.toolName + ': ' + (a.summary || '(empty)')),
+};
 JS
 ```
 
-## Background Monitoring
-
-When debugging user interactions (drag-and-drop, scroll, clicks), run polling loops as **background jobs** so the user can interact with the app while you monitor. Use `run_in_background: true` on Bash tool calls.
-
-### Poll a store slice for changes
+### Verify no doubled streaming content
 
 ```bash
-# Run in background — you'll be notified when it completes
-prev=""; for i in $(seq 1 60); do
-  sleep 1
-  result=$(./scripts/debug-eval.sh 'POLL_EXPRESSION' 2>/dev/null)
-  if [ "$result" != "$prev" ]; then echo "[$i] ** CHANGE ** $result"; prev="$result"
-  else echo "[$i] $result"; fi
-done
-```
-
-### Attach DOM event listeners and poll the log
-
-```bash
-# Step 1: Inject listeners (foreground)
-./scripts/debug-eval.sh <<'JS'
-window.__eventLog = [];
-document.querySelectorAll('[class*="TARGET"]').forEach((el, i) => {
-  ['pointerdown', 'pointermove', 'pointerup', 'click'].forEach(evt => {
-    el.addEventListener(evt, () => window.__eventLog.push({ evt, idx: i, t: Date.now() }));
-  });
+scripts/debug-eval.sh <<'JS'
+const s = window.__CLAUDETTE_STORE__.getState();
+const wsId = s.selectedWorkspaceId;
+const msgs = s.chatMessages[wsId] || [];
+const doubled = msgs.filter(m => m.role === 'Assistant' && m.content.length > 40).find(m => {
+  const q = Math.floor(m.content.length / 4);
+  return m.content.substring(0, q) === m.content.substring(q, q * 2);
 });
-return 'Listeners attached';
+return doubled ? { doubled: true, preview: doubled.content.substring(0, 80) } : { doubled: false };
 JS
-
-# Step 2: Poll the log (background)
-for i in $(seq 1 30); do
-  sleep 1
-  ./scripts/debug-eval.sh 'const log = window.__eventLog || []; return log.length + " events: " + [...new Set(log.map(e=>e.evt))].join(",")' 2>/dev/null
-done
 ```
 
-### Inspect CSS computed styles on elements
+### Check scroll position
 
 ```bash
-./scripts/debug-eval.sh <<'JS'
-const el = document.querySelector('[class*="SELECTOR"]');
-const s = getComputedStyle(el);
-return { height: s.height, overflow: s.overflow, flexShrink: s.flexShrink, display: s.display };
+scripts/debug-eval.sh <<'JS'
+const c = document.querySelector('[class*="messages_"]');
+if (!c) return 'no container';
+return {
+  atBottom: c.scrollHeight - c.scrollTop - c.clientHeight < 50,
+  gap: Math.round(c.scrollHeight - c.scrollTop - c.clientHeight),
+};
 JS
 ```
 
-## Common Debugging Recipes
+### Wait for turn completion then verify
 
-### Inspect current workspace state
+```bash
+# Run with run_in_background: true
+for i in $(seq 1 600); do
+  result=$(scripts/debug-eval.sh 'const s=window.__CLAUDETTE_STORE__.getState();const w=s.selectedWorkspaceId;const st=s.workspaces.find(x=>x.id===w)?.agent_status;if(st!=="Running"){const ct=(s.completedTurns[w]||[]).length;if(ct>0){const t=s.completedTurns[w][ct-1];return JSON.stringify({done:true,st,acts:t.activities.length,jsonOk:t.activities.every(a=>{try{JSON.parse(a.inputJson);return true}catch{return false}})})}return JSON.stringify({done:true,st,ct})}' 2>/dev/null)
+  if [ -n "$result" ]; then echo "$result"; break; fi
+done
 ```
-/claudette-debug state workspaces
-/claudette-debug state completedTurns
-/claudette-debug state chatMessages
-```
-
-### Trace store mutations with stack traces
-```
-/claudette-debug trace setCompletedTurns
-/claudette-debug trace finalizeTurn
-/claudette-debug watch completedTurns
-```
-
-### Debug CSS visibility issues
-Evaluate element dimensions, overflow, and flex properties to find elements that render at 0px height or get clipped.
-
-### Debug drag-and-drop / pointer interactions
-Attach pointer event listeners via eval, then poll the event log in a background job while the user interacts with the UI.
-
-## Prerequisites
-
-- App running via `cargo tauri dev` (the debug TCP server starts automatically)
-- Port 19432 must be available on localhost
-- `scripts/debug-eval.sh` requires `python3` in PATH

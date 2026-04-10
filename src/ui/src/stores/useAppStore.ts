@@ -173,8 +173,6 @@ interface AppState {
   toggleTerminalPanel: () => void;
 
   // -- UI --
-  toolActivitiesExpanded: boolean;
-  setToolActivitiesExpanded: (expanded: boolean) => void;
   metaKeyHeld: boolean;
   setMetaKeyHeld: (held: boolean) => void;
   sidebarVisible: boolean;
@@ -645,8 +643,6 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({ terminalPanelVisible: !s.terminalPanelVisible })),
 
   // -- UI --
-  toolActivitiesExpanded: false,
-  setToolActivitiesExpanded: (expanded) => set({ toolActivitiesExpanded: expanded }),
   metaKeyHeld: false,
   setMetaKeyHeld: (held) => set({ metaKeyHeld: held }),
   sidebarVisible: true,
