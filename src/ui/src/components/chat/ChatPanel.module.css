@@ -190,7 +190,7 @@
   color: var(--text-muted);
 }
 
-/* Rollback button — appears on hover over user messages */
+/* Rollback button — always visible on eligible user messages */
 .rollbackBtn {
   position: absolute;
   top: 8px;
@@ -201,17 +201,14 @@
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
-  opacity: 0;
+  opacity: 0.4;
   transition: opacity var(--transition-fast), color var(--transition-fast),
     background var(--transition-fast);
   line-height: 1;
 }
 
-.role_User:hover .rollbackBtn {
-  opacity: 1;
-}
-
 .rollbackBtn:hover {
+  opacity: 1;
   color: var(--accent-primary);
   background: var(--accent-bg);
 }

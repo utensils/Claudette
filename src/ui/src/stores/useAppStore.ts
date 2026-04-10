@@ -427,14 +427,13 @@ export const useAppStore = create<AppState>((set) => ({
         planApprovals: restApprovals,
         checkpoints: {
           ...s.checkpoints,
-          [wsId]: (s.checkpoints[wsId] || []).filter(
-            (cp) => {
-              const target = (s.checkpoints[wsId] || []).find(
-                (c) => c.id === checkpointId,
-              );
-              return target ? cp.turn_index <= target.turn_index : true;
-            },
-          ),
+          [wsId]: (() => {
+            const current = s.checkpoints[wsId] || [];
+            const target = current.find((c) => c.id === checkpointId);
+            // If target not found (e.g. clear-all sentinel), clear everything.
+            if (!target) return [];
+            return current.filter((cp) => cp.turn_index <= target.turn_index);
+          })(),
         },
       };
     }),

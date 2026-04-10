@@ -154,12 +154,13 @@ pub async fn send_chat_message(
     let ws_id = workspace_id.clone();
     let db_path = state.db_path.clone();
     let wt_path = worktree_path.clone();
+    let user_msg_id = user_msg.id.clone();
     tokio::spawn(async move {
         let mut rx = turn_handle.event_rx;
         let mut got_init = false;
-        // Track the last assistant message inserted in THIS turn so that the
-        // checkpoint anchors to the correct message (avoids P1: tool-only turns
-        // like AskUserQuestion would otherwise pick up a stale assistant row).
+        // Track the last assistant message inserted in THIS turn. Falls back
+        // to the user message ID for tool-only turns (AskUserQuestion, plan
+        // approval) so that checkpoint creation isn't skipped entirely.
         let mut last_assistant_msg_id: Option<String> = None;
         while let Some(event) = rx.recv().await {
             // Track whether the CLI initialized successfully.
@@ -233,38 +234,36 @@ pub async fn send_chat_message(
                     let _ = db.update_chat_message_cost(msg_id, *cost, *dur);
                 }
 
-                // Only create a checkpoint if this turn produced an assistant
-                // message. Tool-only turns (AskUserQuestion, plan approval)
-                // should not create checkpoints to avoid anchoring to a stale
-                // message from a previous turn.
-                if let Some(ref msg_id) = last_assistant_msg_id {
-                    let turn_index = db
-                        .latest_checkpoint(&ws_id)
-                        .ok()
-                        .flatten()
-                        .map(|cp| cp.turn_index + 1)
-                        .unwrap_or(0);
+                // Create a checkpoint anchored to the assistant message from
+                // this turn, or the user message for tool-only turns.
+                let anchor_msg_id = last_assistant_msg_id.as_deref().unwrap_or(&user_msg_id);
 
-                    let commit_hash =
-                        git::create_checkpoint_commit(&wt_path, &format!("Turn {turn_index}"))
-                            .await
-                            .ok();
+                let turn_index = db
+                    .latest_checkpoint(&ws_id)
+                    .ok()
+                    .flatten()
+                    .map(|cp| cp.turn_index + 1)
+                    .unwrap_or(0);
 
-                    let checkpoint = ConversationCheckpoint {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        workspace_id: ws_id.clone(),
-                        message_id: msg_id.clone(),
-                        commit_hash,
-                        turn_index,
-                        created_at: now_iso(),
-                    };
-                    if db.insert_checkpoint(&checkpoint).is_ok() {
-                        let payload = serde_json::json!({
-                            "workspace_id": &ws_id,
-                            "checkpoint": &checkpoint,
-                        });
-                        let _ = app.emit("checkpoint-created", &payload);
-                    }
+                let commit_hash =
+                    git::create_checkpoint_commit(&wt_path, &format!("Turn {turn_index}"))
+                        .await
+                        .ok();
+
+                let checkpoint = ConversationCheckpoint {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    workspace_id: ws_id.clone(),
+                    message_id: anchor_msg_id.to_string(),
+                    commit_hash,
+                    turn_index,
+                    created_at: now_iso(),
+                };
+                if db.insert_checkpoint(&checkpoint).is_ok() {
+                    let payload = serde_json::json!({
+                        "workspace_id": &ws_id,
+                        "checkpoint": &checkpoint,
+                    });
+                    let _ = app.emit("checkpoint-created", &payload);
                 }
             }
 

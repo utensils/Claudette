@@ -182,13 +182,51 @@ pub async fn has_unmerged_commits(
     Ok(count > 0)
 }
 
-/// Delete a branch. When `force` is false, uses `-d` which fails if the
-/// branch has unmerged commits. When `force` is true, uses `-D` which
-/// always succeeds (needed when checkpoint commits exist on the branch).
-pub async fn branch_delete(repo_path: &str, branch: &str, force: bool) -> Result<(), GitError> {
-    let flag = if force { "-D" } else { "-d" };
-    run_git(repo_path, &["branch", flag, branch]).await?;
-    Ok(())
+/// Delete a branch. Tries safe `-d` first. If that fails (unmerged commits),
+/// checks whether all unmerged commits are synthetic `[checkpoint]` commits.
+/// Force-deletes only in that case; otherwise preserves real user work.
+pub async fn branch_delete(repo_path: &str, branch: &str) -> Result<(), GitError> {
+    // Try safe delete first.
+    if run_git(repo_path, &["branch", "-d", branch]).await.is_ok() {
+        return Ok(());
+    }
+
+    // Safe delete failed — check if only checkpoint commits are unmerged.
+    if has_only_checkpoint_commits(repo_path, branch).await {
+        run_git(repo_path, &["branch", "-D", branch]).await?;
+        return Ok(());
+    }
+
+    // Real unmerged work exists — leave the branch intact.
+    Err(GitError::CommandFailed(
+        "Branch has unmerged commits".into(),
+    ))
+}
+
+/// Returns true if every commit on `branch` that is not reachable from the
+/// default branch has a message starting with `[checkpoint]`.
+async fn has_only_checkpoint_commits(repo_path: &str, branch: &str) -> bool {
+    // Determine the default branch to compare against.
+    let base = match default_branch(repo_path).await {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+
+    let log = match run_git(
+        repo_path,
+        &["log", "--format=%s", &format!("{base}..{branch}")],
+    )
+    .await
+    {
+        Ok(output) => output,
+        Err(_) => return false,
+    };
+
+    if log.trim().is_empty() {
+        return true; // no ahead commits at all
+    }
+
+    log.lines().all(|line| line.starts_with("[checkpoint]"))
 }
 
 /// Create a checkpoint commit in a worktree, staging all changes first.

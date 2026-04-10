@@ -716,22 +716,33 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   }, [completedTurns]);
 
   // Map user message index → checkpoint for the preceding turn.
-  // A user message at index i can roll back to the checkpoint whose message_id
-  // matches the assistant message immediately before it (messages[i-1]).
-  // Index 0 (first user message) is always rollback-eligible when checkpoints
-  // exist — it clears the entire conversation.
+  // Checks the message immediately before this user message (assistant or
+  // user for tool-only turns) for a matching checkpoint. Index 0 always
+  // maps to null (clear-all) when any checkpoints exist.
   const rollbackCheckpointByIdx = useMemo(() => {
     const msgIdToCp = new Map(checkpoints.map((cp) => [cp.message_id, cp]));
     const result = new Map<number, typeof checkpoints[number] | null>();
     for (let i = 0; i < messages.length; i++) {
       if (messages[i].role === "User") {
         if (i === 0 && checkpoints.length > 0) {
-          // First user message → clear all (null = no specific checkpoint).
           result.set(0, null);
         } else if (i > 0) {
+          // Check the preceding message (assistant or user for tool-only turns).
           const prev = messages[i - 1];
           const cp = msgIdToCp.get(prev.id);
-          if (cp) result.set(i, cp);
+          if (cp) {
+            result.set(i, cp);
+          } else {
+            // Also check the user message at i-1 for tool-only turn checkpoints
+            // where the checkpoint anchors to the user message itself.
+            for (let j = i - 1; j >= 0; j--) {
+              const earlier = msgIdToCp.get(messages[j].id);
+              if (earlier) {
+                result.set(i, earlier);
+                break;
+              }
+            }
+          }
         }
       }
     }
