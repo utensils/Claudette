@@ -29,6 +29,7 @@ export function useAutoUpdater() {
   const installNow = useCallback(async () => {
     const update = updateRef.current;
     if (!update) return;
+    if (useAppStore.getState().updateDownloading) return;
 
     setUpdateDownloading(true);
     setUpdateProgress(0);
@@ -54,13 +55,22 @@ export function useAutoUpdater() {
       console.error("[updater] Install failed:", e);
       setUpdateDownloading(false);
       setUpdateProgress(0);
+      // Re-check to get a fresh Update instance after failure
+      checkForUpdate();
     }
-  }, [setUpdateDownloading, setUpdateProgress]);
+  }, [setUpdateDownloading, setUpdateProgress, checkForUpdate]);
 
   const installWhenIdle = useCallback(() => {
+    const hasRunning = useAppStore.getState().workspaces.some(
+      (ws) => ws.agent_status === "Running"
+    );
+    if (!hasRunning) {
+      installNow();
+      return;
+    }
     setUpdateInstallWhenIdle(true);
     setUpdateDismissed(true);
-  }, [setUpdateInstallWhenIdle, setUpdateDismissed]);
+  }, [setUpdateInstallWhenIdle, setUpdateDismissed, installNow]);
 
   const dismiss = useCallback(() => {
     setUpdateDismissed(true);

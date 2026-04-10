@@ -617,7 +617,11 @@ export const useAppStore = create<AppState>((set) => ({
   updateDownloading: false,
   updateProgress: 0,
   setUpdateAvailable: (available, version) =>
-    set({ updateAvailable: available, updateVersion: version, updateDismissed: false }),
+    set((state) => ({
+      updateAvailable: available,
+      updateVersion: version,
+      updateDismissed: version === state.updateVersion ? state.updateDismissed : false,
+    })),
   setUpdateDismissed: (dismissed) => set({ updateDismissed: dismissed }),
   setUpdateInstallWhenIdle: (enabled) => set({ updateInstallWhenIdle: enabled }),
   setUpdateDownloading: (downloading) => set({ updateDownloading: downloading }),
