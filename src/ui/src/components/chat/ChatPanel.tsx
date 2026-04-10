@@ -806,12 +806,6 @@ function TurnSummary({
                   <span className={styles.toolSummary}>{act.summary}</span>
                 )}
               </div>
-              {act.inputJson && (
-                <pre className={styles.toolDetail}>{act.inputJson}</pre>
-              )}
-              {act.resultText && (
-                <pre className={styles.toolDetail}>{act.resultText}</pre>
-              )}
             </div>
           ))}
         </div>
