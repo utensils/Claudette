@@ -16,6 +16,8 @@ pub struct Repository {
     pub setup_script: Option<String>,
     /// Custom instructions appended to the agent's system prompt for every chat.
     pub custom_instructions: Option<String>,
+    /// Display order in the sidebar. Lower values appear first.
+    pub sort_order: i32,
     /// Runtime-only: whether the repo path still exists on disk. Not persisted.
     pub path_valid: bool,
 }

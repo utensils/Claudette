@@ -69,6 +69,10 @@ export function getDefaultBranch(repoId: string): Promise<string | null> {
   return invoke("get_default_branch", { repoId });
 }
 
+export function reorderRepositories(ids: string[]): Promise<void> {
+  return invoke("reorder_repositories", { ids });
+}
+
 // -- Workspace --
 
 export function createWorkspace(

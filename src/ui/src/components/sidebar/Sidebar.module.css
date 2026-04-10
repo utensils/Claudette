@@ -51,6 +51,18 @@
 
 .repoGroup {
   margin-bottom: 4px;
+  cursor: grab;
+}
+
+.repoGroup.dragging {
+  opacity: 0.3;
+}
+
+.dropIndicator {
+  height: 2px;
+  background: var(--accent-primary);
+  border-radius: 1px;
+  margin: 0 8px;
 }
 
 .repoHeader {

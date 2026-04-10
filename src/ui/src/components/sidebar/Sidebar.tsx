@@ -2,6 +2,7 @@ import { useRef, useState, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   archiveWorkspace,
+  reorderRepositories,
   restoreWorkspace,
   generateWorkspaceName,
   createWorkspace,
@@ -31,8 +32,13 @@ export function Sidebar() {
   const openModal = useAppStore((s) => s.openModal);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const unreadCompletions = useAppStore((s) => s.unreadCompletions);
+  const setRepositories = useAppStore((s) => s.setRepositories);
   const metaKeyHeld = useAppStore((s) => s.metaKeyHeld);
   const isMac = navigator.platform.startsWith("Mac");
+
+  // Drag-and-drop reorder state
+  const [draggedRepoId, setDraggedRepoId] = useState<string | null>(null);
+  const [dropTargetIdx, setDropTargetIdx] = useState<number | null>(null);
   const clearUnreadCompletion = useAppStore((s) => s.clearUnreadCompletion);
 
   const creatingRef = useRef(false);
@@ -138,7 +144,48 @@ export function Sidebar() {
           ).length;
 
           return (
-            <div key={repo.id} className={styles.repoGroup}>
+            <div
+              key={repo.id}
+              className={`${styles.repoGroup} ${draggedRepoId === repo.id ? styles.dragging : ""}`}
+              draggable
+              onDragStart={(e) => {
+                setDraggedRepoId(repo.id);
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (draggedRepoId && draggedRepoId !== repo.id) {
+                  setDropTargetIdx(repoIdx);
+                }
+              }}
+              onDragLeave={() => setDropTargetIdx(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (!draggedRepoId || draggedRepoId === repo.id) return;
+                const localRepos = repositories.filter((r) => !r.remote_connection_id);
+                const fromIdx = localRepos.findIndex((r) => r.id === draggedRepoId);
+                if (fromIdx < 0) return;
+                const reordered = [...localRepos];
+                const [moved] = reordered.splice(fromIdx, 1);
+                reordered.splice(repoIdx, 0, moved);
+                // Optimistic update + persist
+                setRepositories([
+                  ...reordered,
+                  ...repositories.filter((r) => !!r.remote_connection_id),
+                ]);
+                reorderRepositories(reordered.map((r) => r.id)).catch(console.error);
+                setDraggedRepoId(null);
+                setDropTargetIdx(null);
+              }}
+              onDragEnd={() => {
+                setDraggedRepoId(null);
+                setDropTargetIdx(null);
+              }}
+            >
+              {dropTargetIdx === repoIdx && draggedRepoId !== repo.id && (
+                <div className={styles.dropIndicator} />
+              )}
               <div
                 className={styles.repoHeader}
                 onClick={() => toggleRepoCollapsed(repo.id)}

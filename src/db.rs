@@ -214,6 +214,20 @@ impl Database {
             )?;
         }
 
+        if version < 12 {
+            self.conn.execute_batch(
+                "ALTER TABLE repositories ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;",
+            )?;
+            // Backfill: assign sequential sort_order based on current name order.
+            self.conn.execute_batch(
+                "UPDATE repositories SET sort_order = (
+                    SELECT COUNT(*) FROM repositories r2 WHERE r2.name < repositories.name
+                );
+
+                PRAGMA user_version = 12;",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -227,47 +241,39 @@ impl Database {
         Ok(())
     }
 
+    fn parse_repo_row(row: &rusqlite::Row) -> rusqlite::Result<Repository> {
+        Ok(Repository {
+            id: row.get(0)?,
+            path: row.get(1)?,
+            name: row.get(2)?,
+            icon: row.get(3)?,
+            path_slug: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+            created_at: row.get(5)?,
+            setup_script: row.get(6)?,
+            custom_instructions: row.get(7)?,
+            sort_order: row.get(8)?,
+            path_valid: true, // validated after load
+        })
+    }
+
     pub fn list_repositories(&self) -> Result<Vec<Repository>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions
-             FROM repositories ORDER BY name",
+            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order
+             FROM repositories ORDER BY sort_order, name",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(Repository {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                name: row.get(2)?,
-                icon: row.get(3)?,
-                path_slug: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                created_at: row.get(5)?,
-                setup_script: row.get(6)?,
-                custom_instructions: row.get(7)?,
-                path_valid: true, // validated after load
-            })
-        })?;
+        let rows = stmt.query_map([], Self::parse_repo_row)?;
         rows.collect()
     }
 
     pub fn get_repository(&self, id: &str) -> Result<Option<Repository>, rusqlite::Error> {
-        self.conn.query_row(
-            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions
-             FROM repositories WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(Repository {
-                    id: row.get(0)?,
-                    path: row.get(1)?,
-                    name: row.get(2)?,
-                    icon: row.get(3)?,
-                    path_slug: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    created_at: row.get(5)?,
-                    setup_script: row.get(6)?,
-                    custom_instructions: row.get(7)?,
-                    path_valid: true,
-                })
-            },
-        )
-        .optional()
+        self.conn
+            .query_row(
+                "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order
+                 FROM repositories WHERE id = ?1",
+                params![id],
+                Self::parse_repo_row,
+            )
+            .optional()
     }
 
     pub fn update_repository_path(&self, id: &str, path: &str) -> Result<(), rusqlite::Error> {
@@ -275,6 +281,19 @@ impl Database {
             "UPDATE repositories SET path = ?1 WHERE id = ?2",
             params![path, id],
         )?;
+        Ok(())
+    }
+
+    /// Batch-update sort_order for repositories based on the provided ID order.
+    pub fn reorder_repositories(&self, ids: &[String]) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE repositories SET sort_order = ?1 WHERE id = ?2")?;
+            for (i, id) in ids.iter().enumerate() {
+                stmt.execute(params![i as i32, id])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -995,6 +1014,7 @@ mod tests {
             created_at: String::new(),
             setup_script: None,
             custom_instructions: None,
+            sort_order: 0,
             path_valid: true,
         }
     }
@@ -1286,6 +1306,7 @@ mod tests {
             created_at: String::new(),
             setup_script: None,
             custom_instructions: None,
+            sort_order: 0,
             path_valid: true,
         };
         db.insert_repository(&repo).unwrap();
