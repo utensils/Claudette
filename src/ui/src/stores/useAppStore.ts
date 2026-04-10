@@ -190,6 +190,10 @@ interface AppState {
   openModal: (name: string, data?: Record<string, unknown>) => void;
   closeModal: () => void;
 
+  // -- Chat input prefill (e.g. after rollback) --
+  chatInputPrefill: string | null;
+  setChatInputPrefill: (text: string | null) => void;
+
   // -- Settings --
   worktreeBaseDir: string;
   setWorktreeBaseDir: (dir: string) => void;
@@ -575,6 +579,10 @@ export const useAppStore = create<AppState>((set) => ({
   modalData: {},
   openModal: (name, data = {}) => set({ activeModal: name, modalData: data }),
   closeModal: () => set({ activeModal: null, modalData: {} }),
+
+  // -- Chat input prefill (e.g. after rollback) --
+  chatInputPrefill: null,
+  setChatInputPrefill: (text) => set({ chatInputPrefill: text }),
 
   // -- Settings --
   worktreeBaseDir: "",

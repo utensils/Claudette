@@ -12,6 +12,7 @@ export function RollbackModal() {
   const closeModal = useAppStore((s) => s.closeModal);
   const modalData = useAppStore((s) => s.modalData);
   const rollbackConversation = useAppStore((s) => s.rollbackConversation);
+  const setChatInputPrefill = useAppStore((s) => s.setChatInputPrefill);
   const setDiffFiles = useAppStore((s) => s.setDiffFiles);
   const clearDiff = useAppStore((s) => s.clearDiff);
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,7 @@ export function RollbackModal() {
   const workspaceId = modalData.workspaceId as string;
   const checkpointId = (modalData.checkpointId as string) ?? null;
   const messagePreview = modalData.messagePreview as string;
+  const messageContent = (modalData.messageContent as string) ?? "";
   const hasFileChanges = modalData.hasFileChanges as boolean;
   const isClearAll = !checkpointId;
 
@@ -31,6 +33,11 @@ export function RollbackModal() {
         ? await clearConversation(workspaceId, restoreFiles)
         : await rollbackToCheckpoint(workspaceId, checkpointId, restoreFiles);
       rollbackConversation(workspaceId, checkpointId ?? "__clear__", messages);
+      // Prefill the input with the rolled-back prompt so the user can re-send
+      // or edit it, matching Claude Code's undo behavior.
+      if (messageContent) {
+        setChatInputPrefill(messageContent);
+      }
       // Refresh the changed files view to reflect the rolled-back file state.
       clearDiff();
       loadDiffFiles(workspaceId)

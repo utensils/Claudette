@@ -784,6 +784,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                       workspaceId,
                       checkpointId: cp ? cp.id : null,
                       messagePreview: msg.content.slice(0, 100),
+                      messageContent: msg.content,
                       hasFileChanges: cp
                         ? checkpointHasFileChanges(cp, checkpoints)
                         : checkpoints.some((c) => !!c.commit_hash),
@@ -918,6 +919,29 @@ function ChatInputArea({
   const [slashPickerDismissed, setSlashPickerDismissed] = useState(false);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the textarea when switching or creating workspaces.
+  useEffect(() => {
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [selectedWorkspaceId]);
+
+  // Consume prefill text (e.g. from rollback) and focus the textarea.
+  const chatInputPrefill = useAppStore((s) => s.chatInputPrefill);
+  const setChatInputPrefill = useAppStore((s) => s.setChatInputPrefill);
+  useEffect(() => {
+    if (chatInputPrefill) {
+      setChatInput(chatInputPrefill);
+      setChatInputPrefill(null);
+      // Focus and move cursor to end after React re-renders.
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.focus();
+          ta.selectionStart = ta.selectionEnd = ta.value.length;
+        }
+      });
+    }
+  }, [chatInputPrefill, setChatInputPrefill]);
 
   const refreshSlashCommands = useCallback(() => {
     listSlashCommands(projectPath, selectedWorkspaceId)
