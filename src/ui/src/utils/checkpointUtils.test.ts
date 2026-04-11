@@ -85,16 +85,16 @@ describe("clearAllHasFileChanges", () => {
     expect(clearAllHasFileChanges([cp("cp1", null, 0), cp("cp2", null, 1)])).toBe(false);
   });
 
-  it("returns false when all checkpoints have the same hash", () => {
+  it("returns true when all checkpoints have the same hash (files were edited)", () => {
     expect(clearAllHasFileChanges([
       cp("cp1", "aaa", 0),
       cp("cp2", "aaa", 1),
       cp("cp3", "aaa", 2),
-    ])).toBe(false);
+    ])).toBe(true);
   });
 
-  it("returns false when only one checkpoint has a hash", () => {
-    expect(clearAllHasFileChanges([cp("cp1", "aaa", 0)])).toBe(false);
+  it("returns true when only one checkpoint has a hash (single file-editing turn)", () => {
+    expect(clearAllHasFileChanges([cp("cp1", "aaa", 0)])).toBe(true);
   });
 
   it("returns true when checkpoints have different hashes", () => {
@@ -112,12 +112,12 @@ describe("clearAllHasFileChanges", () => {
     ])).toBe(true);
   });
 
-  it("returns false with mix of null and same hashes", () => {
+  it("returns true with mix of null and same hashes (files were still edited)", () => {
     expect(clearAllHasFileChanges([
       cp("cp1", null, 0),
       cp("cp2", "aaa", 1),
       cp("cp3", "aaa", 2),
-    ])).toBe(false);
+    ])).toBe(true);
   });
 });
 

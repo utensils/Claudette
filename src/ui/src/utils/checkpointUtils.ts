@@ -24,18 +24,15 @@ export function checkpointHasFileChanges(
 
 /**
  * Determine whether clearing the entire conversation could involve
- * restoring file changes. Returns true only when at least two checkpoints
- * have different commit hashes, meaning files changed during the session.
- * A single checkpoint or all-identical hashes means nothing to restore.
+ * restoring file changes. Returns true when any checkpoint has a non-null
+ * commit hash — meaning the agent edited files at some point. A clear-all
+ * rolls back to before the first turn, so even a single file-editing turn
+ * needs the restore checkbox.
  */
 export function clearAllHasFileChanges(
   checkpoints: ConversationCheckpoint[],
 ): boolean {
-  const hashes = checkpoints
-    .map((c) => c.commit_hash)
-    .filter((h): h is string => h !== null);
-  if (hashes.length === 0) return false;
-  return new Set(hashes).size > 1;
+  return checkpoints.some((c) => c.commit_hash !== null);
 }
 
 /**

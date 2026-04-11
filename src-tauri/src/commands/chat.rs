@@ -293,6 +293,14 @@ pub async fn send_chat_message(
                         .get_app_setting("notification_sound")
                         .ok()
                         .flatten()
+                        .or_else(|| {
+                            // Honour legacy setting for users who disabled
+                            // audio before the new notification_sound key existed.
+                            match db.get_app_setting("audio_notifications").ok().flatten() {
+                                Some(v) if v == "false" => Some("None".to_string()),
+                                _ => None,
+                            }
+                        })
                         .unwrap_or_else(|| "Default".to_string());
                     if sound != "None" {
                         crate::commands::settings::play_notification_sound(sound);

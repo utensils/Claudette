@@ -163,10 +163,17 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
         .unwrap_or_else(|| "An agent".to_string());
 
     // Read notification sound preference (default: "Default").
+    // Honour legacy audio_notifications=false for users who haven't opened settings yet.
     let sound = db
         .get_app_setting("notification_sound")
         .ok()
         .flatten()
+        .or_else(|| {
+            match db.get_app_setting("audio_notifications").ok().flatten() {
+                Some(v) if v == "false" => Some("None".to_string()),
+                _ => None,
+            }
+        })
         .unwrap_or_else(|| "Default".to_string());
 
     let title = "Claudette — Input Required";
@@ -368,12 +375,16 @@ fn send_notification(app: &AppHandle, workspace_id: &str, title: &str, body: &st
         });
     }
 
-    // On non-macOS, fall back to tauri-plugin-notification (fire-and-forget).
+    // On non-macOS, fall back to tauri-plugin-notification (fire-and-forget)
+    // and play the configured sound via play_notification_sound.
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (workspace_id, sound);
+        let _ = workspace_id;
         use tauri_plugin_notification::NotificationExt;
         let _ = app.notification().builder().title(title).body(body).show();
+        if sound != "None" {
+            crate::commands::settings::play_notification_sound(sound.to_string());
+        }
     }
 }
 
