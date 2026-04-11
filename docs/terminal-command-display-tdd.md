@@ -61,28 +61,39 @@ Track the last command line submitted to each PTY by monitoring input sent to `w
 
 ### 3.2 Command Extraction Logic
 
-When `write_pty` receives data:
+When `write_pty` receives data, treat it as raw terminal input bytes from `term.onData()`, not plain text. The input buffer must apply minimal line-editing rules before command extraction:
 
-**On newline detected** (`\n` or `\r`):
-1. Buffer all input since last newline
-2. On newline detected:
-   - Trim whitespace
-   - Ignore if empty, starts with `#`, or is a builtin (cd, ls, pwd, etc.)
-   - Extract command name (first word)
-   - Store as "last command" for this PTY
+**Input Processing:**
+
+1. **Printable characters** - Append to `input_buffer`
+2. **Backspace/delete** (`\x08` or `\x7f`) - Remove previous character from buffer if present
+3. **ANSI escape sequences** - Ignore CSI sequences (arrow keys `\x1b[A`, `\x1b[B`, etc.) and other escape codes
+4. **Other control bytes** - Ignore unless explicitly handled below
+5. **Newline submission** (`\r`, `\n`, or `\r\n`):
+   - Normalize `\r\n` to single submission (don't double-trigger)
+   - Trim whitespace from buffer
+   - Ignore if empty, starts with `#`, or matches builtin list
+   - Otherwise, store full trimmed command as `last_command`
    - Emit `pty-command-detected` event
+   - Clear `input_buffer`
 
 **On Ctrl+C detected** (`\x03` byte):
 1. Clear the `last_command` for this PTY
-2. Emit `pty-command-stopped` event with `{ pty_id, command: null }`
+2. Clear the `input_buffer` for this PTY
+3. Emit `pty-command-stopped` event with `{ pty_id, command: null }`
 
-**Builtin ignore list**: `cd`, `ls`, `pwd`, `echo`, `export`, `alias`, `history`, `clear`, `exit`
+**On PTY close** (in `close_pty` command):
+1. Emit `pty-command-stopped` event with `{ pty_id, command: null }`
+2. This ensures sidebar clears when terminal is closed (not a limitation)
+
+**Builtin ignore list** (canonical): `cd`, `ls`, `pwd`, `echo`, `export`, `alias`, `history`, `clear`, `exit`, `source`, `.`, `eval`, `set`, `unset`
 
 **Examples**:
 - Input: `npm run dev\n` → Stores `"npm run dev"`, emits event
+- Input: `npm rn\x08\x08un dev\r\n` → Backspace processing → Stores `"npm run dev"`
+- Input: `\x1b[A\r` → Ignores arrow-up escape sequence, no command stored
 - Input: `cd src\n` → Ignored (builtin)
-- Input: `\x03` (Ctrl+C) → Clears command, emits stopped event
-- Input: `rails server -p 3000\n` → Stores `"rails server -p 3000"`
+- Input: `\x03` (Ctrl+C) → Clears command and buffer, emits stopped event
 
 ### 3.3 Data Model Changes
 
@@ -104,23 +115,7 @@ pub struct PtyHandle {
 
 #### Backend: New Tauri Command
 
-**File**: `src-tauri/src/pty.rs`
-
-```rust
-#[derive(Serialize)]
-pub struct PtyInfo {
-    pub pty_id: u64,
-    pub last_command: Option<String>,
-}
-
-#[tauri::command]
-pub async fn get_pty_info(
-    pty_id: u64,
-    state: State<'_, AppState>,
-) -> Result<PtyInfo, String>
-```
-
-Returns the last command for a given PTY ID.
+**Note**: A `get_pty_info` command is not needed in this design since state is populated reactively via events. If persistence is added later (§7.4), this command could be used to hydrate state on app startup.
 
 #### Frontend: Workspace Display State
 
@@ -223,31 +218,45 @@ interface AppStore {
    }
    ```
 
-**Frontend listener** (in `TerminalPanel.tsx` or `App.tsx`):
+**Frontend listener** (in `App.tsx` - must be top-level to avoid missing events):
+
+**IMPORTANT**: The listener must be placed in `App.tsx` or another component that is always mounted. If placed in `TerminalPanel.tsx`, it will unmount when the user switches to the chat or diff panel, causing events to be silently dropped and the sidebar to show stale data.
+
 ```typescript
 useEffect(() => {
-  const unlisten = listen<{ pty_id: number; command: string }>(
-    "pty-command-detected",
-    (event) => {
-      const { pty_id, command } = event.payload;
+  const handleTerminalCommandEvent = (event: {
+    payload: { pty_id: number; command: string | null }
+  }) => {
+    const { pty_id, command } = event.payload;
 
-      // Find which workspace owns this PTY
-      const workspaces = useAppStore.getState().workspaces;
-      const terminalTabs = useAppStore.getState().terminalTabs;
+    // Find which workspace owns this PTY
+    const workspaces = useAppStore.getState().workspaces;
+    const terminalTabs = useAppStore.getState().terminalTabs;
 
-      for (const ws of workspaces) {
-        const tabs = terminalTabs[ws.id] || [];
-        // Match pty_id to terminal tab (need to store pty_id on TerminalTab)
-        const tab = tabs.find(t => t.pty_id === pty_id);
-        if (tab) {
-          useAppStore.getState().setWorkspaceTerminalCommand(ws.id, command);
-          break;
-        }
+    for (const ws of workspaces) {
+      const tabs = terminalTabs[ws.id] || [];
+      const tab = tabs.find(t => t.pty_id === pty_id);
+      if (tab) {
+        useAppStore.getState().setWorkspaceTerminalCommand(ws.id, command);
+        break;
       }
     }
+  };
+
+  const unlistenDetected = listen<{ pty_id: number; command: string | null }>(
+    "pty-command-detected",
+    handleTerminalCommandEvent
   );
 
-  return () => { unlisten.then(fn => fn()); };
+  const unlistenStopped = listen<{ pty_id: number; command: string | null }>(
+    "pty-command-stopped",
+    handleTerminalCommandEvent
+  );
+
+  return () => {
+    unlistenDetected.then(fn => fn());
+    unlistenStopped.then(fn => fn());
+  };
 }, []);
 ```
 
@@ -271,11 +280,24 @@ export interface TerminalTab {
 }
 ```
 
-**Update flow**: When `spawnPty()` succeeds, immediately update the terminal tab with the PTY ID:
+**Update flow**: When `spawnPty()` succeeds, update the terminal tab with the PTY ID. This requires adding a new store action to patch a tab in-place:
 
 ```typescript
+// In useAppStore.ts
+updateTerminalTabPtyId: (wsId: string, tabId: number, ptyId: number) => {
+  set((s) => ({
+    terminalTabs: {
+      ...s.terminalTabs,
+      [wsId]: (s.terminalTabs[wsId] || []).map(t =>
+        t.id === tabId ? { ...t, pty_id: ptyId } : t
+      ),
+    },
+  }));
+}
+
+// In TerminalPanel.tsx
 const ptyId = await spawnPty(worktreePath);
-updateTerminalTab(tabId, { pty_id: ptyId });
+updateTerminalTabPtyId(workspaceId, tabId, ptyId);
 ```
 
 ## 4. Files Modified
@@ -283,11 +305,11 @@ updateTerminalTab(tabId, { pty_id: ptyId });
 | File | Change |
 |------|--------|
 | `src-tauri/src/state.rs` | Add `input_buffer`, `last_command` to `PtyHandle` |
-| `src-tauri/src/pty.rs` | Detect newlines in `write_pty`, extract commands, emit events; add `get_pty_info` command |
-| `src-tauri/src/main.rs` | Register `get_pty_info` command |
+| `src-tauri/src/commands/pty.rs` | Command extraction logic with backspace/escape handling; emit events in `write_pty` and `close_pty` |
 | `src/ui/src/types/terminal.ts` | Add `pty_id?: number` to `TerminalTab` |
 | `src/ui/src/stores/useAppStore.ts` | Add `workspaceTerminalCommands`, `setWorkspaceTerminalCommand` |
-| `src/ui/src/components/terminal/TerminalPanel.tsx` | Store `pty_id` on tab after spawn, add event listener for `pty-command-detected` |
+| `src/ui/src/components/terminal/TerminalPanel.tsx` | Store `pty_id` on tab after spawn |
+| `src/ui/src/App.tsx` | Add event listeners for `pty-command-detected` and `pty-command-stopped` (must be top-level) |
 | `src/ui/src/components/sidebar/Sidebar.tsx` | Display terminal command below branch name |
 | `src/ui/src/components/sidebar/Sidebar.module.css` | Add styles for `.terminalCommand` |
 
@@ -295,9 +317,9 @@ updateTerminalTab(tabId, { pty_id: ptyId });
 
 ### 5.1 Known Limitations
 
-1. **Natural process exit not detected**: Command stays visible if process exits naturally (not via Ctrl+C)
+1. **Natural process exit not detected**: Command stays visible if process exits naturally (not via Ctrl+C or terminal close)
    - **Example**: `node script.js` that finishes → command remains visible
-   - **Mitigation**: Ctrl+C (most common way to stop processes) clears the command
+   - **Mitigation**: Ctrl+C and terminal close both clear the command (covers most cases)
    - **Future**: Could monitor child process exit via `child.try_wait()`
 
 2. **Multiple terminals**: Only shows one command per workspace (the most recent)
@@ -312,15 +334,16 @@ updateTerminalTab(tabId, { pty_id: ptyId });
 
 ### 5.2 Builtin Command Handling
 
-Ignore these commands (don't update sidebar):
+**Canonical builtin ignore list** (referenced in §3.2):
 - `cd`, `ls`, `pwd`, `echo`, `export`, `alias`, `history`, `clear`, `exit`, `source`, `.`, `eval`, `set`, `unset`
 
-Rationale: These are navigation/environment commands, not persistent processes.
+Rationale: These are navigation/environment commands, not persistent processes. The sidebar should only show long-running commands that users need to monitor.
 
 ### 5.3 Command Truncation
 
-- Max display length: 40 characters
-- Truncate with ellipsis: `npm run dev --port 3000 --ho...`
+- Enforce 40-character cap in application logic before rendering
+- Truncate with ellipsis when command exceeds 40 characters: `npm run dev --port 3000 --ho...`
+- CSS `text-overflow: ellipsis` provides additional responsive truncation based on available width
 - Full command available on hover (via `title` attribute)
 
 ## 6. Testing
@@ -359,10 +382,12 @@ Rationale: These are navigation/environment commands, not persistent processes.
 - [ ] Press Ctrl+C → Command disappears from sidebar
 - [ ] Restart server → Command reappears
 - [ ] Navigate with `cd` → Sidebar unchanged
-- [ ] Long command → Truncated with ellipsis
+- [ ] Edit command with backspace/arrows → Final command is clean (no escape sequences)
+- [ ] Long command → Truncated at 40 characters with ellipsis
 - [ ] Hover truncated command → Full command in tooltip
-- [ ] Run short script that finishes → Command persists (known limitation)
-- [ ] Close terminal → Command persists (known limitation)
+- [ ] Run short script that finishes → Command persists (known limitation - natural exit not detected)
+- [ ] Close terminal → Command clears (emits `pty-command-stopped`)
+- [ ] Switch to chat panel while command running → Event still received, sidebar updates
 - [ ] Archive workspace → Command cleared
 - [ ] Remote workspace → Works identically (if remote PTY tracking added)
 
