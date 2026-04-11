@@ -43,8 +43,8 @@ export function useAgentStream() {
   const turnCheckpointIdRef = useRef<Record<string, string | undefined>>({});
   // Plan file path extracted from EnterPlanMode tool results, keyed by wsId.
   const planFilePathRef = useRef<Record<string, string>>({});
-  // Track content block indices that are thinking blocks.
-  const thinkingBlocksRef = useRef<Set<number>>(new Set());
+  // Track content block indices that are thinking blocks, keyed by workspace.
+  const thinkingBlocksRef = useRef<Record<string, Set<number>>>({});
 
   useEffect(() => {
     // Guard against StrictMode double-mount: the async unlisten() promise
@@ -79,7 +79,7 @@ export function useAgentStream() {
         setStreamingContent(wsId, "");
         clearStreamingThinking(wsId);
         blockToolMapRef.current = {};
-        thinkingBlocksRef.current.clear();
+        delete thinkingBlocksRef.current[wsId];
         // NOTE: Do NOT clear agentQuestion here. In --print mode the CLI
         // exits immediately after emitting AskUserQuestion, so ProcessExited
         // fires before the user has a chance to answer. The question is
@@ -165,7 +165,9 @@ export function useAgentStream() {
                     "type" in inner.content_block &&
                     inner.content_block.type === "thinking"
                   ) {
-                    thinkingBlocksRef.current.add(inner.index);
+                    (thinkingBlocksRef.current[wsId] ??= new Set()).add(inner.index);
+                    // Clear previous thinking — new turn's thinking replaces old.
+                    clearStreamingThinking(wsId);
                   }
                   if (
                     inner.content_block &&
@@ -194,8 +196,8 @@ export function useAgentStream() {
                   break;
                 }
                 case "content_block_stop": {
-                  if (thinkingBlocksRef.current.has(inner.index)) {
-                    thinkingBlocksRef.current.delete(inner.index);
+                  if (thinkingBlocksRef.current[wsId]?.has(inner.index)) {
+                    thinkingBlocksRef.current[wsId].delete(inner.index);
                     break;
                   }
                   const entry = blockToolMapRef.current[inner.index];
@@ -321,7 +323,9 @@ export function useAgentStream() {
               });
             }
             setStreamingContent(wsId, "");
-            clearStreamingThinking(wsId);
+            // NOTE: Don't clear thinking here — keep it visible after the
+            // response completes so users can review it. It gets cleared
+            // on ProcessExited or when a new thinking block starts.
             break;
           }
           case "result": {
