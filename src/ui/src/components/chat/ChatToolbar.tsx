@@ -22,7 +22,7 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
   const setFastMode = useAppStore((s) => s.setFastMode);
   const setThinkingEnabled = useAppStore((s) => s.setThinkingEnabled);
   const setPlanMode = useAppStore((s) => s.setPlanMode);
-  const showThinkingBlocks = useAppStore((s) => s.showThinkingBlocks[workspaceId] !== false);
+  const showThinkingBlocks = useAppStore((s) => s.showThinkingBlocks[workspaceId] === true);
   const setEffortLevel = useAppStore((s) => s.setEffortLevel);
   const setShowThinkingBlocks = useAppStore((s) => s.setShowThinkingBlocks);
   const setModelSelectorOpen = useAppStore((s) => s.setModelSelectorOpen);
@@ -49,7 +49,7 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
       if (fast === "true") setFastMode(workspaceId, true);
       if (thinking === "true") setThinkingEnabled(workspaceId, true);
       if (effort) setEffortLevel(workspaceId, effort);
-      if (showThinking === "false") setShowThinkingBlocks(workspaceId, false);
+      if (showThinking === "true") setShowThinkingBlocks(workspaceId, true);
       setLoaded(true);
     }
     load();

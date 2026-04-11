@@ -92,7 +92,7 @@ describe("streamingThinking (per-workspace)", () => {
     expect(useAppStore.getState().showThinkingBlocks[WS_ID]).toBe(false);
   });
 
-  it("showThinkingBlocks defaults to undefined (treated as true)", () => {
+  it("showThinkingBlocks defaults to undefined (treated as false/off)", () => {
     expect(useAppStore.getState().showThinkingBlocks[WS_ID]).toBeUndefined();
   });
 });

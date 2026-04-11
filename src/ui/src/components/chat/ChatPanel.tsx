@@ -199,7 +199,7 @@ export function ChatPanel() {
     (s) => !!(selectedWorkspaceId && s.streamingThinking[selectedWorkspaceId])
   );
   const showThinkingBlocks = useAppStore(
-    (s) => selectedWorkspaceId ? s.showThinkingBlocks[selectedWorkspaceId] !== false : true
+    (s) => selectedWorkspaceId ? s.showThinkingBlocks[selectedWorkspaceId] === true : false
   );
   // Subscribe only to count — avoids re-render on tool activity content changes
   const activitiesCount = useAppStore(
@@ -921,7 +921,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   );
   const openModal = useAppStore((s) => s.openModal);
   const showThinkingBlocks = useAppStore(
-    (s) => s.showThinkingBlocks[workspaceId] !== false
+    (s) => s.showThinkingBlocks[workspaceId] === true
   );
 
   // Build an index: afterMessageIndex → array of (turn, globalIndex) pairs.
