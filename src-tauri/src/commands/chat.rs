@@ -268,6 +268,58 @@ pub async fn send_chat_message(
                     // exited. A new turn may have already replaced it.
                     session.active_pid = None;
                 }
+                // Play notification sound + run command if the window is not focused.
+                // This runs on the Rust side so it works even when the webview
+                // is suspended (window hidden / close-to-tray).
+                let needs_attention_now = {
+                    let agents_r = app_state.agents.try_read();
+                    agents_r
+                        .as_ref()
+                        .ok()
+                        .and_then(|a| a.get(&ws_id))
+                        .is_some_and(|s| s.needs_attention)
+                };
+                let window_focused = app
+                    .get_webview_window("main")
+                    .and_then(|w| w.is_focused().ok())
+                    .unwrap_or(false);
+                // Skip if user is actively watching (window focused) or if this
+                // is an attention event (notify_attention already handled it).
+                if !window_focused
+                    && !needs_attention_now
+                    && let Ok(db) = Database::open(&db_path)
+                {
+                    let sound = db
+                        .get_app_setting("notification_sound")
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| "Default".to_string());
+                    if sound != "None" {
+                        crate::commands::settings::play_notification_sound(sound);
+                    }
+                    // Run notification command if configured.
+                    if let Ok(Some(cmd)) = db.get_app_setting("notification_command")
+                        && !cmd.is_empty()
+                    {
+                        let ws_name_for_cmd = ws_id.clone();
+                        std::thread::spawn(move || {
+                            if let Ok(mut child) = std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(&cmd)
+                                .env("CLAUDETTE_NOTIFICATION_TITLE", "Agent Finished")
+                                .env(
+                                    "CLAUDETTE_NOTIFICATION_BODY",
+                                    format!("{ws_name_for_cmd} has completed"),
+                                )
+                                .env("CLAUDETTE_WORKSPACE_ID", &ws_name_for_cmd)
+                                .spawn()
+                            {
+                                let _ = child.wait();
+                            }
+                        });
+                    }
+                }
+
                 drop(agents);
                 crate::tray::rebuild_tray(&app);
             }

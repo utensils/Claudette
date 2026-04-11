@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "../stores/useAppStore";
-import { loadChatHistory, saveTurnToolActivities, getAppSetting, playNotificationSound, runNotificationCommand } from "../services/tauri";
+import { loadChatHistory, saveTurnToolActivities } from "../services/tauri";
 import type { AgentStreamPayload } from "../types/agent-events";
 import type { ChatMessage } from "../types/chat";
 import type { ConversationCheckpoint } from "../types/checkpoint";
@@ -91,32 +91,9 @@ export function useAgentStream() {
           markWorkspaceAsUnread(wsId);
         }
 
-        // Audio notification: play configured sound on every end-of-turn
-        // unless the user is actively watching the workspace (selected AND window focused).
-        const isWatching = wsId === selectedWorkspaceId && document.hasFocus();
-        if (!isWatching) {
-          getAppSetting("notification_sound").then((sound) => {
-            // Default to "Default" (enabled) for fresh installs.
-            const effective = sound ?? "Default";
-            if (effective !== "None") {
-              playNotificationSound(effective).catch(() => {});
-            }
-          }).catch(() => {});
-
-          // Run notification command — but skip for attention events since
-          // notify_attention on the Rust side already runs it.
-          const store = useAppStore.getState();
-          const isAttention = !!store.agentQuestions[wsId] || !!store.planApprovals[wsId];
-          if (!isAttention) {
-            const ws = store.workspaces.find((w) => w.id === wsId);
-            runNotificationCommand(
-              "Agent Finished",
-              `${ws?.name ?? "An agent"} has completed`,
-              wsId,
-              ws?.name ?? "",
-            ).catch(() => {});
-          }
-        }
+        // Notification sound + command are handled on the Rust side
+        // (in ProcessExited handler) so they work even when the webview
+        // is suspended (window hidden / close-to-tray).
 
         return;
       }
