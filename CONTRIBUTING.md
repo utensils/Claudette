@@ -10,7 +10,7 @@ This project adheres to the [Contributor Covenant 3.0 Code of Conduct](CODE_OF_C
 
 ### Reporting Bugs
 
-Before filing a bug report, please check [existing issues](https://github.com/anthropics/claudette/issues) to avoid duplicates.
+Before filing a bug report, please check [existing issues](https://github.com/utensils/Claudette/issues) to avoid duplicates.
 
 When filing a bug report, include:
 
