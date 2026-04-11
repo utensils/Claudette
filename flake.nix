@@ -299,18 +299,14 @@
               {
                 # WebKitGTK's DMA-BUF renderer crashes the Wayland session on
                 # current Mesa/compositors with `Gdk-Message: Error 71
-                # (Protocol error) dispatching to Wayland display`.
-                # Disabling it forces the software-composited path, which is
-                # stable across GNOME/KDE/Sway on NixOS. Tauri upstream
-                # recommends this for dev until webkit2gtk ships a fix.
+                # (Protocol error) dispatching to Wayland display`. Disabling
+                # DMA-BUF falls back to a GL-via-EGL path that's stable on
+                # GNOME/KDE/Sway on NixOS while still keeping webkit's GL
+                # compositor active — which is what drives HiDPI scaling, so
+                # leaving compositing mode enabled keeps devicePixelRatio
+                # honoring the GTK scale factor. Tauri upstream recommends
+                # this workaround until webkit2gtk ships a fix.
                 name = "WEBKIT_DISABLE_DMABUF_RENDERER";
-                value = "1";
-              }
-              {
-                # Belt-and-braces — some GPU/driver combos also need
-                # compositing mode off to avoid the same protocol error.
-                # Harmless when DMABUF is already disabled.
-                name = "WEBKIT_DISABLE_COMPOSITING_MODE";
                 value = "1";
               }
             ]
