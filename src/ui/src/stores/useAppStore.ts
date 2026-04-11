@@ -225,8 +225,6 @@ interface AppState {
   setDefaultBranches: (branches: Record<string, string>) => void;
   terminalFontSize: number;
   setTerminalFontSize: (size: number) => void;
-  audioNotifications: boolean;
-  setAudioNotifications: (enabled: boolean) => void;
   currentThemeId: string;
   setCurrentThemeId: (id: string) => void;
   lastMessages: Record<string, ChatMessage>;
@@ -759,8 +757,6 @@ export const useAppStore = create<AppState>((set) => ({
   setDefaultBranches: (branches) => set({ defaultBranches: branches }),
   terminalFontSize: 11,
   setTerminalFontSize: (size) => set({ terminalFontSize: size }),
-  audioNotifications: false,
-  setAudioNotifications: (enabled) => set({ audioNotifications: enabled }),
   currentThemeId: DEFAULT_THEME_ID,
   setCurrentThemeId: (id) => set({ currentThemeId: id }),
   lastMessages: {},

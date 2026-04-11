@@ -329,6 +329,28 @@ export function listUserThemes(): Promise<ThemeDefinition[]> {
   return invoke("list_user_themes");
 }
 
+export function listNotificationSounds(): Promise<string[]> {
+  return invoke("list_notification_sounds");
+}
+
+export function playNotificationSound(sound: string): Promise<void> {
+  return invoke("play_notification_sound", { sound });
+}
+
+export function runNotificationCommand(
+  title: string,
+  body: string,
+  workspaceId: string,
+  workspaceName: string,
+): Promise<void> {
+  return invoke("run_notification_command", {
+    title,
+    body,
+    workspaceId,
+    workspaceName,
+  });
+}
+
 // -- Remote --
 
 export function listRemoteConnections(): Promise<RemoteConnectionInfo[]> {

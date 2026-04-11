@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "../stores/useAppStore";
-import { loadChatHistory, saveTurnToolActivities } from "../services/tauri";
+import { loadChatHistory, saveTurnToolActivities, getAppSetting, playNotificationSound, runNotificationCommand } from "../services/tauri";
 import type { AgentStreamPayload } from "../types/agent-events";
 import type { ChatMessage } from "../types/chat";
 import type { ConversationCheckpoint } from "../types/checkpoint";
@@ -91,16 +91,22 @@ export function useAgentStream() {
           markWorkspaceAsUnread(wsId);
         }
 
-        // Audio notification: play bell if enabled and workspace is in background.
-        const { audioNotifications } = useAppStore.getState();
-        if (audioNotifications && wsId !== selectedWorkspaceId) {
-          try {
-            const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZSA0PVqzn77BdGAg+ltryxnMkBSp+zPLaizsIGGS57OihUBELTKXh8bllHAU2jdXyz4IzBh1qwO/mnEoPEFWs5++vXRgIPpbZ8sR0IwUpfszy2Ys7CBhkueznolARDEul4fG5ZRwFN43V8s+CMwYcacDv5pxKDxBVrOfvrl0YCD6W2fLEdCMFKX7M8tmLOwgYZLns6KJQEQxLpeHxuWUcBTeN1fLPgjMGHGnA7+acSg8QVazn765dGAg+ltnyw3MkBSl+zPLaizsIGGS57OiiUBEMS6Xh8bllHAU3jdXyz4IzBhxpwO/mnEoPEFWs5++uXRgIPpbZ8sR0IwUpfszy2Ys7CBhkuezooleRDBIp+DwumQcBTOP1PLPgjMGHGnA7+acSg8QVazn765dGAg+ltnyw3MkBSl+zPLZizsIGGS57OmiUBEMSaXh8bhlHAU2jdTyz4IzBhxpwO/mnEoPEFWs5++uXRgIPpbZ8sR0IwUpfszy2Ys7CBhkuezooleRDBIp+DwumQcBTOP1PLPgjMGHGnA7+acSg8QVazn765dGAg+ltnyw3MkBSl+zPLZizsIGGS57OmiUBEMSaXh8bhlHAU2jdTyz4IzBhxpwO/mnEoPEFWs5++uXRgIPpbZ8sR0IwUpfszy2Ys7CBhkuezooleRDBIp+DwumQcBTOP1PLPgjMGHGnA7+acSg8QVazn765dGAg+ltnyw3MkBSl+zPLZizsIGGS57OmiUBEMSaXh8bhlHAU2jdTyz4IzBhxpwO/mnEoPEFWs5++uXRgIPpbZ8sR0IwUpfszy2Ys7CBhkuezooleRDBIp+DwumQcBTOP1PLPgjMGHGnA7+acSg8QVazn765dGAg+ltnyw3MkBSl+zPLZizsIGGS57OmiUBEMSaXh8bhlHAU2jdTyz4IzBhxpwO/mnEoPEA==');
-            audio.volume = 0.5;
-            audio.play().catch(() => {});
-          } catch {
-            // Audio playback not supported in this environment.
-          }
+        // Audio notification: play configured sound if workspace is in background.
+        if (wsId !== selectedWorkspaceId) {
+          getAppSetting("notification_sound").then((sound) => {
+            if (sound && sound !== "None") {
+              playNotificationSound(sound).catch(() => {});
+            }
+          }).catch(() => {});
+
+          // Also run notification command if configured.
+          const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId);
+          runNotificationCommand(
+            "Agent Finished",
+            `${ws?.name ?? "An agent"} has completed`,
+            wsId,
+            ws?.name ?? "",
+          ).catch(() => {});
         }
 
         return;

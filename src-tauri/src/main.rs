@@ -254,6 +254,9 @@ fn main() {
             commands::settings::get_app_setting,
             commands::settings::set_app_setting,
             commands::settings::list_user_themes,
+            commands::settings::list_notification_sounds,
+            commands::settings::play_notification_sound,
+            commands::settings::run_notification_command,
             // Shell Integration
             commands::shell::setup_shell_integration,
             commands::shell::apply_shell_integration,

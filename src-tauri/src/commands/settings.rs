@@ -59,6 +59,75 @@ pub async fn set_app_setting(
     Ok(())
 }
 
+/// Return available notification sound names for the current platform.
+#[tauri::command]
+pub fn list_notification_sounds() -> Vec<String> {
+    let mut sounds = vec!["Default".to_string(), "None".to_string()];
+    #[cfg(target_os = "macos")]
+    if let Ok(entries) = std::fs::read_dir("/System/Library/Sounds") {
+        let mut system: Vec<String> = entries
+            .flatten()
+            .filter_map(|e| {
+                let path = e.path();
+                if path.extension().is_some_and(|ext| ext == "aiff") {
+                    path.file_stem().map(|n| n.to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        system.sort();
+        sounds.extend(system);
+    }
+    sounds
+}
+
+/// Play a notification sound by name (for settings preview and agent-finished events).
+#[tauri::command]
+pub fn play_notification_sound(sound: String) {
+    if sound == "None" {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let path = if sound == "Default" {
+            "/System/Library/Sounds/Tink.aiff".to_string()
+        } else {
+            format!("/System/Library/Sounds/{sound}.aiff")
+        };
+        let _ = std::process::Command::new("afplay").arg(&path).spawn();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = sound;
+    }
+}
+
+/// Run the user-configured notification command (if set) with context env vars.
+#[tauri::command]
+pub fn run_notification_command(
+    title: String,
+    body: String,
+    workspace_id: String,
+    workspace_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    if let Ok(Some(cmd)) = db.get_app_setting("notification_command")
+        && !cmd.is_empty()
+    {
+        let _ = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .env("CLAUDETTE_NOTIFICATION_TITLE", &title)
+            .env("CLAUDETTE_NOTIFICATION_BODY", &body)
+            .env("CLAUDETTE_WORKSPACE_ID", &workspace_id)
+            .env("CLAUDETTE_WORKSPACE_NAME", &workspace_name)
+            .spawn();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn list_user_themes() -> Result<Vec<ThemeDefinition>, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -123,4 +192,40 @@ pub async fn list_user_themes() -> Result<Vec<ThemeDefinition>, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_list_notification_sounds_always_has_default_and_none() {
+        let sounds = list_notification_sounds();
+        assert!(sounds.len() >= 2);
+        assert_eq!(sounds[0], "Default");
+        assert_eq!(sounds[1], "None");
+    }
+
+    #[test]
+    fn test_list_notification_sounds_no_duplicates() {
+        let sounds = list_notification_sounds();
+        let mut seen = std::collections::HashSet::new();
+        for s in &sounds {
+            assert!(seen.insert(s), "Duplicate sound: {s}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_list_notification_sounds_includes_system_sounds() {
+        let sounds = list_notification_sounds();
+        // macOS always has at least a few sounds in /System/Library/Sounds
+        assert!(sounds.len() > 2, "Expected system sounds on macOS");
+    }
+
+    #[test]
+    fn test_play_notification_sound_none_is_noop() {
+        // Should not panic or spawn any process.
+        play_notification_sound("None".to_string());
+    }
 }

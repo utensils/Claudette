@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
-import { getAppSetting, setAppSetting } from "../../services/tauri";
+import { getAppSetting, setAppSetting, listNotificationSounds, playNotificationSound } from "../../services/tauri";
 import { applyTheme, loadAllThemes, findTheme } from "../../utils/theme";
 import type { ThemeDefinition } from "../../types/theme";
 import { Modal } from "./Modal";
@@ -14,14 +14,14 @@ export function AppSettingsModal() {
   const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);
   const currentThemeId = useAppStore((s) => s.currentThemeId);
   const setCurrentThemeId = useAppStore((s) => s.setCurrentThemeId);
-  const audioNotifications = useAppStore((s) => s.audioNotifications);
-  const setAudioNotifications = useAppStore((s) => s.setAudioNotifications);
-
   const [path, setPath] = useState(worktreeBaseDir);
   const [fontSize, setFontSize] = useState(String(terminalFontSize));
   const [selectedThemeId, setSelectedThemeId] = useState(currentThemeId);
   const [availableThemes, setAvailableThemes] = useState<ThemeDefinition[]>([]);
   const [trayEnabled, setTrayEnabled] = useState(true);
+  const [notificationSound, setNotificationSound] = useState("Default");
+  const [availableSounds, setAvailableSounds] = useState<string[]>(["Default", "None"]);
+  const [notificationCommand, setNotificationCommand] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +31,13 @@ export function AppSettingsModal() {
     loadAllThemes().then(setAvailableThemes);
     getAppSetting("tray_enabled").then((val) => {
       setTrayEnabled(val !== "false");
+    });
+    listNotificationSounds().then(setAvailableSounds);
+    getAppSetting("notification_sound").then((val) => {
+      if (val) setNotificationSound(val);
+    });
+    getAppSetting("notification_command").then((val) => {
+      if (val) setNotificationCommand(val);
     });
   }, []);
 
@@ -69,7 +76,8 @@ export function AppSettingsModal() {
       await setAppSetting("theme", selectedThemeId);
       setCurrentThemeId(selectedThemeId);
 
-      await setAppSetting("audio_notifications", audioNotifications ? "true" : "false");
+      await setAppSetting("notification_sound", notificationSound);
+      await setAppSetting("notification_command", notificationCommand);
 
       await setAppSetting("tray_enabled", trayEnabled ? "true" : "false");
 
@@ -153,14 +161,46 @@ export function AppSettingsModal() {
         >
           Notifications
         </div>
-        <label className={shared.checkboxRow}>
+        <div className={shared.field}>
+          <label className={shared.label}>Notification Sound</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <select
+              className={shared.input}
+              style={{ flex: 1 }}
+              value={notificationSound}
+              onChange={(e) => setNotificationSound(e.target.value)}
+            >
+              {availableSounds.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <button
+              className={shared.btn}
+              style={{ whiteSpace: "nowrap" }}
+              onClick={() => playNotificationSound(notificationSound)}
+              title="Preview sound"
+            >
+              &#9654;
+            </button>
+          </div>
+          <div className={shared.hint}>
+            Sound played when an agent needs input or finishes in the background.
+          </div>
+        </div>
+        <div className={shared.field} style={{ marginTop: 8 }}>
+          <label className={shared.label}>Notification Command</label>
           <input
-            type="checkbox"
-            checked={audioNotifications}
-            onChange={(e) => setAudioNotifications(e.target.checked)}
+            className={shared.input}
+            value={notificationCommand}
+            onChange={(e) => setNotificationCommand(e.target.value)}
+            placeholder={'e.g. say "done"'}
           />
-          <span>Play sound when background agent finishes</span>
-        </label>
+          <div className={shared.hint}>
+            Run a shell command when a notification arrives.
+            $CLAUDETTE_NOTIFICATION_TITLE, $CLAUDETTE_NOTIFICATION_BODY,
+            $CLAUDETTE_WORKSPACE_NAME are set.
+          </div>
+        </div>
       </div>
 
       <div

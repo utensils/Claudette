@@ -145,11 +145,16 @@ pub fn rebuild_tray(app: &AppHandle) {
 pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
     rebuild_tray(app);
 
-    // Look up workspace name for the notification body.
     let state = app.state::<AppState>();
-    let ws_name = Database::open(&state.db_path)
+    let db = match Database::open(&state.db_path) {
+        Ok(db) => db,
+        Err(_) => return,
+    };
+
+    // Look up workspace name for the notification body.
+    let ws_name = db
+        .list_workspaces()
         .ok()
-        .and_then(|db| db.list_workspaces().ok())
         .and_then(|wss| {
             wss.into_iter()
                 .find(|w| w.id == workspace_id)
@@ -157,15 +162,37 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
         })
         .unwrap_or_else(|| "An agent".to_string());
 
-    // Send native notification with click handler. On macOS the call blocks
-    // in a background thread until the user interacts, so clicking the
-    // notification shows the window and navigates to the session.
-    send_notification(
-        app,
-        workspace_id,
-        "Claudette — Input Required",
-        &format!("{ws_name} is waiting for your response"),
-    );
+    // Read notification sound preference (default: "Default").
+    let sound = db
+        .get_app_setting("notification_sound")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "Default".to_string());
+
+    let title = "Claudette — Input Required";
+    let body = format!("{ws_name} is waiting for your response");
+
+    send_notification(app, workspace_id, title, &body, &sound);
+
+    // Run user-configured notification command (if set).
+    if let Ok(Some(cmd)) = db.get_app_setting("notification_command")
+        && !cmd.is_empty()
+    {
+        let title = title.to_string();
+        let body = body.clone();
+        let ws_id = workspace_id.to_string();
+        let ws_name = ws_name.clone();
+        std::thread::spawn(move || {
+            let _ = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .env("CLAUDETTE_NOTIFICATION_TITLE", &title)
+                .env("CLAUDETTE_NOTIFICATION_BODY", &body)
+                .env("CLAUDETTE_WORKSPACE_ID", &ws_id)
+                .env("CLAUDETTE_WORKSPACE_NAME", &ws_name)
+                .spawn();
+        });
+    }
 }
 
 /// Remove the tray icon (called when user disables the setting).
@@ -305,7 +332,7 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
     Menu::with_items(app, &item_refs).map_err(|e| e.to_string())
 }
 
-fn send_notification(app: &AppHandle, workspace_id: &str, title: &str, body: &str) {
+fn send_notification(app: &AppHandle, workspace_id: &str, title: &str, body: &str, sound: &str) {
     // On macOS, use mac-notification-sys directly so we can block for the
     // click response. When the user clicks the notification, show the window
     // and navigate to the session — even if the window was hidden (close-to-tray).
@@ -315,10 +342,20 @@ fn send_notification(app: &AppHandle, workspace_id: &str, title: &str, body: &st
         let ws_id = workspace_id.to_string();
         let title = title.to_string();
         let body = body.to_string();
+        let sound = sound.to_string();
 
         std::thread::spawn(move || {
             let mut n = mac_notification_sys::Notification::new();
             n.title(&title).message(&body).wait_for_click(true);
+            match sound.as_str() {
+                "None" => {}
+                "Default" => {
+                    n.default_sound();
+                }
+                custom => {
+                    n.sound(custom);
+                }
+            }
 
             if let Ok(response) = n.send()
                 && matches!(
@@ -336,7 +373,7 @@ fn send_notification(app: &AppHandle, workspace_id: &str, title: &str, body: &st
     // On non-macOS, fall back to tauri-plugin-notification (fire-and-forget).
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = workspace_id;
+        let _ = (workspace_id, sound);
         use tauri_plugin_notification::NotificationExt;
         let _ = app.notification().builder().title(title).body(body).show();
     }
