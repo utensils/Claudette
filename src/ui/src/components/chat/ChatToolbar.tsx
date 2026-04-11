@@ -45,10 +45,19 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
         getAppSetting(`show_thinking:${workspaceId}`),
       ]);
       if (cancelled) return;
+      const loadedModel = model ?? "opus";
       if (model) setSelectedModel(workspaceId, model);
       if (fast === "true") setFastMode(workspaceId, true);
       if (thinking === "true") setThinkingEnabled(workspaceId, true);
-      if (effort) setEffortLevel(workspaceId, effort);
+      // Normalize effort against the loaded model to prevent stale values.
+      if (effort) {
+        const normalized = !isEffortSupported(loadedModel)
+          ? "auto"
+          : effort === "max" && !isMaxEffortAllowed(loadedModel)
+            ? "high"
+            : effort;
+        setEffortLevel(workspaceId, normalized);
+      }
       if (showThinking === "true") setShowThinkingBlocks(workspaceId, true);
       setLoaded(true);
     }

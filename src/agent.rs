@@ -263,9 +263,9 @@ pub fn build_claude_args(
     }
 
     // Effort level — standalone flag, not part of --settings JSON.
-    // "auto" means let the CLI decide (don't pass --effort at all).
+    // "auto" and unknown values are skipped (let the CLI use its default).
     if let Some(ref effort) = settings.effort
-        && effort != "auto"
+        && matches!(effort.as_str(), "low" | "medium" | "high" | "max")
     {
         args.push("--effort".to_string());
         args.push(effort.clone());

@@ -160,4 +160,19 @@ describe("buildRollbackMap", () => {
     const result = buildRollbackMap(messages, cps);
     expect(result.get(0)).toBeNull();
   });
+
+  it("maps first user message to null when system messages precede it", () => {
+    const messages = [
+      msg("m0", "System"),
+      msg("m1", "System"),
+      msg("m2", "User"),
+      msg("m3", "Assistant"),
+    ];
+    const cps = [{ ...cp("cp1", "aaa", 0), message_id: "m3" }];
+    const result = buildRollbackMap(messages, cps);
+    // First user message at index 2 should get clear-all
+    expect(result.get(2)).toBeNull();
+    expect(result.has(0)).toBe(false);
+    expect(result.has(1)).toBe(false);
+  });
 });

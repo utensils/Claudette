@@ -252,15 +252,17 @@ export function buildCommands(ctx: CommandContext): Command[] {
       keywords: ["model", "opus", "sonnet", "haiku", "switch"],
       execute: () => { ctx.enterModelMode(); },
     });
-    cmds.push({
-      id: "set-effort",
-      name: "Set Effort Level",
-      description: `Currently: ${ctx.effortLevel}`,
-      category: "agent",
-      icon: Gauge,
-      keywords: ["effort", "reasoning", "depth", "budget"],
-      execute: () => { ctx.enterEffortMode(); },
-    });
+    if (isEffortSupported(ctx.selectedModel)) {
+      cmds.push({
+        id: "set-effort",
+        name: "Set Effort Level",
+        description: `Currently: ${ctx.effortLevel}`,
+        category: "agent",
+        icon: Gauge,
+        keywords: ["effort", "reasoning", "depth", "budget"],
+        execute: () => { ctx.enterEffortMode(); },
+      });
+    }
     cmds.push({
       id: "stop-agent",
       name: "Stop Agent",

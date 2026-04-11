@@ -28,8 +28,10 @@ export function checkpointHasFileChanges(
  * before it, so users can always roll back — even past interrupted
  * turns that didn't produce a checkpoint.
  *
- * Index 0 always maps to `null` (clear-all) — clearing the conversation
- * doesn't require a checkpoint.
+ * The first User message always maps to `null` (clear-all) — clearing the
+ * conversation doesn't require a checkpoint. Subsequent User messages map
+ * to the most recent checkpoint seen so far. Uses a single forward pass
+ * (O(n)) by tracking the latest checkpoint while iterating.
  */
 export function buildRollbackMap(
   messages: ChatMessage[],
@@ -37,18 +39,21 @@ export function buildRollbackMap(
 ): Map<number, ConversationCheckpoint | null> {
   const msgIdToCp = new Map(checkpoints.map((cp) => [cp.message_id, cp]));
   const result = new Map<number, ConversationCheckpoint | null>();
+  let firstUser = true;
+  let latestCp: ConversationCheckpoint | undefined;
+
   for (let i = 0; i < messages.length; i++) {
+    // Track the most recent checkpoint as we scan forward.
+    const cp = msgIdToCp.get(messages[i].id);
+    if (cp) latestCp = cp;
+
     if (messages[i].role === "User") {
-      if (i === 0) {
+      if (firstUser) {
         // First user message always gets clear-all (no checkpoint needed).
-        result.set(0, null);
-      } else if (i > 0) {
-        let cp: ConversationCheckpoint | undefined;
-        for (let j = i - 1; j >= 0; j--) {
-          cp = msgIdToCp.get(messages[j].id);
-          if (cp) break;
-        }
-        if (cp) result.set(i, cp);
+        result.set(i, null);
+        firstUser = false;
+      } else if (latestCp) {
+        result.set(i, latestCp);
       }
     }
   }
