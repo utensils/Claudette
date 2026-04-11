@@ -31,7 +31,7 @@ import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { HeaderMenu } from "./HeaderMenu";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
-import { checkpointHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
+import { checkpointHasFileChanges, clearAllHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
@@ -995,7 +995,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                       messageContent: msg.content,
                       hasFileChanges: cp
                         ? checkpointHasFileChanges(cp, checkpoints)
-                        : checkpoints.some((c) => !!c.commit_hash),
+                        : clearAllHasFileChanges(checkpoints),
                     });
                   }}
                 >

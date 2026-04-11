@@ -23,6 +23,22 @@ export function checkpointHasFileChanges(
 }
 
 /**
+ * Determine whether clearing the entire conversation could involve
+ * restoring file changes. Returns true only when at least two checkpoints
+ * have different commit hashes, meaning files changed during the session.
+ * A single checkpoint or all-identical hashes means nothing to restore.
+ */
+export function clearAllHasFileChanges(
+  checkpoints: ConversationCheckpoint[],
+): boolean {
+  const hashes = checkpoints
+    .map((c) => c.commit_hash)
+    .filter((h): h is string => h !== null);
+  if (hashes.length === 0) return false;
+  return new Set(hashes).size > 1;
+}
+
+/**
  * Build a map of message index → checkpoint for rollback buttons.
  * Each User message gets mapped to the most recent checkpoint at or
  * before it, so users can always roll back — even past interrupted
