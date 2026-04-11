@@ -37,10 +37,11 @@ export function AppSettingsModal() {
       if (val) {
         setNotificationSound(val);
       } else {
-        // Migrate from legacy audio_notifications boolean.
+        // Default to "Default" for fresh installs.
+        // Only set "None" if legacy audio_notifications was explicitly disabled.
         const legacy = await getAppSetting("audio_notifications");
-        if (legacy === "true") setNotificationSound("Default");
-        else setNotificationSound("None");
+        if (legacy === "false") setNotificationSound("None");
+        else setNotificationSound("Default");
       }
     });
     getAppSetting("notification_command").then((val) => {
