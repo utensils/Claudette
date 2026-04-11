@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/utensils/Claudette/compare/v0.5.2...v0.5.3) (2026-04-11)
+
+
+### Bug Fixes
+
+* **build:** add platform-specific icons for macOS/Windows bundling ([#129](https://github.com/utensils/Claudette/issues/129)) ([ff1165a](https://github.com/utensils/Claudette/commit/ff1165af5be09b0d2c7aa32ec5540265c74a9a63))
+
 ## [0.5.2](https://github.com/utensils/Claudette/compare/v0.5.1...v0.5.2) (2026-04-10)
 
 
