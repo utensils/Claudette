@@ -92,8 +92,9 @@ export function useAgentStream() {
         }
 
         // Audio notification: play configured sound on every end-of-turn
-        // if the workspace is in the background.
-        if (wsId !== selectedWorkspaceId) {
+        // unless the user is actively watching the workspace (selected AND window focused).
+        const isWatching = wsId === selectedWorkspaceId && document.hasFocus();
+        if (!isWatching) {
           getAppSetting("notification_sound").then((sound) => {
             // Default to "Default" (enabled) for fresh installs.
             const effective = sound ?? "Default";
