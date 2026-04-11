@@ -1,6 +1,6 @@
 {
   "productName": "Claudette",
-  "identifier": "com.claudette.desktop",
+  "identifier": "com.claudette.app",
   "build": {
     "beforeDevCommand": { "script": "bun run dev", "cwd": "../src/ui" },
     "beforeBuildCommand": { "script": "bun run build", "cwd": "../src/ui" },
