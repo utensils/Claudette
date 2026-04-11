@@ -132,6 +132,17 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           toggleTerminalPanel();
           break;
+        case ",":
+          e.preventDefault();
+          {
+            const store = useAppStore.getState();
+            if (store.activeModal === "appSettings") {
+              store.closeModal();
+            } else {
+              store.openModal("appSettings");
+            }
+          }
+          break;
       }
     };
 
@@ -143,7 +154,14 @@ export function useKeyboardShortcuts() {
     };
     const handleKeyDownMeta = (e: KeyboardEvent) => {
       if ((e.key === "Meta" || e.key === "Control") && !e.repeat) {
-        useAppStore.getState().setMetaKeyHeld(true);
+        // Show badges only when Cmd/Ctrl is pressed alone.
+        if (!e.shiftKey && !e.altKey) {
+          useAppStore.getState().setMetaKeyHeld(true);
+        }
+      } else {
+        // Any other key pressed — hide badges immediately.
+        // Catches combos (Cmd+Shift+4, Cmd+C) and standalone keys.
+        useAppStore.getState().setMetaKeyHeld(false);
       }
     };
     // Clear on window blur (e.g. Cmd+Tab away)

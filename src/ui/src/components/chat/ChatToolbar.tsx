@@ -11,6 +11,9 @@ interface ChatToolbarProps {
   disabled: boolean;
 }
 
+const isMac = typeof navigator !== "undefined" && navigator.platform.startsWith("Mac");
+const mod = isMac ? "⌘" : "Ctrl+";
+
 export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
   const selectedModel = useAppStore((s) => s.selectedModel[workspaceId] ?? "opus");
   const fastMode = useAppStore((s) => s.fastMode[workspaceId] ?? false);
@@ -28,6 +31,7 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
   const setModelSelectorOpen = useAppStore((s) => s.setModelSelectorOpen);
   const clearAgentQuestion = useAppStore((s) => s.clearAgentQuestion);
   const clearPlanApproval = useAppStore((s) => s.clearPlanApproval);
+  const metaKeyHeld = useAppStore((s) => s.metaKeyHeld);
 
   const modelChipRef = useRef<HTMLButtonElement>(null);
   const [loaded, setLoaded] = useState(false);
@@ -172,6 +176,7 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
       >
         <Brain size={14} />
         <span className={styles.chipLabel}>Thinking</span>
+        {metaKeyHeld && <kbd className="shortcut-badge">{mod}T</kbd>}
       </button>
 
       <button

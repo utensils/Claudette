@@ -196,3 +196,17 @@ body,
     transform: scale(1);
   }
 }
+
+/* Keyboard shortcut badge — shown when Cmd/Ctrl is held alone */
+.shortcut-badge {
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--text-dim);
+  background: var(--hover-bg);
+  border: 1px solid var(--divider);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  animation: fadeIn 0.1s ease;
+  margin-left: 4px;
+}
