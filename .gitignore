@@ -12,7 +12,6 @@ src/ui/dist/
 
 # Tauri generated
 src-tauri/gen/
-src-tauri/icons/
 
 # Nix
 result

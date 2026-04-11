@@ -1,6 +1,6 @@
 {
   "productName": "Claudette",
-  "identifier": "com.claudette.app",
+  "identifier": "com.claudette.desktop",
   "build": {
     "beforeDevCommand": { "script": "bun run dev", "cwd": "../src/ui" },
     "beforeBuildCommand": { "script": "bun run build", "cwd": "../src/ui" },
@@ -41,7 +41,11 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "icon": [
-      "../assets/logo.png"
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ]
   },
   "plugins": {
