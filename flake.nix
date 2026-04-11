@@ -109,13 +109,27 @@
             pkgs.libiconv
           ];
 
+          # Linux native deps for webkit + GTK stack.
+          # NOTE: cairo / pango / harfbuzz / atk / gdk-pixbuf are propagated by
+          # gtk3, so nixpkgs' pkg-config setup hook picks them up automatically
+          # under `pkgs.mkShell` and `stdenv.mkDerivation`. We still list them
+          # here explicitly because `numtide/devshell` does not run that hook,
+          # and the devshell's PKG_CONFIG_PATH is built from this list below.
+          # Listing them in the package build too is harmless (they're already
+          # propagated) and keeps one source of truth for Linux deps.
           linuxBuildInputs = lib.optionals pkgs.stdenv.isLinux [
             pkgs.webkitgtk_4_1
             pkgs.gtk3
+            pkgs.cairo
+            pkgs.pango
+            pkgs.harfbuzz
+            pkgs.atk
+            pkgs.gdk-pixbuf
             pkgs.libsoup_3
             pkgs.glib
-            pkgs.openssl
             pkgs.glib-networking
+            pkgs.openssl
+            pkgs.zlib
             pkgs.libayatana-appindicator
           ];
 
@@ -237,6 +251,13 @@
             ++ darwinBuildInputs
             ++ linuxBuildInputs
             ++ lib.optionals pkgs.stdenv.isLinux [
+              # Anchor cc / ld / binutils to THIS flake's nixpkgs revision.
+              # Without this, the devshell picks up whatever system cc is on
+              # the user's PATH — on NixOS that's often an older-channel
+              # glibc, which then mismatches webkitgtk_4_1 (built against
+              # unstable's newer glibc) and fails at dynlink time with
+              # "version `GLIBC_2.XX' not found".
+              pkgs.stdenv.cc
               pkgs.wrapGAppsHook4
             ];
 
@@ -248,11 +269,51 @@
             ]
             ++ lib.optionals pkgs.stdenv.isLinux [
               {
-                # devshell doesn't run pkg-config setup hooks the way mkShell
-                # does, so we must set PKG_CONFIG_PATH explicitly for native
-                # GTK/WebKit/GLib deps to be found by cargo build scripts.
+                # numtide/devshell doesn't run nixpkgs' pkg-config setup hook,
+                # so propagated transitive deps (cairo/pango/atk/...) don't end
+                # up on PKG_CONFIG_PATH automatically. Build it by hand from
+                # linuxBuildInputs — see the note there about why the full
+                # gtk3 closure is listed explicitly.
                 name = "PKG_CONFIG_PATH";
                 value = lib.makeSearchPath "lib/pkgconfig" (map lib.getDev linuxBuildInputs);
+              }
+              {
+                # Runtime dynamic linker search path. webkit2gtk/gtk/
+                # libayatana-appindicator are dlopen'd at `cargo tauri dev`
+                # launch time — without this the window never opens.
+                name = "LD_LIBRARY_PATH";
+                value = lib.makeLibraryPath linuxBuildInputs;
+              }
+              {
+                # Link-time search path replacement for NIX_LDFLAGS.
+                # Under `pkgs.mkShell`, the cc-wrapper setup hook would add
+                # every buildInput's lib dir to the linker search path.
+                # devshell skips that hook, so libs referenced by naked -l
+                # entries inside a .pc Libs: field (e.g. `-lz` inside
+                # gdk-3.0.pc) are unreachable even though the package is
+                # in buildInputs. We hand rustc the full list of -L paths
+                # so rust-lld can resolve them during the final link step.
+                name = "RUSTFLAGS";
+                value = lib.concatStringsSep " " (
+                  map (p: "-L${lib.getLib p}/lib") linuxBuildInputs
+                );
+              }
+              {
+                # WebKitGTK's DMA-BUF renderer crashes the Wayland session on
+                # current Mesa/compositors with `Gdk-Message: Error 71
+                # (Protocol error) dispatching to Wayland display`.
+                # Disabling it forces the software-composited path, which is
+                # stable across GNOME/KDE/Sway on NixOS. Tauri upstream
+                # recommends this for dev until webkit2gtk ships a fix.
+                name = "WEBKIT_DISABLE_DMABUF_RENDERER";
+                value = "1";
+              }
+              {
+                # Belt-and-braces — some GPU/driver combos also need
+                # compositing mode off to avoid the same protocol error.
+                # Harmless when DMABUF is already disabled.
+                name = "WEBKIT_DISABLE_COMPOSITING_MODE";
+                value = "1";
               }
             ]
             ++ lib.optionals pkgs.stdenv.isDarwin [
