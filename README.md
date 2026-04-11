@@ -226,6 +226,10 @@ claudette-server --no-mdns
 
 All traffic is encrypted with TLS. The local app pins the server's certificate fingerprint on first connection (trust-on-first-use), similar to SSH's `known_hosts`.
 
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) to get started. All participants are expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Development notes
 
 - The project uses Rust edition 2024 and Bun as the frontend package manager.
