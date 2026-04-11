@@ -18,7 +18,7 @@ pub struct SetupResult {
     already_integrated: bool,
 }
 
-fn detect_user_shell() -> (String, ShellType) {
+pub fn detect_user_shell() -> (String, ShellType) {
     // Try $SHELL environment variable first
     if let Ok(shell) = std::env::var("SHELL") {
         let shell_type = match shell.as_str() {

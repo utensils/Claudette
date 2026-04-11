@@ -20,8 +20,6 @@ function App() {
   const setLocalServerRunning = useAppStore((s) => s.setLocalServerRunning);
   const setLocalServerConnectionString = useAppStore((s) => s.setLocalServerConnectionString);
   const setCurrentThemeId = useAppStore((s) => s.setCurrentThemeId);
-  const setWorkspaceTerminalCommand = useAppStore((s) => s.setWorkspaceTerminalCommand);
-  const terminalTabs = useAppStore((s) => s.terminalTabs);
 
   useEffect(() => {
     loadInitialData().then((data) => {
@@ -86,7 +84,8 @@ function App() {
       const unlistenCommandDetected = await listen<CommandEvent>("pty-command-detected", (event) => {
         const { pty_id, command } = event.payload;
 
-        // Find the workspace that owns this PTY
+        // Find the workspace that owns this PTY - use getState() to avoid stale closure
+        const { terminalTabs, setWorkspaceTerminalCommand } = useAppStore.getState();
         for (const [wsId, tabs] of Object.entries(terminalTabs)) {
           const tab = tabs.find((t) => t.pty_id === pty_id);
           if (tab) {
@@ -103,7 +102,8 @@ function App() {
       const unlistenCommandStopped = await listen<CommandEvent>("pty-command-stopped", (event) => {
         const { pty_id, command, exit_code } = event.payload;
 
-        // Find the workspace that owns this PTY
+        // Find the workspace that owns this PTY - use getState() to avoid stale closure
+        const { terminalTabs, setWorkspaceTerminalCommand } = useAppStore.getState();
         for (const [wsId, tabs] of Object.entries(terminalTabs)) {
           const tab = tabs.find((t) => t.pty_id === pty_id);
           if (tab) {

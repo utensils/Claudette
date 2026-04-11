@@ -6,6 +6,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::commands::shell::detect_user_shell;
 use crate::osc133::{Osc133Event, Osc133Parser};
 use crate::state::{AppState, PtyHandle};
 
@@ -20,40 +21,6 @@ struct CommandEvent {
     pty_id: u64,
     command: Option<String>,
     exit_code: Option<i32>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum ShellType {
-    Bash,
-    Zsh,
-    Fish,
-    Unknown,
-}
-
-fn detect_user_shell() -> (String, ShellType) {
-    // Try $SHELL environment variable first
-    if let Ok(shell) = std::env::var("SHELL") {
-        let shell_type = match shell.as_str() {
-            s if s.contains("bash") => ShellType::Bash,
-            s if s.contains("zsh") => ShellType::Zsh,
-            s if s.contains("fish") => ShellType::Fish,
-            _ => ShellType::Unknown,
-        };
-        return (shell, shell_type);
-    }
-
-    // Fallback: use system default
-    #[cfg(target_os = "macos")]
-    let default = ("/bin/zsh".to_string(), ShellType::Zsh);
-
-    #[cfg(target_os = "linux")]
-    let default = ("/bin/bash".to_string(), ShellType::Bash);
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    let default = ("/bin/sh".to_string(), ShellType::Unknown);
-
-    default
 }
 
 #[tauri::command]
