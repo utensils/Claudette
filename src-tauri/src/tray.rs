@@ -168,12 +168,12 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
         .get_app_setting("notification_sound")
         .ok()
         .flatten()
-        .or_else(|| {
-            match db.get_app_setting("audio_notifications").ok().flatten() {
+        .or_else(
+            || match db.get_app_setting("audio_notifications").ok().flatten() {
                 Some(v) if v == "false" => Some("None".to_string()),
                 _ => None,
-            }
-        })
+            },
+        )
         .unwrap_or_else(|| "Default".to_string());
 
     let title = "Claudette — Input Required";
