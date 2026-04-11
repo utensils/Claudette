@@ -459,7 +459,7 @@ export function useAgentStream() {
         .then((msgs) => {
           if (!msgs) return;
           const filtered = msgs.filter(
-            (m: ChatMessage) => m.role !== "Assistant" || m.content.trim() !== "",
+            (m: ChatMessage) => m.role !== "Assistant" || m.content.trim() !== "" || !!m.thinking,
           );
           debugChat("stream", "checkpoint-reload-chat-history", {
             wsId,

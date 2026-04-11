@@ -307,9 +307,10 @@ export function ChatPanel() {
     loadHistory
       .then((msgs: ChatMessage[]) => {
         if (cancelled) return;
-        // Filter out empty assistant messages (legacy data).
+        // Filter out empty assistant messages (legacy data), but keep
+        // those that carry thinking content.
         const filtered = msgs.filter(
-          (m) => m.role !== "Assistant" || m.content.trim() !== ""
+          (m) => m.role !== "Assistant" || m.content.trim() !== "" || !!m.thinking
         );
         debugChat("ChatPanel", "load-history:success", {
           wsId,
