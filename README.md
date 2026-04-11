@@ -226,6 +226,10 @@ claudette-server --no-mdns
 
 All traffic is encrypted with TLS. The local app pins the server's certificate fingerprint on first connection (trust-on-first-use), similar to SSH's `known_hosts`.
 
+## Community
+
+Join us on [Discord](https://discord.gg/Ks9Ghnem) to ask questions, share feedback, and connect with other Claudette users.
+
 ## Contributing
 
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) to get started. All participants are expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
