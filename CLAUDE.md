@@ -80,15 +80,17 @@ src/
       stores/           — Zustand store (useAppStore)
       services/         — Typed Tauri invoke() wrappers
       types/            — TypeScript types matching Rust models
+      utils/            — Pure logic helpers (checkpoint utilities, etc.)
       styles/           — CSS custom properties (dark theme)
 src-tauri/
   Cargo.toml            — Tauri binary crate (depends on claudette)
   tauri.conf.json       — Tauri configuration
   src/
-    main.rs             — Tauri entry point, command registration
+    main.rs             — Tauri entry point, command registration, custom macOS app menu
     commands/           — #[tauri::command] wrappers by domain
     state.rs            — managed AppState (db_path, agents, PTYs)
     pty.rs              — PTY management via portable-pty
+    tray.rs             — system tray: icon/menu/tooltip, notifications, agent state
 ```
 
 ### Guidelines for new code
@@ -100,6 +102,13 @@ src-tauri/
 - **State** lives in the Zustand store (`useAppStore`) — UI state in React, agent sessions in Rust-side `AppState`
 - **Streaming data** (agent events, PTY output) flows via Tauri events, consumed by React hooks
 - **Colors and styling** use CSS custom properties defined in `styles/theme.css`
+
+### Notification architecture
+
+- Notification sound and commands run on the **Rust side** (not in the webview) — macOS suspends webview JS when the window is hidden
+- `tray.rs` handles attention notifications (AskUserQuestion/ExitPlanMode); `commands/chat.rs` handles agent-finished notifications
+- Both paths use the shared `build_notification_command` helper in `commands/settings.rs`
+- `mac-notification-sys` for native macOS notifications with click-to-navigate; `tauri-plugin-notification` on Linux
 
 ### Database conventions
 
