@@ -121,10 +121,12 @@ fn main() {
         .on_menu_event(|app, event| {
             if event.id().as_ref() == "quit-app" {
                 let state = app.state::<state::AppState>();
+                // If the lock is contended (write held during turn start),
+                // assume agents are running — safer to confirm than to quit.
                 let running = state
                     .agents
                     .try_read()
-                    .is_ok_and(|a| tray::has_running_agents(&a));
+                    .map_or(true, |a| tray::has_running_agents(&a));
                 if running {
                     let handle = app.clone();
                     tauri::async_runtime::spawn(async move {

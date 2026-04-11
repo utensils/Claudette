@@ -97,7 +97,31 @@ pub fn play_notification_sound(sound: String) {
         };
         let _ = std::process::Command::new("afplay").arg(&path).spawn();
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, play the system "bell" or "message" sound via paplay/canberra.
+        // "Default" maps to the desktop notification sound; named sounds are
+        // looked up via the XDG sound theme.
+        let sound_name = if sound == "Default" {
+            "bell".to_string()
+        } else {
+            sound.to_lowercase()
+        };
+        // canberra-gtk-play is widely available on Linux desktops.
+        let _ = std::process::Command::new("canberra-gtk-play")
+            .arg("-i")
+            .arg(&sound_name)
+            .spawn()
+            .or_else(|_| {
+                // Fallback to paplay with the freedesktop theme sound.
+                std::process::Command::new("paplay")
+                    .arg(format!(
+                        "/usr/share/sounds/freedesktop/stereo/{sound_name}.oga"
+                    ))
+                    .spawn()
+            });
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = sound;
     }

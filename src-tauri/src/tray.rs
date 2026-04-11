@@ -62,7 +62,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
                 let running = state
                     .agents
                     .try_read()
-                    .is_ok_and(|a| has_running_agents(&a));
+                    .map_or(true, |a| has_running_agents(&a));
                 if running {
                     let handle = app.clone();
                     tauri::async_runtime::spawn(async move {

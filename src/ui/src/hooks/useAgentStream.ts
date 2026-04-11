@@ -92,15 +92,18 @@ export function useAgentStream() {
         }
 
         // Audio notification: play configured sound if workspace is in background.
-        if (wsId !== selectedWorkspaceId) {
+        // Skip if the agent is waiting for input (AskUserQuestion / ExitPlanMode)
+        // — those are handled by notify_attention on the Rust side.
+        const store = useAppStore.getState();
+        const isAttention = !!store.agentQuestions[wsId] || !!store.planApprovals[wsId];
+        if (wsId !== selectedWorkspaceId && !isAttention) {
           getAppSetting("notification_sound").then((sound) => {
             if (sound && sound !== "None") {
               playNotificationSound(sound).catch(() => {});
             }
           }).catch(() => {});
 
-          // Also run notification command if configured.
-          const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId);
+          const ws = store.workspaces.find((w) => w.id === wsId);
           runNotificationCommand(
             "Agent Finished",
             `${ws?.name ?? "An agent"} has completed`,
