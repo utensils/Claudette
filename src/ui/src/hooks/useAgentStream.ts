@@ -298,6 +298,9 @@ export function useAgentStream() {
           }
           case "assistant": {
             // Full message received — it's already persisted by the backend.
+            // The CLI may fire multiple assistant events per turn: one with
+            // thinking blocks only (no text), then one with text. We only
+            // add a message and clear thinking when we have actual text.
             const text = streamEvent.message.content
               .filter(
                 (b): b is { type: "text"; text: string } => b.type === "text"
@@ -322,11 +325,10 @@ export function useAgentStream() {
                 created_at: new Date().toISOString(),
                 thinking: useAppStore.getState().streamingThinking[wsId] || null,
               });
+              // Clear thinking only after attaching it to a text message.
+              clearStreamingThinking(wsId);
             }
             setStreamingContent(wsId, "");
-            // Clear streaming thinking now that it's been committed to the
-            // assistant message — the persisted msg.thinking handles display.
-            clearStreamingThinking(wsId);
             break;
           }
           case "result": {

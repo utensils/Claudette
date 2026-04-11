@@ -393,6 +393,7 @@ async fn handle_send_chat_message(
     tokio::spawn(async move {
         let mut rx = turn_handle.event_rx;
         let mut got_init = false;
+        let mut pending_thinking: Option<String> = None;
         while let Some(event) = rx.recv().await {
             if let AgentEvent::Stream(StreamEvent::System { ref subtype, .. }) = event
                 && subtype == "init"
@@ -407,7 +408,9 @@ async fn handle_send_chat_message(
                 agents.remove(&ws_id);
             }
 
-            // Persist assistant messages.
+            // Persist assistant messages. The CLI may fire multiple assistant
+            // events per turn (thinking-only, then text). Accumulate thinking
+            // and save only when text content arrives.
             if let AgentEvent::Stream(StreamEvent::Assistant { ref message }) = event {
                 let full_text: String = message
                     .content
@@ -422,7 +425,7 @@ async fn handle_send_chat_message(
                     .collect::<Vec<_>>()
                     .join("");
 
-                let thinking_text: Option<String> = {
+                let event_thinking: Option<String> = {
                     let parts: Vec<&str> = message
                         .content
                         .iter()
@@ -441,7 +444,14 @@ async fn handle_send_chat_message(
                     }
                 };
 
-                if (!full_text.trim().is_empty() || thinking_text.is_some())
+                if let Some(t) = event_thinking {
+                    pending_thinking = Some(match pending_thinking.take() {
+                        Some(mut existing) => { existing.push_str(&t); existing }
+                        None => t,
+                    });
+                }
+
+                if !full_text.trim().is_empty()
                     && let Ok(db) = Database::open(&db_path)
                 {
                     let msg = ChatMessage {
@@ -452,7 +462,7 @@ async fn handle_send_chat_message(
                         cost_usd: None,
                         duration_ms: None,
                         created_at: now_iso(),
-                        thinking: thinking_text,
+                        thinking: pending_thinking.take(),
                     };
                     let _ = db.insert_chat_message(&msg);
                 }

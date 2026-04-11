@@ -212,6 +212,10 @@ pub async fn send_chat_message(
         // to the user message ID for tool-only turns (AskUserQuestion, plan
         // approval) so that checkpoint creation isn't skipped entirely.
         let mut last_assistant_msg_id: Option<String> = None;
+        // Accumulate thinking from thinking-only assistant events so it can
+        // be attached to the next text-bearing assistant message. The CLI
+        // may fire a thinking-only event followed by a text-only event.
+        let mut pending_thinking: Option<String> = None;
         while let Some(event) = rx.recv().await {
             // Track whether the CLI initialized successfully.
             if let AgentEvent::Stream(StreamEvent::System { subtype, .. }) = &event
@@ -236,6 +240,9 @@ pub async fn send_chat_message(
                 }
             }
             // Persist assistant messages to DB on completion.
+            // The CLI may fire multiple assistant events per turn: one with
+            // thinking blocks only, then one with text. We accumulate thinking
+            // and only save when we have text content to attach it to.
             if let AgentEvent::Stream(StreamEvent::Assistant { ref message }) = event {
                 let full_text: String = message
                     .content
@@ -250,7 +257,8 @@ pub async fn send_chat_message(
                     .collect::<Vec<_>>()
                     .join("");
 
-                let thinking_text: Option<String> = {
+                // Extract thinking from this event.
+                let event_thinking: Option<String> = {
                     let parts: Vec<&str> = message
                         .content
                         .iter()
@@ -269,7 +277,16 @@ pub async fn send_chat_message(
                     }
                 };
 
-                if (!full_text.trim().is_empty() || thinking_text.is_some())
+                // Accumulate thinking from this event.
+                if let Some(t) = event_thinking {
+                    pending_thinking = Some(match pending_thinking.take() {
+                        Some(mut existing) => { existing.push_str(&t); existing }
+                        None => t,
+                    });
+                }
+
+                // Only save when we have text content — attach accumulated thinking.
+                if !full_text.trim().is_empty()
                     && let Ok(db) = Database::open(&db_path)
                 {
                     let msg_id = uuid::Uuid::new_v4().to_string();
@@ -281,7 +298,7 @@ pub async fn send_chat_message(
                         cost_usd: None,
                         duration_ms: None,
                         created_at: now_iso(),
-                        thinking: thinking_text,
+                        thinking: pending_thinking.take(),
                     };
                     if db.insert_chat_message(&msg).is_ok() {
                         last_assistant_msg_id = Some(msg_id);
