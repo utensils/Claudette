@@ -344,23 +344,28 @@ export const Sidebar = memo(function Sidebar() {
                       selectWorkspace(ws.id);
                     }}
                   >
-                    <span
-                      className={`${styles.statusDot} ${ws.agent_status === "Running" ? styles.statusDotRunning : ""}`}
-                      style={{
-                        background:
-                          ws.agent_status === "Running"
-                            ? "var(--status-running)"
-                            : ws.agent_status === "Stopped"
-                              ? "var(--status-stopped)"
-                              : "var(--status-idle)",
-                      }}
-                    />
+                    {badge === "done" ? (
+                      <BadgeCheck size={14} className={styles.badgeDone} />
+                    ) : badge === "plan" ? (
+                      <BadgeInfo size={14} className={styles.badgePlan} />
+                    ) : badge === "ask" ? (
+                      <BadgeQuestionMark size={14} className={styles.badgeAsk} />
+                    ) : (
+                      <span
+                        className={`${styles.statusDot} ${ws.agent_status === "Running" ? styles.statusDotRunning : ""}`}
+                        style={{
+                          background:
+                            ws.agent_status === "Running"
+                              ? "var(--status-running)"
+                              : ws.agent_status === "Stopped"
+                                ? "var(--status-stopped)"
+                                : "var(--status-idle)",
+                        }}
+                      />
+                    )}
                     <div className={styles.wsInfo}>
                       <span className={styles.wsName}>
                         {ws.name}
-                        {badge === "done" && <BadgeCheck size={14} className={styles.badgeDone} />}
-                        {badge === "plan" && <BadgeInfo size={14} className={styles.badgePlan} />}
-                        {badge === "ask" && <BadgeQuestionMark size={14} className={styles.badgeAsk} />}
                       </span>
                       <span className={styles.wsBranch}>{ws.branch_name}</span>
                       {(() => {
