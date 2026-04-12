@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../../stores/useAppStore";
+import { useTaskTracker } from "../../hooks/useTaskTracker";
 import { loadDiffFiles, sendRemoteCommand } from "../../services/tauri";
 import type { DiffFilesResult } from "../../services/tauri";
+import { TaskList } from "./TaskList";
 import styles from "./RightSidebar.module.css";
 
 export function RightSidebar() {
@@ -15,11 +17,15 @@ export function RightSidebar() {
   const setDiffLoading = useAppStore((s) => s.setDiffLoading);
   const setDiffViewMode = useAppStore((s) => s.setDiffViewMode);
   const diffViewMode = useAppStore((s) => s.diffViewMode);
+  const activeTab = useAppStore((s) => s.rightSidebarTab);
+  const setActiveTab = useAppStore((s) => s.setRightSidebarTab);
 
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
   const isRunning = ws?.agent_status === "Running";
   const remoteConnectionId = ws?.remote_connection_id ?? null;
   const prevIsRunning = useRef<boolean | undefined>(undefined);
+
+  const { totalCount: taskCount } = useTaskTracker(selectedWorkspaceId);
 
   // Load diff files for either local or remote workspace
   const loadDiff = useCallback(
@@ -133,57 +139,91 @@ export function RightSidebar() {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <span className={styles.title}>
-          Changed Files ({diffFiles.length})
-        </span>
-        <div className={styles.controls}>
-          <button
-            className={styles.modeBtn}
-            onClick={() =>
-              setDiffViewMode(
-                diffViewMode === "Unified" ? "SideBySide" : "Unified"
-              )
-            }
-            title="Toggle view mode"
-          >
-            {diffViewMode === "Unified" ? "≡" : "‖"}
-          </button>
-        </div>
+      <div className={styles.tabBar}>
+        <button
+          className={`${styles.tab} ${activeTab === "changes" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("changes")}
+        >
+          Changes
+          {diffFiles.length > 0 && (
+            <span className={styles.tabBadge}>{diffFiles.length}</span>
+          )}
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === "tasks" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("tasks")}
+        >
+          Tasks
+          {taskCount > 0 && (
+            <span className={styles.tabBadge}>{taskCount}</span>
+          )}
+        </button>
       </div>
-      <div className={styles.list}>
-        {diffLoading ? (
-          <div className={styles.empty}>Loading...</div>
-        ) : diffFiles.length === 0 ? (
-          <div className={styles.empty}>No changes</div>
-        ) : (
-          diffFiles.map((file) => (
-            <div
-              key={file.path}
-              className={`${styles.file} ${diffSelectedFile === file.path ? styles.fileSelected : ""}`}
-              onClick={() => setDiffSelectedFile(file.path)}
-            >
-              <span
-                className={styles.status}
-                style={{ color: statusColor(file.status) }}
+
+      {activeTab === "changes" && (
+        <>
+          <div className={styles.header}>
+            <span className={styles.title}>
+              Changed Files ({diffFiles.length})
+            </span>
+            <div className={styles.controls}>
+              <button
+                className={styles.modeBtn}
+                onClick={() =>
+                  setDiffViewMode(
+                    diffViewMode === "Unified" ? "SideBySide" : "Unified"
+                  )
+                }
+                title="Toggle view mode"
               >
-                {statusLabel(file.status)}
-              </span>
-              <span className={styles.path}>{file.path}</span>
-              {(file.additions !== undefined || file.deletions !== undefined) && (
-                <span className={styles.stats}>
-                  {file.additions !== undefined && (
-                    <span className={styles.additions}>+{file.additions}</span>
-                  )}
-                  {file.deletions !== undefined && (
-                    <span className={styles.deletions}>-{file.deletions}</span>
-                  )}
-                </span>
-              )}
+                {diffViewMode === "Unified" ? "≡" : "‖"}
+              </button>
             </div>
-          ))
-        )}
-      </div>
+          </div>
+          <div className={styles.list}>
+            {diffLoading ? (
+              <div className={styles.empty}>Loading...</div>
+            ) : diffFiles.length === 0 ? (
+              <div className={styles.empty}>No changes</div>
+            ) : (
+              diffFiles.map((file) => (
+                <div
+                  key={file.path}
+                  className={`${styles.file} ${diffSelectedFile === file.path ? styles.fileSelected : ""}`}
+                  onClick={() => setDiffSelectedFile(file.path)}
+                >
+                  <span
+                    className={styles.status}
+                    style={{ color: statusColor(file.status) }}
+                  >
+                    {statusLabel(file.status)}
+                  </span>
+                  <span className={styles.path}>{file.path}</span>
+                  {(file.additions !== undefined || file.deletions !== undefined) && (
+                    <span className={styles.stats}>
+                      {file.additions !== undefined && (
+                        <span className={styles.additions}>+{file.additions}</span>
+                      )}
+                      {file.deletions !== undefined && (
+                        <span className={styles.deletions}>-{file.deletions}</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+
+      {activeTab === "tasks" && selectedWorkspaceId && (
+        <TaskList workspaceId={selectedWorkspaceId} />
+      )}
+      {activeTab === "tasks" && !selectedWorkspaceId && (
+        <div className={styles.list}>
+          <div className={styles.empty}>No workspace selected</div>
+        </div>
+      )}
     </div>
   );
 }

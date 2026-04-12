@@ -1,0 +1,32 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin: 4px 0 4px 16px;
+  background: var(--hover-bg);
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.badge:hover {
+  background: var(--selected-bg);
+  color: var(--text-muted);
+}
+
+.icon {
+  font-size: 10px;
+  color: var(--accent-dim);
+}
+
+.allDone .icon {
+  color: var(--diff-added-text);
+}
+
+.label {
+  font-weight: 500;
+}

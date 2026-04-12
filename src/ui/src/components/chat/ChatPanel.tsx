@@ -36,6 +36,7 @@ import { FileMentionPicker, matchFiles } from "./FileMentionPicker";
 import { checkpointHasFileChanges, clearAllHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { PanelToggles } from "../shared/PanelToggles";
+import { TaskProgressBadge } from "./TaskProgressBadge";
 import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
 
@@ -690,6 +691,10 @@ export function ChatPanel() {
                 workspaceId={selectedWorkspaceId}
                 isRunning={isRunning ?? false}
               />
+            )}
+
+            {selectedWorkspaceId && (
+              <TaskProgressBadge workspaceId={selectedWorkspaceId} />
             )}
 
             {pendingQuestion && (

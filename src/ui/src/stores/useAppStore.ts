@@ -194,12 +194,14 @@ interface AppState {
   sidebarWidth: number;
   rightSidebarWidth: number;
   terminalHeight: number;
+  rightSidebarTab: "changes" | "tasks";
   sidebarFilter: "all" | "active" | "archived";
   repoCollapsed: Record<string, boolean>;
   fuzzyFinderOpen: boolean;
   commandPaletteOpen: boolean;
   toggleSidebar: () => void;
   toggleRightSidebar: () => void;
+  setRightSidebarTab: (tab: "changes" | "tasks") => void;
   setSidebarWidth: (w: number) => void;
   setRightSidebarWidth: (w: number) => void;
   setTerminalHeight: (h: number) => void;
@@ -723,6 +725,7 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarWidth: 260,
   rightSidebarWidth: 250,
   terminalHeight: 300,
+  rightSidebarTab: "changes",
   sidebarFilter: "all",
   repoCollapsed: {},
   fuzzyFinderOpen: false,
@@ -730,6 +733,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleRightSidebar: () =>
     set((s) => ({ rightSidebarVisible: !s.rightSidebarVisible })),
+  setRightSidebarTab: (tab) => set({ rightSidebarTab: tab }),
   setSidebarWidth: (w) => set({ sidebarWidth: w }),
   setRightSidebarWidth: (w) => set({ rightSidebarWidth: w }),
   setTerminalHeight: (h) => set({ terminalHeight: h }),

@@ -1,0 +1,66 @@
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.task {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  transition: background var(--transition-fast);
+}
+
+.task:hover {
+  background: var(--hover-bg);
+}
+
+.statusIcon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.description {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 18px;
+  color: var(--text-muted);
+}
+
+.completedDescription {
+  color: var(--text-dim);
+  text-decoration: line-through;
+  text-decoration-color: var(--text-dim);
+}
+
+.priorityBadge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 4px;
+  border-radius: 3px;
+  line-height: 18px;
+}
+
+.priorityHigh {
+  color: var(--diff-removed-text);
+}
+
+.priorityLow {
+  color: var(--text-dim);
+}
