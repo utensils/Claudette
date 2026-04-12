@@ -203,10 +203,12 @@ fn main() {
                         .tray_handle
                         .lock()
                         .is_ok_and(|g| g.is_some());
+                    // Fail closed: if the lock is contended, assume agents
+                    // are running so we don't accidentally quit mid-task.
                     let running = state
                         .agents
                         .try_read()
-                        .is_ok_and(|a| tray::has_running_agents(&a));
+                        .map_or(true, |a| tray::has_running_agents(&a));
                     if has_tray && running {
                         api.prevent_close();
                         let _ = window.hide();
