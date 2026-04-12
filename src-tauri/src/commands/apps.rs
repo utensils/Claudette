@@ -296,7 +296,16 @@ fn terminal_exec_args(terminal_id: &str) -> &'static [&'static str] {
     }
 }
 
+/// Shell-quote a string using single quotes (POSIX-safe).
+/// e.g. `hello world` → `'hello world'`, `it's` → `'it'\''s'`
+#[cfg(target_os = "macos")]
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Launch a TUI editor via AppleScript when only .app-bundle terminals are available (macOS).
+/// Builds a fully shell-quoted command in Rust and passes it as a single argument
+/// to avoid injection risks from paths or args with special characters.
 #[cfg(target_os = "macos")]
 async fn open_tui_via_applescript(
     editor_entry: &AppEntry,
@@ -304,21 +313,22 @@ async fn open_tui_via_applescript(
     worktree_path: &str,
     terminal: &DetectedApp,
 ) -> Result<(), String> {
-    // Build the shell command: cd '<path>' && <editor> <args>
-    // The editor's open_args may include flags; substitute {} with ".".
-    let mut editor_argv = vec![editor_detected.detected_path.clone()];
+    // Build a properly shell-quoted command: cd '<path>' && '<editor>' '<arg1>' '<arg2>' ...
+    let mut editor_parts = vec![shell_quote(&editor_detected.detected_path)];
     for arg in &editor_entry.open_args {
-        editor_argv.push(arg.replace("{}", "."));
+        editor_parts.push(shell_quote(&arg.replace("{}", ".")));
     }
-    let editor_cmd = editor_argv.join(" ");
+    let full_cmd = format!(
+        "cd {} && {}",
+        shell_quote(worktree_path),
+        editor_parts.join(" ")
+    );
 
     let (app_name, script) = if terminal.id == "iterm2" {
         (
             "iTerm",
             r#"on run argv
-    set p to item 1 of argv
-    set e to item 2 of argv
-    set cmd to "cd " & quoted form of p & " && " & e
+    set cmd to item 1 of argv
     tell application "iTerm"
         activate
         create window with default profile command cmd
@@ -329,9 +339,7 @@ end run"#,
         (
             "Terminal",
             r#"on run argv
-    set p to item 1 of argv
-    set e to item 2 of argv
-    set cmd to "cd " & quoted form of p & " && " & e
+    set cmd to item 1 of argv
     tell application "Terminal"
         activate
         do script cmd
@@ -344,8 +352,7 @@ end run"#,
         .arg("-e")
         .arg(script)
         .arg("--")
-        .arg(worktree_path)
-        .arg(&editor_cmd)
+        .arg(&full_cmd)
         .spawn()
         .map_err(|e| {
             format!(
@@ -430,7 +437,9 @@ pub async fn open_workspace_in_app(
     worktree_path: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Reload config each time so user edits take effect without restart.
+    // Reload config each time so edits to open_args, needs_terminal, etc. take
+    // effect without restart.  Note: the *detected apps list* (which apps appear
+    // in the menu) is cached from startup; adding a new app requires restart.
     let config = load_apps_config();
     let entry = config
         .apps
@@ -587,8 +596,9 @@ mod tests {
 
     #[test]
     fn load_apps_config_missing_file_returns_default() {
-        // Point at a path that definitely doesn't exist
-        let config = load_apps_config_from(Path::new("/tmp/claudette-test-nonexistent/apps.json"));
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("apps.json");
+        let config = load_apps_config_from(&path);
         assert!(!config.apps.is_empty());
     }
 
