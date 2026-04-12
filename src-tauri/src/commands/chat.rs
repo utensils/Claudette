@@ -260,11 +260,18 @@ pub async fn send_chat_message(
             {
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
+                let already_notified = agents
+                    .get(&ws_id)
+                    .is_some_and(|s| s.needs_attention);
                 if let Some(session) = agents.get_mut(&ws_id) {
                     session.needs_attention = true;
                 }
                 drop(agents);
-                crate::tray::notify_attention(&app, &ws_id);
+                // Only send notification once per attention cycle — skip if
+                // we already notified the user about this workspace.
+                if !already_notified {
+                    crate::tray::notify_attention(&app, &ws_id);
+                }
             }
 
             if let AgentEvent::ProcessExited(_code) = &event {
