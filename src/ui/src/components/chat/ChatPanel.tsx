@@ -32,7 +32,7 @@ import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { HeaderMenu } from "./HeaderMenu";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
-import { FileMentionPicker, fuzzyMatchFiles } from "./FileMentionPicker";
+import { FileMentionPicker, matchFiles } from "./FileMentionPicker";
 import { checkpointHasFileChanges, clearAllHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { debugChat } from "../../utils/chatDebug";
@@ -455,10 +455,11 @@ export function ChatPanel() {
   useEffect(() => {
     if (isRunning || !selectedWorkspaceId || !queuedMessage) return;
     // Agent just finished — dispatch the queued message.
-    const content = queuedMessage;
+    const { content, mentionedFiles } = queuedMessage;
     clearQueuedMessage(selectedWorkspaceId);
+    const filesSet = mentionedFiles?.length ? new Set(mentionedFiles) : undefined;
     // Use a microtask to avoid calling handleSend during render.
-    queueMicrotask(() => handleSendRef.current?.(content));
+    queueMicrotask(() => handleSendRef.current?.(content, filesSet));
   }, [isRunning, selectedWorkspaceId, queuedMessage, clearQueuedMessage]);
 
   if (!ws) return null;
@@ -467,11 +468,16 @@ export function ChatPanel() {
     const trimmed = content.trim();
     if (!trimmed || !selectedWorkspaceId) return;
 
+    // Convert mentioned files set to array for the backend.
+    const mentionedFilesArray = mentionedFiles?.size
+      ? [...mentionedFiles]
+      : undefined;
+
     // If the agent is running, queue the message instead of interrupting.
     // The user can press Escape to stop the agent if they want to interrupt.
     // Queued messages are auto-sent when the current turn finishes.
     if (isRunning) {
-      setQueuedMessage(selectedWorkspaceId, trimmed);
+      setQueuedMessage(selectedWorkspaceId, trimmed, mentionedFilesArray);
       return;
     }
 
@@ -483,11 +489,6 @@ export function ChatPanel() {
     }
 
     setError(null);
-
-    // Convert mentioned files set to array for the backend.
-    const mentionedFilesArray = mentionedFiles?.size
-      ? [...mentionedFiles]
-      : undefined;
 
     // Push to prompt history.
     const history = (historyRef.current[selectedWorkspaceId] ??= []);
@@ -725,7 +726,7 @@ export function ChatPanel() {
             {queuedMessage && selectedWorkspaceId && (
               <div className={styles.queuedMessage}>
                 <span className={styles.queuedLabel}>Queued</span>
-                <span className={styles.queuedContent}>{queuedMessage}</span>
+                <span className={styles.queuedContent}>{queuedMessage.content}</span>
                 <button
                   className={styles.queuedCancel}
                   onClick={() => clearQueuedMessage(selectedWorkspaceId)}
@@ -1252,7 +1253,7 @@ function ChatInputArea({
 
   const mentionQuery = extractMentionQuery(chatInput, cursorPos);
   const mentionResults = useMemo(
-    () => (mentionQuery === null ? [] : fuzzyMatchFiles(workspaceFiles, mentionQuery)),
+    () => (mentionQuery === null ? [] : matchFiles(workspaceFiles, mentionQuery)),
     [workspaceFiles, mentionQuery],
   );
   const showFilePicker =
@@ -1310,9 +1311,15 @@ function ChatInputArea({
   }, [chatInput]);
 
   const handleSend = () => {
-    const files = mentionedFilesRef.current.size > 0
-      ? new Set(mentionedFilesRef.current)
-      : undefined;
+    // Only include files whose @path tokens are still in the text, so that
+    // removed references don't get expanded.
+    const activeFiles = new Set<string>();
+    for (const path of mentionedFilesRef.current) {
+      if (chatInput.includes(`@${path}`)) {
+        activeFiles.add(path);
+      }
+    }
+    const files = activeFiles.size > 0 ? activeFiles : undefined;
     onSend(chatInput, files);
     setChatInput("");
     mentionedFilesRef.current = new Set();

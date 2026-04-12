@@ -2,6 +2,13 @@ use std::path::{Path, PathBuf};
 
 const MAX_FILE_SIZE: usize = 100 * 1024; // 100 KB
 
+fn escape_xml_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 /// Result of reading a file from a worktree with safety checks applied.
 pub struct SafeFileRead {
     pub content: Option<String>,
@@ -42,7 +49,13 @@ async fn read_checked(path: &PathBuf) -> Option<SafeFileRead> {
     let metadata = tokio::fs::metadata(path).await.ok()?;
     let size_bytes = metadata.len();
 
-    let raw = tokio::fs::read(path).await.ok()?;
+    // Read at most MAX_FILE_SIZE + 1 bytes to detect truncation without
+    // buffering the entire file for large inputs.
+    use tokio::io::AsyncReadExt;
+    let file = tokio::fs::File::open(path).await.ok()?;
+    let read_limit = (MAX_FILE_SIZE + 1) as u64;
+    let mut raw = Vec::with_capacity(read_limit.min(size_bytes + 1) as usize);
+    file.take(read_limit).read_to_end(&mut raw).await.ok()?;
 
     // Binary detection: check first 8 KB for null bytes.
     let check_len = raw.len().min(8192);
@@ -104,8 +117,9 @@ pub async fn expand_file_mentions(
             None => continue, // binary
         };
 
+        let escaped_path = escape_xml_attr(relative_path);
         let mut block =
-            format!("<referenced-file path=\"{relative_path}\">\n{text}\n</referenced-file>");
+            format!("<referenced-file path=\"{escaped_path}\">\n{text}\n</referenced-file>");
         if read.truncated {
             block.push_str(&format!(
                 "\n(Note: file truncated at 100KB, total size {} bytes)",

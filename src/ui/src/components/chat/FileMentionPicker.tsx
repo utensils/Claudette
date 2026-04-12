@@ -54,7 +54,7 @@ export function FileMentionPicker({
   );
 }
 
-export function fuzzyMatchFiles(
+export function matchFiles(
   files: FileEntry[],
   query: string,
 ): FileMatchResult[] {
