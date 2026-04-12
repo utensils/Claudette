@@ -36,8 +36,8 @@ import { FileMentionPicker, matchFiles } from "./FileMentionPicker";
 import { checkpointHasFileChanges, clearAllHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { PanelToggles } from "../shared/PanelToggles";
-import { deriveTasks, turnHasTaskActivity, hasTaskActivity } from "../../hooks/useTaskTracker";
-import type { TaskTrackerResult } from "../../hooks/useTaskTracker";
+import { deriveTasks, processActivities, turnHasTaskActivity, hasTaskActivity } from "../../hooks/useTaskTracker";
+import type { TaskTrackerResult, TrackedTask } from "../../hooks/useTaskTracker";
 import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
 
@@ -998,18 +998,24 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     [messages, checkpoints],
   );
 
-  // Compute cumulative task progress at each turn index.
-  // Only entries where the turn (or a prior turn) has task activity get a result.
+  // Compute cumulative task progress at each turn index in a single O(n) pass.
+  // Carries taskMap/todoMap forward across iterations instead of re-slicing.
   const taskProgressByTurn = useMemo(() => {
     const map = new Map<number, TaskTrackerResult>();
+    const taskMap = new Map<string, TrackedTask>();
+    const todoMap = new Map<string, TrackedTask>();
+    const nextSyntheticId = { value: 1 };
     let anyTasksSoFar = false;
+
     for (let i = 0; i < completedTurns.length; i++) {
+      processActivities(completedTurns[i].activities, taskMap, todoMap, nextSyntheticId);
       if (turnHasTaskActivity(completedTurns[i])) {
         anyTasksSoFar = true;
       }
       if (anyTasksSoFar) {
-        // Derive cumulative state up to and including this turn
-        map.set(i, deriveTasks(completedTurns.slice(0, i + 1), []));
+        const tasks = [...taskMap.values(), ...todoMap.values()];
+        const completedCount = tasks.filter((t) => t.status === "completed").length;
+        map.set(i, { tasks, completedCount, totalCount: tasks.length });
       }
     }
     return map;
@@ -1197,14 +1203,16 @@ const CurrentTurnTaskProgress = memo(function CurrentTurnTaskProgress({
     (s) => s.toolActivities[workspaceId] ?? EMPTY_ACTIVITIES
   );
 
-  // Only render when the current turn has task tools
-  if (!hasTaskActivity(toolActivities)) return null;
+  const result = useMemo(
+    () => deriveTasks(completedTurns, toolActivities),
+    [completedTurns, toolActivities]
+  );
 
-  const { completedCount, totalCount } = deriveTasks(completedTurns, toolActivities);
-  if (totalCount === 0) return null;
+  // Only render when the current turn has task tools
+  if (!hasTaskActivity(toolActivities) || result.totalCount === 0) return null;
 
   return (
-    <TaskProgressBar completedCount={completedCount} totalCount={totalCount} />
+    <TaskProgressBar completedCount={result.completedCount} totalCount={result.totalCount} />
   );
 });
 

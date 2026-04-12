@@ -58,7 +58,7 @@ export function extractTaskId(resultText: string): string | null {
 }
 
 /** Scan a list of tool activities and update the task/todo maps. */
-function processActivities(
+export function processActivities(
   activities: ToolActivity[],
   taskMap: Map<string, TrackedTask>,
   todoMap: Map<string, TrackedTask>,
@@ -89,6 +89,7 @@ function processActivities(
           id,
           description: String(input.description ?? ""),
           status: normalizeStatus(input.status as string | undefined),
+          priority: normalizePriority(input.priority as string | undefined),
           source: "task",
         });
         break;
@@ -99,12 +100,14 @@ function processActivities(
         if (existing) {
           if (input.status) existing.status = normalizeStatus(input.status as string);
           if (input.description) existing.description = String(input.description);
+          if (input.priority) existing.priority = normalizePriority(input.priority as string);
         } else if (id) {
           // Orphaned update (TaskCreate result not yet available) — create a stub
           taskMap.set(id, {
             id,
             description: String(input.description ?? `Task #${id}`),
             status: normalizeStatus(input.status as string | undefined),
+            priority: normalizePriority(input.priority as string | undefined),
             source: "task",
           });
         }

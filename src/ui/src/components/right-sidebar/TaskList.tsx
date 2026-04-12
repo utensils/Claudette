@@ -42,6 +42,8 @@ function TaskItem({ task }: { task: TrackedTask }) {
       <span
         className={styles.statusIcon}
         style={{ color: statusColor(task.status) }}
+        role="img"
+        aria-label={task.status.replace(/_/g, " ")}
       >
         {statusIcon(task.status)}
       </span>
