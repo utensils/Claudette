@@ -244,6 +244,12 @@ export function ChatPanel() {
   const { isAtBottom, scrollToBottom, handleContentChanged } =
     useStickyScroll(messagesContainerRef);
 
+  // Memoize context value to avoid re-rendering StreamingMessage on every parent render.
+  const scrollContextValue = useMemo(
+    () => ({ handleContentChanged }),
+    [handleContentChanged],
+  );
+
   // Spinner and elapsed timer for running agent.
   const [spinnerIdx, setSpinnerIdx] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -639,7 +645,7 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <ScrollContext.Provider value={{ handleContentChanged }}>
+      <ScrollContext.Provider value={scrollContextValue}>
         <div className={styles.messages} ref={messagesContainerRef}>
           {error && <div className={styles.errorBanner}>{error}</div>}
 

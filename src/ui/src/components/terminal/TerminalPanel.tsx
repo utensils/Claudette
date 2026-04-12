@@ -228,6 +228,7 @@ export const TerminalPanel = memo(function TerminalPanel() {
     );
     for (const [tabId, inst] of instancesRef.current) {
       if (!allTabIds.has(tabId)) {
+        if (inst.fitTimer) clearTimeout(inst.fitTimer);
         inst.resizeObserver.disconnect();
         inst.term.dispose();
         if (inst.unlisten) inst.unlisten();
@@ -242,6 +243,7 @@ export const TerminalPanel = memo(function TerminalPanel() {
   useEffect(() => {
     return () => {
       for (const inst of instancesRef.current.values()) {
+        if (inst.fitTimer) clearTimeout(inst.fitTimer);
         inst.resizeObserver.disconnect();
         inst.term.dispose();
         if (inst.unlisten) inst.unlisten();

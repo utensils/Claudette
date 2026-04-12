@@ -1,7 +1,7 @@
 .bar {
   display: flex;
   align-items: center;
-  height: 26px;
+  height: 32px;
   padding: 0 10px;
   background: var(--sidebar-bg);
   border-top: 1px solid var(--sidebar-border);

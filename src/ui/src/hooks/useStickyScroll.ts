@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
  * Sticky-scroll hook: auto-scrolls to bottom when user is at the bottom of a
  * scrollable container, but stops when the user scrolls up.
  *
+ * Tracks position via scroll events + ResizeObserver (catches content loads,
+ * streaming growth, and window focus without external coordination).
+ *
  * Returns `isAtBottom` for rendering a "jump to bottom" indicator, plus
  * `scrollToBottom` and `handleContentChanged` helpers.
  */
@@ -13,49 +16,60 @@ export function useStickyScroll(
 ) {
   const isAtBottomRef = useRef(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
-  // Flag to distinguish programmatic scrolls (our auto-scroll) from user scrolls.
-  // Prevents the feedback loop: programmatic scroll → scroll event → re-enable
-  // follow → programmatic scroll again.
   const programmaticScrollRef = useRef(false);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    const onScroll = () => {
-      // Ignore scroll events caused by our own programmatic scrolling.
-      if (programmaticScrollRef.current) {
-        programmaticScrollRef.current = false;
-        return;
-      }
-
+    const checkPosition = () => {
       const atBottom =
         el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
-
       if (atBottom !== isAtBottomRef.current) {
         isAtBottomRef.current = atBottom;
         setIsAtBottom(atBottom);
       }
     };
 
+    const onScroll = () => {
+      if (programmaticScrollRef.current) {
+        programmaticScrollRef.current = false;
+        return;
+      }
+      checkPosition();
+    };
+
+    // ResizeObserver catches content height changes (message load, streaming
+    // growth, content-visibility recalc) that don't fire scroll events.
+    const resizeObserver = new ResizeObserver(() => checkPosition());
+    resizeObserver.observe(el);
+
+    // Re-check on window focus (content may arrive while app is backgrounded).
+    const onFocus = () => checkPosition();
+
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("focus", onFocus);
+      resizeObserver.disconnect();
+    };
   }, [containerRef, threshold]);
 
   /** Programmatically scroll to bottom and re-enable auto-follow. */
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    const prevScrollTop = el.scrollTop;
+    programmaticScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
-    // Only set the programmatic flag if the scroll position actually changed,
-    // otherwise no scroll event fires and the flag would stick, eating the
-    // next genuine user scroll.
-    if (el.scrollTop !== prevScrollTop) {
-      programmaticScrollRef.current = true;
-    }
     isAtBottomRef.current = true;
     setIsAtBottom(true);
+    // Second pass after layout settles (content-visibility recalc).
+    requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+      programmaticScrollRef.current = true;
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    });
   }, [containerRef]);
 
   /**
@@ -68,8 +82,11 @@ export function useStickyScroll(
       if (!isAtBottomRef.current) return;
       const el = containerRef.current;
       if (el) {
-        programmaticScrollRef.current = true;
+        const prev = el.scrollTop;
         el.scrollTop = el.scrollHeight;
+        if (el.scrollTop !== prev) {
+          programmaticScrollRef.current = true;
+        }
       }
     });
   }, [containerRef]);
