@@ -1,0 +1,42 @@
+---
+title: Next.js & npm
+description: Configure Claudette for Next.js projects using npm.
+---
+
+## Prerequisites
+
+- Node.js 18+ installed
+- An existing Next.js project (or create one with `npx create-next-app@latest`)
+- Claudette installed and running
+
+## Configuration
+
+Create a `.claudette.json` in your project root:
+
+```json
+{
+  "scripts": {
+    "setup": "npm install"
+  },
+  "instructions": "This is a Next.js 15 app using the App Router. Use TypeScript strict mode. Use server components by default."
+}
+```
+
+## Add to Claudette
+
+1. Open Claudette and click **+ Add Repo**
+2. Select your Next.js project directory
+3. Create a new workspace — `npm install` runs automatically
+
+## Example Prompts
+
+> "Create a dashboard page at `/dashboard` with a responsive grid layout showing user stats"
+
+> "Add a server action for the contact form that validates input and sends an email"
+
+> "Set up NextAuth.js with GitHub OAuth provider"
+
+## Tips
+
+- Adjust the `instructions` to match your project's conventions (Pages Router vs App Router, CSS framework, etc.)
+- If you use **pnpm** or **yarn**, change the setup script accordingly: `pnpm install` or `yarn install`

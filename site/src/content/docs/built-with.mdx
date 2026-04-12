@@ -1,0 +1,49 @@
+---
+title: Built With
+description: The open source technologies that power Claudette.
+---
+
+Claudette is built entirely on open source technologies. Here's what powers it and why we chose each one.
+
+## Application Framework
+
+| Technology | Role | Why we chose it |
+|---|---|---|
+| [Tauri 2](https://tauri.app) | Desktop app framework | Native performance with a tiny footprint — no Electron, no bundled Chromium. The result is a \<30MB binary with \<2s cold start. |
+| [Rust](https://www.rust-lang.org) | Backend language | Memory safety without a garbage collector, excellent async support via Tokio, and the ability to ship a single static binary. |
+| [Tokio](https://tokio.rs) | Async runtime | Powers all our concurrent operations — process management, git operations, WebSocket connections, and PTY I/O. |
+
+## Frontend
+
+| Technology | Role | Why we chose it |
+|---|---|---|
+| [React 19](https://react.dev) | UI framework | Component-based architecture with a massive ecosystem. Runs inside Tauri's webview. |
+| [TypeScript](https://www.typescriptlang.org) | Language | Strict mode throughout — catches bugs at compile time and makes refactoring safe. |
+| [Zustand](https://zustand.docs.pmnd.rs) | State management | Minimal, fast, and flexible. A single store with domain slices keeps state predictable without boilerplate. |
+| [Vite](https://vite.dev) | Build tool | Instant HMR in dev, optimized production builds. Tauri's default frontend toolchain. |
+| [Lucide](https://lucide.dev) | Icons | Clean, consistent icon set with tree-shaking — only the icons we use end up in the bundle. |
+
+## Terminal & Editor
+
+| Technology | Role | Why we chose it |
+|---|---|---|
+| [xterm.js](https://xtermjs.org) | Terminal emulator | Full-featured terminal rendering in the browser, with addons for link detection and responsive sizing. |
+| [portable-pty](https://docs.rs/portable-pty) | PTY management | Cross-platform pseudo-terminal creation from Rust — connects real shell sessions to xterm.js. |
+| [highlight.js](https://highlightjs.org) | Syntax highlighting | Language-aware code highlighting in chat messages and diffs. |
+
+## Data & Networking
+
+| Technology | Role | Why we chose it |
+|---|---|---|
+| [SQLite](https://sqlite.org) (via [rusqlite](https://docs.rs/rusqlite)) | Database | Embedded, zero-config, local-first. All data stays on your machine in a single file. |
+| [Tungstenite](https://docs.rs/tokio-tungstenite) | WebSocket | Async WebSocket client for remote workspace connections, with rustls for TLS. |
+| [mDNS-SD](https://docs.rs/mdns-sd) | Service discovery | Automatic LAN discovery of remote Claudette servers — no manual IP configuration needed. |
+
+## Why These Choices Matter
+
+Every technology choice reflects Claudette's values:
+
+- **Lightweight** — Tauri + Rust means a tiny binary. No Electron, no 200MB runtime.
+- **Local-first** — SQLite keeps your data on your machine. No cloud database, no account required.
+- **Native performance** — Rust backend handles concurrent agents, git operations, and terminal I/O without breaking a sweat.
+- **Open source all the way down** — every dependency listed here is open source. You can audit the entire stack.

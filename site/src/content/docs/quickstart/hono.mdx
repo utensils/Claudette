@@ -1,0 +1,42 @@
+---
+title: Hono & bun
+description: Configure Claudette for Hono web framework projects using Bun.
+---
+
+## Prerequisites
+
+- [Bun](https://bun.sh/) installed
+- An existing Hono project (or create one with `bun create hono myapp`)
+- Claudette installed and running
+
+## Configuration
+
+Create a `.claudette.json` in your project root:
+
+```json
+{
+  "scripts": {
+    "setup": "bun install"
+  },
+  "instructions": "This is a Hono web framework project using Bun. Use TypeScript strict mode. Prefer Hono's built-in middleware."
+}
+```
+
+## Add to Claudette
+
+1. Open Claudette and click **+ Add Repo**
+2. Select your Hono project directory
+3. Create a new workspace — `bun install` runs automatically
+
+## Example Prompts
+
+> "Add a REST API with CRUD endpoints for a todo list using Hono's router groups"
+
+> "Set up JWT authentication middleware with refresh tokens"
+
+> "Add OpenAPI documentation using @hono/zod-openapi"
+
+## Tips
+
+- Hono is lightweight and runtime-agnostic — mention the target runtime (Bun, Cloudflare Workers, Node.js) in your instructions
+- If you're deploying to Cloudflare Workers, add that context: `"instructions": "Hono app deployed to Cloudflare Workers. Use Workers-compatible APIs."`

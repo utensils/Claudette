@@ -1,0 +1,46 @@
+---
+title: Parallel Agents
+description: Run multiple Claude Code agents simultaneously, each in its own isolated workspace.
+---
+
+Claudette's core feature is the ability to run multiple Claude Code agents at the same time, each working in complete isolation.
+
+## How It Works
+
+Each workspace in Claudette runs its own Claude Code subprocess. When you create a new workspace:
+
+1. A **git worktree** is created on a new branch
+2. A dedicated **Claude Code agent** session starts in that worktree
+3. The agent has full access to the worktree's files but is completely isolated from other workspaces
+
+This means you can have one agent building a new feature, another fixing a bug, and a third writing tests — all at the same time, all in the same repository, with zero conflicts.
+
+## Creating Parallel Workspaces
+
+Click the **+** button next to any repository in the sidebar to create a new workspace. Each workspace appears as a separate entry under the repo, with its own:
+
+- Chat session
+- Terminal tabs
+- Diff view
+- Branch name
+
+{/* TODO: Screenshot of sidebar with multiple workspaces */}
+:::note[Screenshot coming soon]
+A screenshot showing the sidebar with multiple active workspaces will be added here.
+:::
+
+## Switching Between Workspaces
+
+- **Click** a workspace in the sidebar to switch to it
+- **Keyboard**: `⌘/Ctrl + Shift + [` and `⌘/Ctrl + Shift + ]` to cycle through workspaces in the same project
+- **Fuzzy finder**: `⌘/Ctrl + K` to quickly search and jump to any workspace
+
+## Agent Lifecycle
+
+Each agent session has a lifecycle:
+
+- **Running** — the agent is actively processing a prompt (shown with a status indicator in the sidebar)
+- **Idle** — the agent is waiting for your next prompt
+- **Stopped** — the session has ended; send a new message to restart it
+
+Press **Escape** to stop a running agent at any time.

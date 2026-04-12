@@ -1,0 +1,23 @@
+---
+const steps = [
+  { num: 1, title: 'Add your repos', desc: 'Connect local or remote git repositories. Set up custom instructions and scripts for each.' },
+  { num: 2, title: 'Spin up workspaces', desc: 'Each workspace gets its own git worktree and dedicated Claude Code agent session.' },
+  { num: 3, title: 'Work in parallel', desc: 'Multiple agents coding simultaneously, each in full isolation. Review diffs, merge, and ship.' },
+];
+---
+
+<section class="how-it-works">
+  <h2>Up and running in minutes</h2>
+  <p class="section-subtitle">Three simple steps to supercharge your Claude Code workflow.</p>
+  <div class="steps">
+    {steps.map((s) => (
+      <div class="step">
+        <div class="step-number">{s.num}</div>
+        <div>
+          <h3>{s.title}</h3>
+          <p>{s.desc}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>

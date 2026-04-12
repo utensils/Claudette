@@ -1,0 +1,68 @@
+---
+title: Per-Repo Settings
+description: Custom instructions, setup scripts, and branch preferences for each repository.
+---
+
+Claudette lets you configure settings per-repository — instructions for the agent, scripts that run on workspace creation, and branch naming preferences.
+
+## Accessing Repo Settings
+
+Open `Settings > Repository` (or press `⌘/Ctrl + ,` and select a repository from the sidebar).
+
+## Setup Script
+
+A shell command that runs automatically when a new workspace is created. Use this to install dependencies, set up the environment, or run migrations.
+
+**Examples:**
+
+```bash
+# Node.js project
+npm install
+
+# Python project
+python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# Elixir project
+mix deps.get && mix ecto.setup
+```
+
+The script runs in the workspace's worktree directory using your default shell.
+
+## Custom Instructions
+
+Text that is appended to the agent's system prompt at the start of every chat in this repository. Use this to give the agent context about your project:
+
+```
+This is a Django REST API using Python 3.12. Use pytest for tests.
+Follow the existing code style — type hints on all function signatures.
+```
+
+## Branch Rename Preferences
+
+Custom instructions sent with the agent's first message to guide how it names the workspace branch. This only applies if the branch hasn't already been renamed.
+
+## `.claudette.json`
+
+You can also configure these settings via a `.claudette.json` file in your repository root. This is useful for sharing settings with your team via version control.
+
+```json
+{
+  "scripts": {
+    "setup": "bun install"
+  },
+  "instructions": "This is a Next.js 15 app using the App Router. Use TypeScript strict mode."
+}
+```
+
+### Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `scripts.setup` | string | Shell command to run on workspace creation |
+| `instructions` | string | Custom instructions for the agent |
+
+:::note
+`.claudette.json` settings take precedence over settings configured in the UI. If both are present, the file wins.
+:::
+
+Unknown keys in `.claudette.json` are silently ignored, so the file is forward-compatible with future settings.

@@ -1,0 +1,45 @@
+---
+title: FastAPI & uv
+description: Configure Claudette for FastAPI projects using uv.
+---
+
+## Prerequisites
+
+- Python 3.10+ installed
+- [uv](https://docs.astral.sh/uv/) installed (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- An existing FastAPI project (or create one with `uv init myapp`)
+- Claudette installed and running
+
+## Configuration
+
+Create a `.claudette.json` in your project root:
+
+```json
+{
+  "scripts": {
+    "setup": "uv sync"
+  },
+  "instructions": "This is a FastAPI project. Use Python 3.12+ with type hints on all functions. Run tests with pytest."
+}
+```
+
+`uv sync` reads your `pyproject.toml`, creates a virtual environment, and installs all dependencies — fast.
+
+## Add to Claudette
+
+1. Open Claudette and click **+ Add Repo**
+2. Select your FastAPI project directory
+3. Create a new workspace — `uv sync` runs automatically
+
+## Example Prompts
+
+> "Add a `/users` router with CRUD endpoints using SQLAlchemy async and Pydantic v2 models"
+
+> "Create a background task worker using FastAPI's BackgroundTasks for sending welcome emails"
+
+> "Set up OAuth2 with JWT tokens and role-based access control"
+
+## Tips
+
+- uv is significantly faster than pip for dependency installation — ideal for parallel workspaces
+- If your project uses **Alembic** for migrations, extend the setup: `"setup": "uv sync && uv run alembic upgrade head"`

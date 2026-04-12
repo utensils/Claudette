@@ -1,0 +1,41 @@
+---
+title: Workflow
+description: The Claudette development workflow — prompt, review, iterate, merge.
+---
+
+Claudette is designed around a simple loop: **prompt, review, iterate, merge**. Here's how it works in practice.
+
+## The Core Loop
+
+1. **Prompt** — describe what you want the agent to build or fix
+2. **Review** — inspect the diff to see what changed
+3. **Iterate** — send follow-up prompts to refine the output
+4. **Merge** — integrate the finished work into your main branch
+
+Each workspace is an isolated git worktree with its own branch, so you can run this loop on multiple tasks simultaneously without conflicts.
+
+## Working with Multiple Agents
+
+The real power of Claudette is running several agents in parallel:
+
+1. **Create multiple workspaces** for a single repo — each gets its own branch and agent
+2. **Assign different tasks** to each workspace (e.g., one for a new feature, one for a bug fix, one for tests)
+3. **Switch between workspaces** with `⌘/Ctrl + Shift + [` and `⌘/Ctrl + Shift + ]`
+4. **Review and merge** each workspace independently
+
+Since each workspace has its own worktree, agents never step on each other's work.
+
+## Using the Terminal
+
+The integrated terminal (`⌘/Ctrl + `` ` ``) runs inside each workspace's worktree directory. Use it to:
+
+- Run tests after the agent makes changes
+- Start a dev server to manually verify the output
+- Run any shell commands in the workspace's isolated environment
+
+## Tips
+
+- **Be specific** in your prompts — the more context you give, the better the output
+- **Use plan mode** (`Shift + Tab`) for complex tasks — the agent will outline its approach before writing code
+- **Set up a setup script** in [repo settings](/Claudette/features/per-repo-settings/) so each new workspace starts with dependencies installed
+- **Use @-mentions** to reference specific files in your prompt (type `@` and start typing a filename)

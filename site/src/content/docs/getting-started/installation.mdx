@@ -1,0 +1,72 @@
+---
+title: Installation
+description: Download and install Claudette on macOS or Linux.
+---
+
+## Download
+
+Claudette is available as a pre-built binary from [GitHub Releases](https://github.com/utensils/Claudette/releases).
+
+| Platform | Architecture | Format |
+|----------|-------------|--------|
+| macOS | Apple Silicon (aarch64) | `.dmg` |
+| macOS | Intel (x86_64) | `.dmg` |
+| Linux | x86_64 | `.AppImage`, `.deb` |
+
+1. Download the appropriate binary for your platform from the [latest release](https://github.com/utensils/Claudette/releases/latest)
+2. **macOS**: Open the `.dmg` and drag Claudette to your Applications folder
+3. **Linux**: Run the `.AppImage` directly or install the `.deb` package
+
+## Prerequisites
+
+Before using Claudette, ensure you have **Claude Code** installed and authenticated:
+
+```bash
+# Install Claude Code if you haven't already
+# See: https://docs.anthropic.com/en/docs/claude-code
+
+# Authenticate with your Anthropic account
+claude /login
+```
+
+## Build from Source
+
+If you prefer to build from source, you'll need:
+
+- [Rust](https://rustup.rs/) (stable toolchain, edition 2024)
+- [Bun](https://bun.sh/) (JavaScript runtime and package manager)
+- [Tauri CLI](https://tauri.app/start/): `cargo install tauri-cli --version "^2"`
+
+**Platform dependencies:**
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs>
+  <TabItem label="macOS">
+    ```bash
+    xcode-select --install
+    ```
+  </TabItem>
+  <TabItem label="Linux (Debian/Ubuntu)">
+    ```bash
+    sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+      libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+    ```
+  </TabItem>
+</Tabs>
+
+**Build steps:**
+
+```bash
+# Clone the repository
+git clone https://github.com/utensils/Claudette.git
+cd Claudette
+
+# Install frontend dependencies
+cd src/ui && bun install && cd ../..
+
+# Build optimized release binary
+cargo tauri build
+```
+
+The compiled binary will be in `src-tauri/target/release/`.

@@ -1,0 +1,30 @@
+---
+title: Quickstart Guides
+description: Get started with Claudette for your framework.
+sidebar:
+  order: 0
+---
+
+These guides show how to configure Claudette for popular frameworks. Each guide walks you through creating a `.claudette.json` file with the right setup script and instructions for your stack.
+
+## Available Guides
+
+| Framework | Package Manager | Guide |
+|-----------|----------------|-------|
+| Django | pip | [Django & pip](/Claudette/quickstart/django/) |
+| Next.js | npm | [Next.js & npm](/Claudette/quickstart/nextjs/) |
+| Phoenix | mix | [Phoenix & mix](/Claudette/quickstart/phoenix/) |
+| Rails | bundler | [Rails & bundler](/Claudette/quickstart/rails/) |
+| Hono | bun | [Hono & bun](/Claudette/quickstart/hono/) |
+| FastAPI | uv | [FastAPI & uv](/Claudette/quickstart/fastapi/) |
+
+## The Pattern
+
+Every quickstart follows the same pattern:
+
+1. Create a `.claudette.json` in your project root
+2. Add it to Claudette as a repository
+3. Create a workspace — the setup script runs automatically
+4. Start prompting the agent
+
+The `.claudette.json` file tells Claudette how to bootstrap each workspace. See [Per-Repo Settings](/Claudette/features/per-repo-settings/) for the full schema.

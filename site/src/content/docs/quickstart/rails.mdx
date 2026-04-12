@@ -1,0 +1,46 @@
+---
+title: Rails & bundler
+description: Configure Claudette for Ruby on Rails projects.
+---
+
+## Prerequisites
+
+- Ruby 3.2+ installed
+- An existing Rails project (or create one with `rails new myapp`)
+- Claudette installed and running
+
+## Configuration
+
+Create a `.claudette.json` in your project root:
+
+```json
+{
+  "scripts": {
+    "setup": "bundle install && bin/rails db:setup"
+  },
+  "instructions": "This is a Rails 8 project. Use Ruby 3.3+. Run tests with bin/rails test."
+}
+```
+
+This setup script will:
+1. Install gem dependencies
+2. Create the database, load the schema, and run seeds
+
+## Add to Claudette
+
+1. Open Claudette and click **+ Add Repo**
+2. Select your Rails project directory
+3. Create a new workspace — gems install and the database sets up automatically
+
+## Example Prompts
+
+> "Add a RESTful API for managing products with JSON serialization using jbuilder"
+
+> "Create a Stimulus controller for a sortable table with drag-and-drop"
+
+> "Set up Action Cable for real-time notifications"
+
+## Tips
+
+- If you use **rbenv** or **asdf**, make sure the correct Ruby version is configured in `.ruby-version`
+- For API-only apps, mention that in your instructions so the agent doesn't generate views

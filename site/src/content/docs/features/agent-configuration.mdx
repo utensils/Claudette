@@ -1,0 +1,84 @@
+---
+title: Agent Configuration
+description: Configure models, reasoning effort, thinking blocks, and other agent settings.
+---
+
+Each workspace runs its own Claude Code agent session. You can configure agent behavior per-workspace or set defaults for all new sessions.
+
+## Model Selection
+
+Select a model from the dropdown in the chat header. Available models:
+
+| Model | ID | Description |
+|-------|-----|-------------|
+| **Opus 4.6 1M** | `opus` | Opus 4.6 with 1M context window |
+| **Opus 4.6** | `claude-opus-4-6` | Standard Opus 4.6 |
+| **Sonnet 4.6** | `sonnet` | Fast and capable |
+| **Haiku 4.5** | `haiku` | Fastest, most affordable |
+
+The model selection is per-workspace — you can use different models for different tasks.
+
+Set the default model for new sessions in `Settings > Models > Default model`.
+
+## Reasoning Effort
+
+Control how much reasoning the agent applies to each response:
+
+| Level | Description | Available Models |
+|-------|-------------|-----------------|
+| **Auto** | Let Claude decide (default) | All models |
+| **Low** | Fast, minimal reasoning | Opus, Sonnet |
+| **Medium** | Balanced | Opus, Sonnet |
+| **High** | Deep reasoning | Opus, Sonnet |
+| **Max** | Maximum reasoning budget | Opus 4.6 only |
+
+Select the effort level from the dropdown in the chat header, next to the model selector.
+
+Set the default in `Settings > Models > Default effort level`.
+
+## Extended Thinking
+
+When enabled, the agent shows its reasoning process in expandable "thinking" blocks before its response.
+
+- **Toggle thinking**: Enable/disable in the chat header toolbar
+- **Show/hide blocks**: Even with thinking enabled, you can choose whether to display the thinking blocks in the chat UI
+
+Set defaults in `Settings > Models`:
+- **Default thinking** — enable/disable for new sessions
+- **Show thinking blocks** — show/hide by default
+
+## Fast Mode
+
+Fast mode prioritizes speed over depth. When enabled, the agent uses quicker, more concise responses.
+
+Toggle fast mode in the chat header toolbar. Set the default in `Settings > Models > Default fast mode`.
+
+## Plan Mode
+
+In plan mode, the agent outlines its approach before writing code. This is useful for complex tasks where you want to review the plan before execution.
+
+- **Toggle**: Click the plan mode button in the chat header, or press `Shift + Tab`
+- **Default**: Set in `Settings > Models > Default plan mode`
+
+When the agent produces a plan, you'll see a plan approval prompt where you can approve, reject, or modify the plan before the agent proceeds.
+
+## File References (@-mentions)
+
+Type `@` in the chat input to reference specific files in your workspace. A file picker appears showing matching files — select one to include it as context for the agent.
+
+This is useful for directing the agent's attention to specific files:
+
+> "Review the error handling in @src/api/handler.ts and suggest improvements"
+
+## Default Settings
+
+Configure defaults for all new sessions in `Settings > Models`:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Default model | Model used for new chats | — |
+| Default effort | Reasoning effort level | Auto |
+| Default thinking | Enable thinking blocks | Off |
+| Show thinking blocks | Display thinking in UI | Off |
+| Default plan mode | Start in plan mode | Off |
+| Default fast mode | Use fast mode | Off |

@@ -1,0 +1,53 @@
+---
+title: Privacy
+description: How Claudette handles your data — everything stays local.
+---
+
+Claudette is designed with a simple privacy principle: **your data stays on your machine**.
+
+## No Accounts
+
+Claudette has no user registration, no login, and no accounts. You download the app and start using it — there's nothing to sign up for.
+
+## No Remote Servers
+
+Claudette does not operate any remote servers. Nothing you do in Claudette is transmitted to any servers managed by Claudette or [utensils](https://utensils.io). There is:
+
+- No telemetry
+- No analytics
+- No crash reporting
+- No usage tracking
+- No session recording
+
+## Data Flow
+
+All AI communication flows directly between **your machine** and **Anthropic**. Claudette runs Claude Code as a local subprocess — your prompts and code go straight to Anthropic's API, governed by [Anthropic's privacy policy](https://www.anthropic.com/privacy) and your own API agreement.
+
+```
+Your Machine ←→ Anthropic API
+     ↑
+  Claudette (local app)
+```
+
+Claudette never proxies, intercepts, or stores your API traffic on any third-party server.
+
+## Local Storage
+
+Claudette stores workspace metadata and chat history in a local **SQLite database** on your machine:
+
+- **macOS**: `~/Library/Application Support/com.claudette.app/`
+- **Linux**: `~/.local/share/com.claudette.app/`
+
+This database contains workspace names, chat messages, and settings — all stored locally. You can back it up, delete it, or move it at any time.
+
+## Remote Workspaces
+
+The optional [remote workspaces](/Claudette/features/remote-workspaces/) feature connects to servers **you** set up and control. Claudette never routes traffic through our infrastructure. The connection is:
+
+- **End-to-end encrypted** with TLS
+- **Authenticated** with trust-on-first-use certificate pinning
+- **Your servers only** — you run `claudette-server` on your own machines
+
+## Open Source
+
+Claudette is fully open source under the [MIT License](https://github.com/utensils/Claudette/blob/main/LICENSE). The entire codebase is available for audit at [github.com/utensils/Claudette](https://github.com/utensils/Claudette).

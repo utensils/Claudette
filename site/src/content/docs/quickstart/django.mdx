@@ -1,0 +1,50 @@
+---
+title: Django & pip
+description: Configure Claudette for Django projects using Pip.
+---
+
+## Prerequisites
+
+- Python 3.10+ installed
+- An existing Django project (or create one with `django-admin startproject myproject`)
+- Claudette installed and running
+
+## Configuration
+
+Create a `.claudette.json` in your project root:
+
+```json
+{
+  "scripts": {
+    "setup": "python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python manage.py migrate"
+  },
+  "instructions": "This is a Django project. Use Python 3.12+ with type hints. Run tests with pytest."
+}
+```
+
+This setup script will:
+1. Create a Python virtual environment in `.venv`
+2. Activate it
+3. Install dependencies from `requirements.txt`
+4. Run database migrations
+
+## Add to Claudette
+
+1. Open Claudette and click **+ Add Repo**
+2. Select your Django project directory
+3. Create a new workspace — the setup script runs automatically
+
+## Example Prompts
+
+Try these to get started:
+
+> "Add a REST API endpoint at `/api/posts/` that lists all blog posts with pagination"
+
+> "Create a custom management command that seeds the database with test data"
+
+> "Add user authentication with login, logout, and registration views"
+
+## Tips
+
+- If you use **Poetry** instead of pip, change the setup to: `poetry install && poetry run python manage.py migrate`
+- Add your `.env` file to the repo root so it's available in all worktrees, or symlink it: `ln -s "$HOME/.env.myproject" .env`

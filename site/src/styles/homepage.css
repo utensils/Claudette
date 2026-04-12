@@ -1,0 +1,336 @@
+/* Homepage-specific styles for the splash template */
+
+/* Unified warm background across the entire splash page */
+[data-has-hero] .main-pane {
+  background:
+    radial-gradient(ellipse at 30% 10%, rgba(245, 160, 184, 0.12) 0%, transparent 40%),
+    radial-gradient(ellipse at 70% 30%, rgba(224, 120, 80, 0.08) 0%, transparent 40%),
+    var(--sl-color-black);
+}
+
+[data-has-hero] .hero {
+  padding-bottom: 1rem;
+}
+
+[data-has-hero] .hero > img {
+  image-rendering: pixelated;
+  filter: drop-shadow(0 8px 24px rgba(224, 120, 80, 0.25));
+  animation: hero-float 4s ease-in-out infinite;
+}
+
+@keyframes hero-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+[data-has-hero] .hero .tagline {
+  font-size: clamp(1rem, 2.5vw, 1.3rem);
+}
+
+/* Feature cards grid */
+.features-section {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.features-section h2 {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.features-section .section-subtitle {
+  text-align: center;
+  color: var(--sl-color-gray-3);
+  margin-bottom: 2.5rem;
+  font-size: 1.1rem;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+}
+
+/* Override Starlight prose margins on grid children */
+.features-grid .feature-card {
+  margin: 0;
+}
+
+.feature-card {
+  padding: 1.75rem;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.feature-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.feature-card .icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sl-color-accent);
+  flex-shrink: 0;
+}
+
+.feature-card h3 {
+  font-size: 1.05rem;
+  margin: 0 0 0.5rem;
+  color: var(--sl-color-white);
+}
+
+.feature-card p {
+  font-size: 0.9rem;
+  color: var(--sl-color-gray-3);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Reset Starlight prose styles inside custom homepage sections */
+.sl-markdown-content .features-section h2,
+.sl-markdown-content .features-section h3,
+.sl-markdown-content .features-section p,
+.sl-markdown-content .how-it-works h2,
+.sl-markdown-content .how-it-works h3,
+.sl-markdown-content .how-it-works p,
+.sl-markdown-content .tech-stack h2,
+.sl-markdown-content .tech-stack p,
+.sl-markdown-content .cta-section h2,
+.sl-markdown-content .cta-section p {
+  margin-top: 0;
+}
+
+/* Stats bar */
+.stats-bar {
+  background: linear-gradient(135deg, #e07850, #f0956e);
+  padding: 2.5rem 1.5rem;
+  margin: 0;
+}
+
+.stats-grid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 3rem;
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-value {
+  display: block;
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+
+.stats-divider {
+  width: 1px;
+  height: 3rem;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* How It Works */
+.how-it-works {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+  text-align: center;
+}
+
+.how-it-works h2 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.how-it-works .section-subtitle {
+  color: var(--sl-color-gray-3);
+  margin-bottom: 3rem;
+  font-size: 1.1rem;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  text-align: left;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+}
+
+.step-number {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e07850, #f0956e);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.step h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+  color: var(--sl-color-white);
+}
+
+.step p {
+  font-size: 0.95rem;
+  color: var(--sl-color-gray-3);
+  line-height: 1.5;
+}
+
+/* Tech stack */
+.tech-stack {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.tech-stack h2 {
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.tech-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.tech-pill {
+  padding: 0.5rem 1.25rem;
+  border-radius: 50px;
+  background: var(--sl-color-gray-6);
+  border: 1px solid var(--sl-color-gray-5);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--sl-color-white);
+}
+
+.tech-description {
+  font-size: 0.95rem;
+  color: var(--sl-color-gray-3);
+  line-height: 1.6;
+}
+
+/* CTA section */
+.cta-section {
+  text-align: center;
+  padding: 4rem 1.5rem;
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.cta-mascot {
+  width: 96px;
+  height: 96px;
+  image-rendering: pixelated;
+  margin: 0 auto 1.5rem;
+  display: block;
+  filter: drop-shadow(0 4px 16px rgba(224, 120, 80, 0.3));
+}
+
+.cta-section h2 {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.cta-section p {
+  color: var(--sl-color-gray-3);
+  margin-bottom: 2rem;
+  font-size: 1.05rem;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.75rem;
+  border-radius: 50px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.cta-btn-primary {
+  background: linear-gradient(135deg, #e07850, #f0956e);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(224, 120, 80, 0.35);
+}
+
+.cta-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(224, 120, 80, 0.45);
+  color: #fff;
+}
+
+.cta-btn-outline {
+  border: 2px solid var(--sl-color-gray-4);
+  color: var(--sl-color-white);
+  background: transparent;
+}
+
+.cta-btn-outline:hover {
+  border-color: #e07850;
+  color: #e07850;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 550px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+  .stats-grid {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .stats-divider {
+    width: 3rem;
+    height: 1px;
+  }
+}

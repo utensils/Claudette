@@ -1,0 +1,38 @@
+---
+title: Git Worktrees
+description: Automatic git worktree management for branch-based parallel development.
+---
+
+Claudette uses **git worktrees** to give each workspace its own isolated copy of your repository. This is what makes parallel agents possible without merge conflicts.
+
+## What Are Git Worktrees?
+
+A git worktree is a feature of git that lets you check out multiple branches of the same repository simultaneously, each in its own directory. Unlike cloning the repo multiple times, worktrees share the same `.git` history and objects — they're lightweight and fast to create.
+
+## Automatic Management
+
+When you create a workspace in Claudette:
+
+1. A new **branch** is created from your repository's default branch
+2. A **worktree** is checked out to a directory under your configured worktree base path (default: `~/.claudette/workspaces`)
+3. Your **setup script** runs in the new worktree (if configured)
+
+When you archive a workspace, the worktree and its directory are cleaned up automatically.
+
+## Branch Naming
+
+New workspace branches are given a random name initially. After your first prompt, the agent automatically renames the branch to something descriptive based on the work being done.
+
+You can configure branch naming behavior in [Settings > Git](/Claudette/features/settings/):
+
+- **Username prefix**: branches are prefixed with your git username (e.g., `sean/add-health-check`)
+- **Custom prefix**: use your own prefix (e.g., `feature/`, `fix/`)
+- **No prefix**: just the descriptive name
+
+## Branch Cleanup
+
+When archiving a workspace, Claudette can optionally delete the local branch. This setting (`Settings > Git > Auto-delete branch on archive`) only deletes branches that contain only checkpoint commits — if you've made manual commits on the branch, it will be preserved.
+
+## Worktree Base Directory
+
+By default, worktrees are created under `~/.claudette/workspaces`. You can change this in `Settings > General > Worktree base directory`.

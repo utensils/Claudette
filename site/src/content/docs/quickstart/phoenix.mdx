@@ -1,0 +1,46 @@
+---
+title: Phoenix & mix
+description: Configure Claudette for Elixir Phoenix projects.
+---
+
+## Prerequisites
+
+- Elixir 1.17+ and Erlang/OTP 27+ installed
+- An existing Phoenix project (or create one with `mix phx.new myapp`)
+- Claudette installed and running
+
+## Configuration
+
+Create a `.claudette.json` in your project root:
+
+```json
+{
+  "scripts": {
+    "setup": "mix deps.get && mix ecto.setup"
+  },
+  "instructions": "This is a Phoenix 1.7 project using LiveView. Use Elixir best practices and pattern matching."
+}
+```
+
+This setup script will:
+1. Fetch Hex dependencies
+2. Create the database, run migrations, and seed data
+
+## Add to Claudette
+
+1. Open Claudette and click **+ Add Repo**
+2. Select your Phoenix project directory
+3. Create a new workspace — dependencies install and the database sets up automatically
+
+## Example Prompts
+
+> "Add a LiveView for real-time chat with message persistence in Postgres"
+
+> "Create a context module for managing user profiles with CRUD operations"
+
+> "Set up OAuth2 authentication with GitHub using Ueberauth"
+
+## Tips
+
+- If your project doesn't use Ecto, simplify the setup to just `mix deps.get`
+- For umbrella apps, adjust the instructions to specify which app the agent should focus on

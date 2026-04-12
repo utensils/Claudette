@@ -1,0 +1,54 @@
+---
+title: Keyboard Shortcuts
+description: Complete keyboard shortcut reference for Claudette.
+---
+
+Claudette supports keyboard shortcuts for fast navigation and common actions. Hold `⌘` (macOS) or `Ctrl` (Linux) to reveal shortcut badges on UI elements.
+
+## Shortcut Reference
+
+### Navigation
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘/Ctrl + B` | Toggle sidebar |
+| `⌘/Ctrl + D` | Toggle diff panel (right sidebar) |
+| `` ⌘/Ctrl + ` `` | Toggle terminal panel |
+| `⌘/Ctrl + ,` | Open/close settings |
+
+### Workspace Switching
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘/Ctrl + Shift + [` | Previous workspace (same project) |
+| `⌘/Ctrl + Shift + ]` | Next workspace (same project) |
+| `⌘/Ctrl + 1` – `⌘/Ctrl + 9` | Jump to project by index |
+
+### Search & Commands
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘/Ctrl + K` | Toggle fuzzy finder (workspace search) |
+| `⌘/Ctrl + P` | Toggle command palette |
+
+### Agent
+
+| Shortcut | Action |
+|----------|--------|
+| `Shift + Tab` | Toggle plan mode |
+| `Escape` | Dismiss current overlay, or stop running agent |
+
+## Escape Key Priority
+
+When multiple overlays are open, `Escape` dismisses them in this order:
+
+1. Command Palette
+2. Settings
+3. Modal dialogs
+4. Fuzzy Finder
+5. Diff panel
+6. Stop running agent
+
+## Keyboard Hint Badges
+
+When you hold `⌘` (macOS) or `Ctrl` (Linux) without pressing another key, Claudette shows shortcut badges on relevant UI elements — sidebar toggle, diff panel, terminal, and settings buttons. Release the modifier key to hide them.

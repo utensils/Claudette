@@ -9,6 +9,8 @@ debug/
 # Node / Frontend
 node_modules/
 src/ui/dist/
+site/dist/
+site/.astro/
 
 # Tauri generated
 src-tauri/gen/

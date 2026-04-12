@@ -1,0 +1,93 @@
+---
+title: Settings
+description: Complete reference for all Claudette settings.
+---
+
+Open settings with `⌘/Ctrl + ,` or from the sidebar. Settings are organized into sections.
+
+## General
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Worktree base directory | Directory where new workspaces are created | `~/.claudette/workspaces` |
+| System tray | Enable/disable system tray integration | Enabled |
+
+## Models
+
+Default values applied to all new agent sessions. Per-workspace overrides are available in the chat header.
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Default model | Model for new chats (Opus 4.6 1M, Opus 4.6, Sonnet 4.6, Haiku 4.5) | — |
+| Default effort | Reasoning effort level (auto, low, medium, high, max) | Auto |
+| Default thinking | Enable extended thinking blocks | Off |
+| Show thinking blocks | Display thinking blocks in the chat UI | Off |
+| Default plan mode | Start new sessions in plan mode | Off |
+| Default fast mode | Start new sessions in fast mode | Off |
+
+See [Agent Configuration](/Claudette/features/agent-configuration/) for detailed descriptions of each option.
+
+## Appearance
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Theme | Color theme (12 built-in + custom) | Default Dark |
+| Terminal font size | Font size for terminal tabs (8–24px) | 11px |
+
+See [Theming](/Claudette/features/theming/) for details on built-in themes and creating custom themes.
+
+## Notifications
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Notification sound | Sound played when an agent needs input or finishes | Default |
+| Notification command | Custom shell command to run on notification | — |
+
+### Notification Sound
+
+Choose from built-in sounds or your system's sound library:
+
+- **macOS**: System sounds from `/System/Library/Sounds/`
+- **Linux**: XDG sound theme sounds
+
+Select **None** to disable notification sounds.
+
+### Notification Command
+
+Run a custom shell command when a notification fires. The following environment variables are available:
+
+| Variable | Description |
+|----------|-------------|
+| `$CLAUDETTE_NOTIFICATION_TITLE` | Notification title |
+| `$CLAUDETTE_NOTIFICATION_BODY` | Notification body text |
+| `$CLAUDETTE_WORKSPACE_ID` | Workspace ID that triggered the notification |
+| `$CLAUDETTE_WORKSPACE_NAME` | Workspace display name |
+
+**Example** — send a Slack message:
+
+```bash
+curl -X POST "$SLACK_WEBHOOK_URL" \
+  -d "{\"text\": \"$CLAUDETTE_NOTIFICATION_TITLE: $CLAUDETTE_NOTIFICATION_BODY\"}"
+```
+
+## Git
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Branch prefix mode | How branches are prefixed: `username`, `custom`, or `none` | Username |
+| Custom branch prefix | Prefix string when mode is `custom` | — |
+| Auto-delete branch on archive | Delete local branch when archiving a workspace | — |
+
+### Branch Prefix Mode
+
+- **Username** — prefix with your git username (e.g., `sean/add-health-check`)
+- **Custom** — use a custom prefix (e.g., `feature/`, `fix/`)
+- **None** — no prefix, just the descriptive branch name
+
+### Auto-Delete on Archive
+
+When enabled, archiving a workspace deletes the local branch — but only if the branch contains only checkpoint commits. If you've made manual commits on the branch, it will be preserved to prevent data loss.
+
+## Repository
+
+Per-repository settings are documented in [Per-Repo Settings](/Claudette/features/per-repo-settings/).

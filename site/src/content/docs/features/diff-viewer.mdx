@@ -1,0 +1,27 @@
+---
+title: Diff Viewer
+description: Real-time git diff tracking with unified view and syntax highlighting.
+---
+
+The diff viewer shows you exactly what the agent changed in your codebase, updated in real time as the agent works.
+
+## Viewing Changes
+
+After an agent completes work (or while it's still running), the diff panel shows all modified files with:
+
+- **Unified diff view** — added lines in green, removed lines in red
+- **Syntax highlighting** — code is highlighted by language
+- **Line numbers** — original and new line numbers side by side
+
+{/* TODO: Screenshot of diff viewer */}
+:::note[Screenshot coming soon]
+A screenshot showing the diff viewer with code changes will be added here.
+:::
+
+## Changed Files List
+
+The **right sidebar** (`⌘/Ctrl + D` to toggle) displays a list of all files that have been changed in the current workspace. Click any file to jump to its diff.
+
+## How It Works
+
+Claudette runs `git diff` against the workspace's worktree to detect changes. The diff updates automatically as the agent writes code, so you can watch changes appear in real time during streaming.

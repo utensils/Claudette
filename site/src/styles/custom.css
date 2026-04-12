@@ -1,0 +1,45 @@
+/* Claudette brand colors mapped to Starlight CSS variables */
+/* Palette: Coral (#E07850), Pink (#F5A0B8), Cream (#FFF8F0), Charcoal (#2A2A30) */
+
+:root {
+  --sl-color-accent-low: #3d1e0e;
+  --sl-color-accent: #e07850;
+  --sl-color-accent-high: #ffeee5;
+  --sl-color-white: #f0ebe5;
+  --sl-color-gray-1: #ddd5cc;
+  --sl-color-gray-2: #b8afa5;
+  --sl-color-gray-3: #908880;
+  --sl-color-gray-4: #686058;
+  --sl-color-gray-5: #3d3832;
+  --sl-color-gray-6: #2a2520;
+  --sl-color-black: #1c1815;
+
+  --sl-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --sl-font-system: var(--sl-font);
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #fff0e8;
+  --sl-color-accent: #c45a35;
+  --sl-color-accent-high: #3d1e0e;
+  --sl-color-white: #2a2520;
+  --sl-color-gray-1: #3d3832;
+  --sl-color-gray-2: #686058;
+  --sl-color-gray-3: #908880;
+  --sl-color-gray-4: #b8afa5;
+  --sl-color-gray-5: #ddd5cc;
+  --sl-color-gray-6: #f5efe8;
+  --sl-color-black: #fff8f0;
+}
+
+/* Starlight logo image — pixelated rendering for pixel art */
+.site-title img {
+  image-rendering: pixelated;
+}
+
+/* Warmer link colors */
+:root {
+  --sl-color-text-accent: #f0956e;
+  --sl-sidebar-width: 14rem;
+  --sl-content-width: 55rem;
+}
