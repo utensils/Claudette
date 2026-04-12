@@ -173,6 +173,7 @@ export function CommandPalette() {
         toggleRightSidebar,
         toggleFuzzyFinder,
         openModal,
+        openSettings: useAppStore.getState().openSettings,
         close,
         themes,
         applyThemeById,

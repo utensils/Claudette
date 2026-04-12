@@ -42,3 +42,6 @@ tags
 
 # Claude Code
 .claude/worktrees/
+
+# Superpowers brainstorm
+.superpowers/

@@ -68,6 +68,7 @@ export interface CommandContext {
   toggleRightSidebar: () => void;
   toggleFuzzyFinder: () => void;
   openModal: (name: string, data?: Record<string, unknown>) => void;
+  openSettings: (section?: string) => void;
   close: () => void;
 
   // Theme
@@ -329,7 +330,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
     category: "settings",
     icon: Settings,
     keywords: ["preferences", "config", "options"],
-    execute: () => { ctx.openModal("appSettings"); ctx.close(); },
+    execute: () => { ctx.openSettings(); ctx.close(); },
   });
   if (ctx.currentRepoId) {
     cmds.push({
@@ -338,7 +339,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
       category: "settings",
       icon: Wrench,
       keywords: ["repo", "project", "config"],
-      execute: () => { ctx.openModal("repoSettings", { repoId: ctx.currentRepoId }); ctx.close(); },
+      execute: () => { ctx.openSettings(`repo:${ctx.currentRepoId}`); ctx.close(); },
     });
   }
   cmds.push({

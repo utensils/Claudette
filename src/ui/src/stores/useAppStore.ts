@@ -208,6 +208,13 @@ interface AppState {
   toggleFuzzyFinder: () => void;
   toggleCommandPalette: () => void;
 
+  // -- Settings page --
+  settingsOpen: boolean;
+  settingsSection: string | null;
+  openSettings: (section?: string) => void;
+  closeSettings: () => void;
+  setSettingsSection: (section: string) => void;
+
   // -- Modals --
   activeModal: string | null;
   modalData: Record<string, unknown>;
@@ -739,6 +746,14 @@ export const useAppStore = create<AppState>((set) => ({
   commandPaletteOpen: false,
   toggleCommandPalette: () =>
     set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
+
+  // -- Settings page --
+  settingsOpen: false,
+  settingsSection: null,
+  openSettings: (section = "general") =>
+    set({ settingsOpen: true, settingsSection: section }),
+  closeSettings: () => set({ settingsOpen: false, settingsSection: null }),
+  setSettingsSection: (section) => set({ settingsSection: section }),
 
   // -- Modals --
   activeModal: null,

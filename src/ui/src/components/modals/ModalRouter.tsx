@@ -3,9 +3,7 @@ import { AddRepoModal } from "./AddRepoModal";
 import { AddRemoteModal } from "./AddRemoteModal";
 import { DeleteWorkspaceModal } from "./DeleteWorkspaceModal";
 import { RemoveRepoModal } from "./RemoveRepoModal";
-import { RepoSettingsModal } from "./RepoSettingsModal";
 import { RelinkRepoModal } from "./RelinkRepoModal";
-import { AppSettingsModal } from "./AppSettingsModal";
 import { RollbackModal } from "./RollbackModal";
 import { ShareModal } from "./ShareModal";
 import { ConfirmSetupScriptModal } from "./ConfirmSetupScriptModal";
@@ -22,12 +20,8 @@ export function ModalRouter() {
       return <DeleteWorkspaceModal />;
     case "removeRepo":
       return <RemoveRepoModal />;
-    case "repoSettings":
-      return <RepoSettingsModal />;
     case "relinkRepo":
       return <RelinkRepoModal />;
-    case "appSettings":
-      return <AppSettingsModal />;
     case "rollback":
       return <RollbackModal />;
     case "share":

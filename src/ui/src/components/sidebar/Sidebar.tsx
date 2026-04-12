@@ -31,6 +31,7 @@ export function Sidebar() {
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const addChatMessage = useAppStore((s) => s.addChatMessage);
   const openModal = useAppStore((s) => s.openModal);
+  const openSettings = useAppStore((s) => s.openSettings);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const unreadCompletions = useAppStore((s) => s.unreadCompletions);
   const setRepositories = useAppStore((s) => s.setRepositories);
@@ -276,7 +277,7 @@ export function Sidebar() {
                       className={styles.iconBtn}
                       onClick={(e) => {
                         e.stopPropagation();
-                        openModal("repoSettings", { repoId: repo.id });
+                        openSettings(`repo:${repo.id}`);
                       }}
                       title="Settings"
                     >
@@ -449,7 +450,7 @@ export function Sidebar() {
         <ShareButton openModal={openModal} />
         <button
           className={styles.footerBtn}
-          onClick={() => openModal("appSettings")}
+          onClick={() => openSettings()}
           title="Settings"
         >
           <Settings size={14} />

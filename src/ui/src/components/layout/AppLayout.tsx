@@ -11,6 +11,7 @@ import { Dashboard } from "./Dashboard";
 import { StatusBar } from "./StatusBar";
 import { UpdateBanner } from "./UpdateBanner";
 import { ModalRouter } from "../modals/ModalRouter";
+import { SettingsPage } from "../settings/SettingsPage";
 import { ResizeHandle } from "./ResizeHandle";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useBranchRefresh } from "../../hooks/useBranchRefresh";
@@ -29,6 +30,7 @@ export function AppLayout() {
   const terminalPanelVisible = useAppStore((s) => s.terminalPanelVisible);
   const terminalHeight = useAppStore((s) => s.terminalHeight);
   const setTerminalHeight = useAppStore((s) => s.setTerminalHeight);
+  const settingsOpen = useAppStore((s) => s.settingsOpen);
   const fuzzyFinderOpen = useAppStore((s) => s.fuzzyFinderOpen);
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
@@ -57,56 +59,62 @@ export function AppLayout() {
     <div className={styles.container}>
       <UpdateBanner installNow={installNow} installWhenIdle={installWhenIdle} dismiss={dismiss} />
       <div className={styles.main}>
-        {sidebarVisible && (
+        {settingsOpen ? (
+          <SettingsPage />
+        ) : (
           <>
-            <div className={styles.sidebar} style={{ width: sidebarWidth }}>
-              <Sidebar />
-            </div>
-            <ResizeHandle
-              direction="horizontal"
-              onResize={handleLeftResize}
-            />
-          </>
-        )}
-        <div className={styles.center}>
-          <div className={styles.content}>
-            {selectedWorkspaceId ? (
-              showDiff ? (
-                <DiffViewer />
-              ) : (
-                <ChatPanel />
-              )
-            ) : (
-              <Dashboard />
+            {sidebarVisible && (
+              <>
+                <div className={styles.sidebar} style={{ width: sidebarWidth }}>
+                  <Sidebar />
+                </div>
+                <ResizeHandle
+                  direction="horizontal"
+                  onResize={handleLeftResize}
+                />
+              </>
             )}
-          </div>
-          {terminalPanelVisible && selectedWorkspaceId && (
-            <>
-              <ResizeHandle
-                direction="vertical"
-                onResize={handleTerminalResize}
-              />
-              <div
-                className={styles.terminal}
-                style={{ height: terminalHeight }}
-              >
-                <TerminalPanel />
+            <div className={styles.center}>
+              <div className={styles.content}>
+                {selectedWorkspaceId ? (
+                  showDiff ? (
+                    <DiffViewer />
+                  ) : (
+                    <ChatPanel />
+                  )
+                ) : (
+                  <Dashboard />
+                )}
               </div>
-            </>
-          )}
-        </div>
-        {rightSidebarVisible && selectedWorkspaceId && (
-          <>
-            <ResizeHandle
-              direction="horizontal"
-              onResize={handleRightResize}
-            />
-            <div
-              className={styles.rightSidebar}
-              style={{ width: rightSidebarWidth }}
-            >
-              <RightSidebar />
+              {terminalPanelVisible && selectedWorkspaceId && (
+                <>
+                  <ResizeHandle
+                    direction="vertical"
+                    onResize={handleTerminalResize}
+                  />
+                  <div
+                    className={styles.terminal}
+                    style={{ height: terminalHeight }}
+                  >
+                    <TerminalPanel />
+                  </div>
+                </>
+              )}
             </div>
+            {rightSidebarVisible && selectedWorkspaceId && (
+              <>
+                <ResizeHandle
+                  direction="horizontal"
+                  onResize={handleRightResize}
+                />
+                <div
+                  className={styles.rightSidebar}
+                  style={{ width: rightSidebarWidth }}
+                >
+                  <RightSidebar />
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

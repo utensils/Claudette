@@ -43,6 +43,8 @@ export function useKeyboardShortcuts() {
       if (e.key === "Escape") {
         if (commandPaletteOpen) {
           toggleCommandPalette();
+        } else if (useAppStore.getState().settingsOpen) {
+          useAppStore.getState().closeSettings();
         } else if (activeModal) {
           closeModal();
         } else if (fuzzyFinderOpen) {
@@ -136,10 +138,10 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           {
             const store = useAppStore.getState();
-            if (store.activeModal === "appSettings") {
-              store.closeModal();
+            if (store.settingsOpen) {
+              store.closeSettings();
             } else {
-              store.openModal("appSettings");
+              store.openSettings();
             }
           }
           break;
