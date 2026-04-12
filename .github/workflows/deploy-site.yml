@@ -6,6 +6,11 @@ on:
     paths:
       - 'site/**'
       - '.github/workflows/deploy-site.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
 
 permissions:
@@ -26,14 +31,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.0.29"
       - run: bun install --frozen-lockfile
       - run: bun run build
       - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
         with:
           path: site/dist
 
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

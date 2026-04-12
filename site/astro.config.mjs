@@ -63,7 +63,7 @@ export default defineConfig({
           autogenerate: { directory: 'quickstart' },
         },
         { slug: 'built-with' },
-      { slug: 'privacy' },
+        { slug: 'privacy' },
       ],
       lastUpdated: true,
     }),

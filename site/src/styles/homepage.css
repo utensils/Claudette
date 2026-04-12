@@ -23,6 +23,15 @@
   50% { transform: translateY(-12px); }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  [data-has-hero] .hero > img {
+    animation: none;
+  }
+  .feature-card {
+    transition: none;
+  }
+}
+
 [data-has-hero] .hero .tagline {
   font-size: clamp(1rem, 2.5vw, 1.3rem);
 }
