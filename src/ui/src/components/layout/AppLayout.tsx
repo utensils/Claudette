@@ -8,7 +8,6 @@ import { RightSidebar } from "../right-sidebar/RightSidebar";
 import { FuzzyFinder } from "../fuzzy-finder/FuzzyFinder";
 import { CommandPalette } from "../command-palette/CommandPalette";
 import { Dashboard } from "./Dashboard";
-import { StatusBar } from "./StatusBar";
 import { UpdateBanner } from "./UpdateBanner";
 import { ModalRouter } from "../modals/ModalRouter";
 import { SettingsPage } from "../settings/SettingsPage";
@@ -120,7 +119,6 @@ export function AppLayout() {
           </>
         )}
       </div>
-      <StatusBar />
       <ModalRouter />
       {fuzzyFinderOpen && <FuzzyFinder />}
       {commandPaletteOpen && <CommandPalette />}

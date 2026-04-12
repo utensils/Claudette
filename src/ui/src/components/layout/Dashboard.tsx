@@ -173,13 +173,19 @@ export function Dashboard() {
 
   if (activeWorkspaces.length === 0) {
     return (
-      <div className={styles.empty}>
-        <Layers size={40} className={styles.emptyIcon} />
-        <span className={styles.emptyTitle}>No active workspaces</span>
-        <p className={styles.hint}>
-          Create a workspace from a repository in the sidebar, or press{" "}
-          <kbd className={styles.hintKey}>+</kbd> next to a repo name.
-        </p>
+      <div className={styles.dashboard}>
+        <div className={styles.toolbar} data-tauri-drag-region>
+          <div className={styles.header}>Active Workspaces</div>
+          <PanelToggles />
+        </div>
+        <div className={styles.empty}>
+          <Layers size={40} className={styles.emptyIcon} />
+          <span className={styles.emptyTitle}>No active workspaces</span>
+          <p className={styles.hint}>
+            Create a workspace from a repository in the sidebar, or press{" "}
+            <kbd className={styles.hintKey}>+</kbd> next to a repo name.
+          </p>
+        </div>
       </div>
     );
   }

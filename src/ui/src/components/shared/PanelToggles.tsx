@@ -17,23 +17,32 @@ export function PanelToggles() {
   return (
     <div className={styles.toggles}>
       <button
+        type="button"
         className={`${styles.toggle} ${sidebarVisible ? styles.active : ""}`}
         onClick={toggleSidebar}
         title={`Toggle sidebar (${mod}B)`}
+        aria-label="Toggle sidebar"
+        aria-pressed={sidebarVisible}
       >
         <PanelLeft size={16} />
       </button>
       <button
+        type="button"
         className={`${styles.toggle} ${terminalPanelVisible ? styles.active : ""}`}
         onClick={toggleTerminalPanel}
         title={`Toggle terminal (${mod}\`)`}
+        aria-label="Toggle terminal"
+        aria-pressed={terminalPanelVisible}
       >
         <PanelBottom size={16} />
       </button>
       <button
+        type="button"
         className={`${styles.toggle} ${rightSidebarVisible ? styles.active : ""}`}
         onClick={toggleRightSidebar}
         title={`Toggle changes (${mod}D)`}
+        aria-label="Toggle changes"
+        aria-pressed={rightSidebarVisible}
       >
         <PanelRight size={16} />
       </button>
