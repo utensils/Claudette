@@ -66,6 +66,15 @@ pub async fn set_app_setting(
     Ok(())
 }
 
+/// Read the global `git config user.name` and return it as a branch-safe slug.
+#[tauri::command]
+pub async fn get_git_username() -> Result<Option<String>, String> {
+    let name = claudette::git::get_git_username()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(name.map(|n| claudette::agent::sanitize_branch_name(&n, 30)))
+}
+
 /// Return available notification sound names for the current platform.
 #[tauri::command]
 pub fn list_notification_sounds() -> Vec<String> {

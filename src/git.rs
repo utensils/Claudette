@@ -36,6 +36,27 @@ async fn run_git(repo_path: &str, args: &[&str]) -> Result<String, GitError> {
     }
 }
 
+/// Read `git config user.name` from global config (no repo required).
+/// Returns `None` if not configured.
+pub async fn get_git_username() -> Result<Option<String>, GitError> {
+    let output = Command::new("git")
+        .args(["config", "user.name"])
+        .output()
+        .await
+        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+
+    if output.status.success() {
+        let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if name.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(name))
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 pub async fn validate_repo(path: &str) -> Result<(), GitError> {
     if !Path::new(path).is_dir() {
         return Err(GitError::NotAGitRepo);

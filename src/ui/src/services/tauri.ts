@@ -346,6 +346,10 @@ export function listUserThemes(): Promise<ThemeDefinition[]> {
   return invoke("list_user_themes");
 }
 
+export function getGitUsername(): Promise<string | null> {
+  return invoke("get_git_username");
+}
+
 export function listNotificationSounds(): Promise<string[]> {
   return invoke("list_notification_sounds");
 }

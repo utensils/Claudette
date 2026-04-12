@@ -721,10 +721,25 @@ async fn try_auto_rename(
             }
         };
 
+    // Resolve the configured branch prefix.
+    let prefix = {
+        let db = match Database::open(db_path) {
+            Ok(db) => db,
+            Err(e) => {
+                eprintln!("[rename] Failed to open DB for prefix: {e}");
+                return;
+            }
+        };
+        let (mode, custom) = super::workspace::read_branch_prefix_settings(&db);
+        // Drop db before the async call (Database is not Sync).
+        drop(db);
+        super::workspace::resolve_branch_prefix(&mode, &custom).await
+    };
+
     // Try the slug, then slug-2, slug-3 on name collision.
     let candidates = [slug.clone(), format!("{slug}-2"), format!("{slug}-3")];
     for candidate in &candidates {
-        let new_branch = format!("claudette/{candidate}");
+        let new_branch = format!("{prefix}{candidate}");
 
         let db = match Database::open(db_path) {
             Ok(db) => db,

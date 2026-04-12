@@ -6,6 +6,7 @@ const APP_SECTIONS = [
   { id: "general", label: "General" },
   { id: "appearance", label: "Appearance" },
   { id: "notifications", label: "Notifications" },
+  { id: "git", label: "Git" },
 ];
 
 const MORE_SECTIONS = [

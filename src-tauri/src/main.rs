@@ -274,6 +274,7 @@ fn main() {
             commands::settings::list_notification_sounds,
             commands::settings::play_notification_sound,
             commands::settings::run_notification_command,
+            commands::settings::get_git_username,
             // Shell Integration
             commands::shell::setup_shell_integration,
             commands::shell::apply_shell_integration,
