@@ -177,6 +177,23 @@ export function deriveTasks(
   return { tasks, completedCount, totalCount: tasks.length };
 }
 
+const TASK_TOOL_NAMES = new Set([
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskStop",
+  "TodoWrite",
+]);
+
+/** Check whether a completed turn contains any task-related tool calls. */
+export function turnHasTaskActivity(turn: CompletedTurn): boolean {
+  return turn.activities.some((a) => TASK_TOOL_NAMES.has(a.toolName));
+}
+
+/** Check whether an activities array contains any task-related tool calls. */
+export function hasTaskActivity(activities: ToolActivity[]): boolean {
+  return activities.some((a) => TASK_TOOL_NAMES.has(a.toolName));
+}
+
 /**
  * Reactively derive a task list from existing tool activities.
  * Scans both completed turns and current-turn activities for

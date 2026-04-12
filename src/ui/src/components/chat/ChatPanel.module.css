@@ -681,6 +681,50 @@
   cursor: default;
 }
 
+.turnSummaryWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 4px 0;
+}
+
+.turnSummaryWrapper > .turnSummary {
+  margin: 0;
+}
+
+.taskProgressBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+}
+
+.taskProgressTrack {
+  flex: 1;
+  height: 4px;
+  background: var(--divider);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.taskProgressFill {
+  height: 100%;
+  background: var(--accent-dim);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.taskProgressDone {
+  background: var(--diff-added-text);
+}
+
+.taskProgressLabel {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .toolActivity {
   border: 1px solid var(--divider);
   border-radius: 6px;
