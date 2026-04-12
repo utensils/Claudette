@@ -3,11 +3,11 @@ use tauri::State;
 use tokio::process::Command;
 
 use claudette::db::Database;
+use claudette::file_expand;
 
 use crate::state::AppState;
 
 const MAX_FILES: usize = 10_000;
-const MAX_FILE_SIZE: u64 = 100 * 1024; // 100 KB
 
 #[derive(Clone, Serialize)]
 pub struct FileEntry {
@@ -94,9 +94,8 @@ pub async fn list_workspace_files(
 
 /// Read a file from a workspace's worktree.
 ///
-/// Validates that the resolved path stays within the worktree (path traversal
-/// protection). Detects binary files by scanning the first 8 KB for null bytes.
-/// Truncates content at 100 KB.
+/// Delegates to the shared `read_worktree_file` helper for path-traversal
+/// protection, binary detection, and 100 KB truncation.
 #[tauri::command]
 pub async fn read_workspace_file(
     workspace_id: String,
@@ -114,55 +113,15 @@ pub async fn read_workspace_file(
         .as_ref()
         .ok_or("Workspace has no worktree")?;
 
-    // Path traversal protection: canonicalize both paths and verify containment.
-    let worktree_canonical = tokio::fs::canonicalize(worktree_path)
+    let read = file_expand::read_worktree_file(std::path::Path::new(worktree_path), &relative_path)
         .await
-        .map_err(|e| format!("Failed to resolve worktree path: {e}"))?;
-    let joined = std::path::Path::new(worktree_path).join(&relative_path);
-    let file_canonical = tokio::fs::canonicalize(&joined)
-        .await
-        .map_err(|e| format!("File not found: {e}"))?;
-
-    if !file_canonical.starts_with(&worktree_canonical) {
-        return Err("Path traversal denied: path escapes worktree".to_string());
-    }
-
-    let metadata = tokio::fs::metadata(&file_canonical)
-        .await
-        .map_err(|e| format!("Cannot read file metadata: {e}"))?;
-    let size_bytes = metadata.len();
-
-    // Read file bytes (cap read at MAX_FILE_SIZE + 1 to detect truncation).
-    let raw = tokio::fs::read(&file_canonical)
-        .await
-        .map_err(|e| format!("Failed to read file: {e}"))?;
-
-    // Binary detection: check first 8 KB for null bytes.
-    let check_len = raw.len().min(8192);
-    if raw[..check_len].contains(&0) {
-        return Ok(FileContent {
-            path: relative_path,
-            content: None,
-            is_binary: true,
-            size_bytes,
-            truncated: false,
-        });
-    }
-
-    let truncated = raw.len() as u64 > MAX_FILE_SIZE;
-    let usable = if truncated {
-        &raw[..MAX_FILE_SIZE as usize]
-    } else {
-        &raw[..]
-    };
-
-    let text = String::from_utf8_lossy(usable).into_owned();
+        .ok_or("File not found or path escapes worktree")?;
 
     Ok(FileContent {
         path: relative_path,
-        content: Some(text),
-        is_binary: false,
-        size_bytes,
-        truncated,
+        content: read.content,
+        is_binary: read.is_binary,
+        size_bytes: read.size_bytes,
+        truncated: read.truncated,
     })
 }
