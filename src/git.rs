@@ -40,7 +40,7 @@ async fn run_git(repo_path: &str, args: &[&str]) -> Result<String, GitError> {
 /// Returns `None` if not configured.
 pub async fn get_git_username() -> Result<Option<String>, GitError> {
     let output = Command::new("git")
-        .args(["config", "user.name"])
+        .args(["config", "--global", "user.name"])
         .output()
         .await
         .map_err(|e| GitError::CommandFailed(e.to_string()))?;

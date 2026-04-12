@@ -148,6 +148,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
             className={styles.repoIconButton}
             onClick={() => setIconPickerOpen(!iconPickerOpen)}
             title="Change icon"
+            aria-label="Change repository icon"
           >
             {icon ? (
               <RepoIcon icon={icon} size={20} />
@@ -173,6 +174,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => save({ name })}
+          aria-label="Repository display name"
         />
       </div>
 

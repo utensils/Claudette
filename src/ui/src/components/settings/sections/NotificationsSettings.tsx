@@ -89,6 +89,7 @@ export function NotificationsSettings() {
               className={styles.iconBtn}
               onClick={() => playNotificationSound(notificationSound)}
               title="Preview sound"
+              aria-label="Preview sound"
             >
               &#9654;
             </button>
@@ -123,6 +124,7 @@ export function NotificationsSettings() {
               disabled={!notificationCommand.trim()}
               onClick={handleTestCommand}
               title="Test command"
+              aria-label="Test command"
             >
               &#9654;
             </button>

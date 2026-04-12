@@ -139,7 +139,8 @@ export function GitSettings() {
               className={styles.settingDescription}
               style={{ color: "var(--status-stopped)", marginTop: 4 }}
             >
-              Warning: archived workspaces will be unrecoverable
+              Branches with only checkpoint commits will be deleted; branches
+              with user commits are preserved
             </div>
           )}
         </div>

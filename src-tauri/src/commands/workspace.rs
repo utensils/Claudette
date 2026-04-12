@@ -49,11 +49,20 @@ pub(crate) fn read_branch_prefix_settings(db: &Database) -> (String, String) {
 pub(crate) async fn resolve_branch_prefix(mode: &str, custom: &str) -> String {
     match mode {
         "custom" => {
-            let trimmed = custom.trim().trim_end_matches('/');
-            if trimmed.is_empty() {
+            let sanitized = custom
+                .trim()
+                .trim_matches('/')
+                .split('/')
+                .filter_map(|segment| {
+                    let s = agent::sanitize_branch_name(segment.trim(), 30);
+                    if s.is_empty() { None } else { Some(s) }
+                })
+                .collect::<Vec<_>>()
+                .join("/");
+            if sanitized.is_empty() {
                 String::new()
             } else {
-                format!("{trimmed}/")
+                format!("{sanitized}/")
             }
         }
         "none" => String::new(),

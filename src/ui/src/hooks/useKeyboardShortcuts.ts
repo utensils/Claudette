@@ -43,10 +43,10 @@ export function useKeyboardShortcuts() {
       if (e.key === "Escape") {
         if (commandPaletteOpen) {
           toggleCommandPalette();
-        } else if (useAppStore.getState().settingsOpen) {
-          useAppStore.getState().closeSettings();
         } else if (activeModal) {
           closeModal();
+        } else if (useAppStore.getState().settingsOpen) {
+          useAppStore.getState().closeSettings();
         } else if (fuzzyFinderOpen) {
           toggleFuzzyFinder();
         } else if (diffSelectedFile) {
