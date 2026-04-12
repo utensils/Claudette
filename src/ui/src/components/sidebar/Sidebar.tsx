@@ -14,7 +14,7 @@ import {
   pairWithServer,
   startLocalServer,
 } from "../../services/tauri";
-import { Settings, Link, X, Share2, Plus, Globe, Archive, Trash2 } from "lucide-react";
+import { Settings, Link, X, Share2, Plus, Globe, Archive, Trash2, BadgeCheck, BadgeInfo, BadgeQuestionMark } from "lucide-react";
 import { RepoIcon } from "../shared/RepoIcon";
 import styles from "./Sidebar.module.css";
 
@@ -34,6 +34,8 @@ export const Sidebar = memo(function Sidebar() {
   const openSettings = useAppStore((s) => s.openSettings);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const unreadCompletions = useAppStore((s) => s.unreadCompletions);
+  const agentQuestions = useAppStore((s) => s.agentQuestions);
+  const planApprovals = useAppStore((s) => s.planApprovals);
   const setRepositories = useAppStore((s) => s.setRepositories);
   const metaKeyHeld = useAppStore((s) => s.metaKeyHeld);
   const isMac = navigator.platform.startsWith("Mac");
@@ -45,7 +47,6 @@ export const Sidebar = memo(function Sidebar() {
   const dragStartPos = useRef<{ x: number; y: number; id: string; pointerId: number } | null>(null);
   const didDragRef = useRef(false);
   const DRAG_THRESHOLD = 5; // px before drag activates
-  const clearUnreadCompletion = useAppStore((s) => s.clearUnreadCompletion);
   const workspaceTerminalCommands = useAppStore((s) => s.workspaceTerminalCommands);
 
   const creatingRef = useRef(false);
@@ -330,16 +331,17 @@ export const Sidebar = memo(function Sidebar() {
 
               {!collapsed &&
                 repoWorkspaces.map((ws) => {
-                  const hasUnread = unreadCompletions.has(ws.id);
+                  const badge: "ask" | "plan" | "done" | null =
+                    agentQuestions[ws.id] ? "ask" :
+                    planApprovals[ws.id] ? "plan" :
+                    unreadCompletions.has(ws.id) && ws.agent_status !== "Running" ? "done" :
+                    null;
                   return (
                   <div
                     key={ws.id}
-                    className={`${styles.wsItem} ${selectedWorkspaceId === ws.id ? styles.wsSelected : ""} ${hasUnread ? styles.wsUnread : ""}`}
+                    className={`${styles.wsItem} ${selectedWorkspaceId === ws.id ? styles.wsSelected : ""} ${badge ? styles.wsUnread : ""}`}
                     onClick={() => {
                       selectWorkspace(ws.id);
-                      if (hasUnread) {
-                        clearUnreadCompletion(ws.id);
-                      }
                     }}
                   >
                     <span
@@ -356,7 +358,9 @@ export const Sidebar = memo(function Sidebar() {
                     <div className={styles.wsInfo}>
                       <span className={styles.wsName}>
                         {ws.name}
-                        {hasUnread && <span className={styles.notificationBadge}>●</span>}
+                        {badge === "done" && <BadgeCheck size={14} className={styles.badgeDone} />}
+                        {badge === "plan" && <BadgeInfo size={14} className={styles.badgePlan} />}
+                        {badge === "ask" && <BadgeQuestionMark size={14} className={styles.badgeAsk} />}
                       </span>
                       <span className={styles.wsBranch}>{ws.branch_name}</span>
                       {(() => {
