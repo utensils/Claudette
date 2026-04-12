@@ -14,7 +14,7 @@ import {
   pairWithServer,
   startLocalServer,
 } from "../../services/tauri";
-import { Settings, Link, X, Share2, Plus, Globe, Archive, Trash2, BadgeCheck, BadgeInfo, BadgeQuestionMark } from "lucide-react";
+import { Settings, Link, X, Share2, Plus, Globe, Archive, Trash2, BadgeCheck, BadgeInfo, BadgeQuestionMark, Cog } from "lucide-react";
 import { RepoIcon } from "../shared/RepoIcon";
 import styles from "./Sidebar.module.css";
 
@@ -375,7 +375,7 @@ export const Sidebar = memo(function Sidebar() {
                         return (
                           <div className={styles.terminalCommand}>
                             {commandState.isRunning ? (
-                              <span className={styles.runningIcon} title="Running">⚙️</span>
+                              <Cog size={12} className={styles.runningIcon} />
                             ) : commandState.exitCode === 0 ? (
                               <span className={styles.successIcon} title="Exited successfully">✓</span>
                             ) : commandState.exitCode !== null ? (
