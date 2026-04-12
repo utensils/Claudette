@@ -150,6 +150,7 @@ pub async fn restore_snapshot(
 ) -> Result<(), SnapshotError> {
     let db = crate::db::Database::open(db_path).map_err(|e| SnapshotError::Db(e.to_string()))?;
     let snapshot_files = db.get_checkpoint_files(checkpoint_id)?;
+    drop(db); // Release connection before async I/O.
     let base = Path::new(worktree_path);
 
     // Build set of snapshot paths for deletion pass.
@@ -160,6 +161,10 @@ pub async fn restore_snapshot(
 
     // Write snapshot files to disk.
     for f in &snapshot_files {
+        // Guard against path traversal from corrupted DB rows.
+        if f.file_path.contains("..") {
+            continue;
+        }
         let full_path = base.join(&f.file_path);
         match &f.content {
             Some(content) => {
@@ -227,30 +232,24 @@ async fn clean_empty_dirs(root: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use tempfile::TempDir;
     use tokio::process::Command;
 
-    async fn setup_test_repo() -> PathBuf {
-        let dir = tempfile::tempdir().unwrap().keep();
+    async fn setup_test_repo() -> TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
         Command::new("git")
-            .args(["init", dir.to_str().unwrap()])
-            .output()
-            .await
-            .unwrap();
-        // Configure git user for commits
-        Command::new("git")
-            .args([
-                "-C",
-                dir.to_str().unwrap(),
-                "config",
-                "user.email",
-                "test@test.com",
-            ])
+            .args(["init", path])
             .output()
             .await
             .unwrap();
         Command::new("git")
-            .args(["-C", dir.to_str().unwrap(), "config", "user.name", "Test"])
+            .args(["-C", path, "config", "user.email", "test@test.com"])
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["-C", path, "config", "user.name", "Test"])
             .output()
             .await
             .unwrap();
@@ -260,10 +259,10 @@ mod tests {
     #[tokio::test]
     async fn test_collect_worktree_files() {
         let dir = setup_test_repo().await;
-        let dir_str = dir.to_str().unwrap();
+        let dir_str = dir.path().to_str().unwrap();
 
         // Create tracked file
-        tokio::fs::write(dir.join("hello.txt"), b"hello")
+        tokio::fs::write(dir.path().join("hello.txt"), b"hello")
             .await
             .unwrap();
         Command::new("git")
@@ -273,15 +272,15 @@ mod tests {
             .unwrap();
 
         // Create untracked (but not ignored) file
-        tokio::fs::write(dir.join("world.txt"), b"world")
+        tokio::fs::write(dir.path().join("world.txt"), b"world")
             .await
             .unwrap();
 
         // Create gitignored file
-        tokio::fs::write(dir.join(".gitignore"), "ignored.txt\n")
+        tokio::fs::write(dir.path().join(".gitignore"), "ignored.txt\n")
             .await
             .unwrap();
-        tokio::fs::write(dir.join("ignored.txt"), b"secret")
+        tokio::fs::write(dir.path().join("ignored.txt"), b"secret")
             .await
             .unwrap();
 
@@ -292,23 +291,21 @@ mod tests {
         assert!(paths.contains(&"world.txt"));
         assert!(paths.contains(&".gitignore"));
         assert!(!paths.contains(&"ignored.txt"));
-
-        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     #[tokio::test]
     async fn test_collect_skips_large_files() {
         let dir = setup_test_repo().await;
-        let dir_str = dir.to_str().unwrap();
+        let dir_str = dir.path().to_str().unwrap();
 
         // Create a small file
-        tokio::fs::write(dir.join("small.txt"), b"small")
+        tokio::fs::write(dir.path().join("small.txt"), b"small")
             .await
             .unwrap();
 
         // Create a file larger than MAX_SNAPSHOT_FILE_SIZE
         let large = vec![0u8; (MAX_SNAPSHOT_FILE_SIZE + 1) as usize];
-        tokio::fs::write(dir.join("large.bin"), &large)
+        tokio::fs::write(dir.path().join("large.bin"), &large)
             .await
             .unwrap();
 
@@ -317,8 +314,6 @@ mod tests {
 
         assert!(paths.contains(&"small.txt"));
         assert!(!paths.contains(&"large.bin"));
-
-        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     const TEST_SEED_SQL: &str = "\
@@ -331,19 +326,21 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_restore_roundtrip() {
         let dir = setup_test_repo().await;
-        let dir_str = dir.to_str().unwrap();
+        let dir_str = dir.path().to_str().unwrap();
 
         // Create initial files
-        tokio::fs::write(dir.join("a.txt"), b"content-a")
+        tokio::fs::write(dir.path().join("a.txt"), b"content-a")
             .await
             .unwrap();
-        tokio::fs::create_dir_all(dir.join("sub")).await.unwrap();
-        tokio::fs::write(dir.join("sub/b.txt"), b"content-b")
+        tokio::fs::create_dir_all(dir.path().join("sub"))
+            .await
+            .unwrap();
+        tokio::fs::write(dir.path().join("sub/b.txt"), b"content-b")
             .await
             .unwrap();
 
         // Save snapshot to DB
-        let db_path = dir.join("test.db");
+        let db_path = dir.path().join("test.db");
         let db = crate::db::Database::open(&db_path).unwrap();
         db.execute_batch(TEST_SEED_SQL).unwrap();
 
@@ -353,60 +350,88 @@ mod tests {
         assert!(db.has_checkpoint_files("cp1").unwrap());
 
         // Modify worktree: change a file, add a new one, delete one
-        tokio::fs::write(dir.join("a.txt"), b"modified")
+        tokio::fs::write(dir.path().join("a.txt"), b"modified")
             .await
             .unwrap();
-        tokio::fs::write(dir.join("new.txt"), b"new-file")
+        tokio::fs::write(dir.path().join("new.txt"), b"new-file")
             .await
             .unwrap();
-        tokio::fs::remove_file(dir.join("sub/b.txt")).await.unwrap();
+        tokio::fs::remove_file(dir.path().join("sub/b.txt"))
+            .await
+            .unwrap();
 
         // Restore snapshot
         restore_snapshot(&db_path, "cp1", dir_str).await.unwrap();
 
         // Verify original state is restored
-        let a_content = tokio::fs::read_to_string(dir.join("a.txt")).await.unwrap();
+        let a_content = tokio::fs::read_to_string(dir.path().join("a.txt"))
+            .await
+            .unwrap();
         assert_eq!(a_content, "content-a");
 
-        let b_content = tokio::fs::read_to_string(dir.join("sub/b.txt"))
+        let b_content = tokio::fs::read_to_string(dir.path().join("sub/b.txt"))
             .await
             .unwrap();
         assert_eq!(b_content, "content-b");
 
         // new.txt should be deleted
-        assert!(!dir.join("new.txt").exists());
-
-        let _ = tokio::fs::remove_dir_all(&dir).await;
+        assert!(!dir.path().join("new.txt").exists());
     }
 
     #[tokio::test]
     async fn test_restore_deletes_extra_files() {
         let dir = setup_test_repo().await;
-        let dir_str = dir.to_str().unwrap();
+        let dir_str = dir.path().to_str().unwrap();
 
         // Create one file and snapshot
-        tokio::fs::write(dir.join("keep.txt"), b"keep")
+        tokio::fs::write(dir.path().join("keep.txt"), b"keep")
             .await
             .unwrap();
 
-        let db_path = dir.join("test.db");
+        let db_path = dir.path().join("test.db");
         let db = crate::db::Database::open(&db_path).unwrap();
         db.execute_batch(TEST_SEED_SQL).unwrap();
 
         save_snapshot(&db_path, "cp1", dir_str).await.unwrap();
 
         // Add extra file after snapshot
-        tokio::fs::write(dir.join("extra.txt"), b"extra")
+        tokio::fs::write(dir.path().join("extra.txt"), b"extra")
             .await
             .unwrap();
-        assert!(dir.join("extra.txt").exists());
+        assert!(dir.path().join("extra.txt").exists());
 
         // Restore should remove extra.txt
         restore_snapshot(&db_path, "cp1", dir_str).await.unwrap();
-        assert!(!dir.join("extra.txt").exists());
-        assert!(dir.join("keep.txt").exists());
+        assert!(!dir.path().join("extra.txt").exists());
+        assert!(dir.path().join("keep.txt").exists());
+    }
 
-        let _ = tokio::fs::remove_dir_all(&dir).await;
+    #[tokio::test]
+    async fn test_restore_empty_snapshot_deletes_all_files() {
+        let dir = setup_test_repo().await;
+        let dir_str = dir.path().to_str().unwrap();
+
+        // Create a file before snapshotting
+        tokio::fs::write(dir.path().join("exists.txt"), b"hello")
+            .await
+            .unwrap();
+
+        let db_path = dir.path().join("test.db");
+        let db = crate::db::Database::open(&db_path).unwrap();
+        db.execute_batch(TEST_SEED_SQL).unwrap();
+
+        // Insert checkpoint with no files (empty snapshot).
+        // save_snapshot is NOT called — cp1 has zero checkpoint_files rows.
+
+        // Add a second file after the "snapshot" point
+        tokio::fs::write(dir.path().join("also.txt"), b"world")
+            .await
+            .unwrap();
+
+        // Restoring an empty snapshot should delete all tracked files.
+        restore_snapshot(&db_path, "cp1", dir_str).await.unwrap();
+        assert!(!dir.path().join("exists.txt").exists());
+        assert!(!dir.path().join("also.txt").exists());
     }
 
     #[cfg(unix)]
@@ -415,35 +440,35 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = setup_test_repo().await;
-        let dir_str = dir.to_str().unwrap();
+        let dir_str = dir.path().to_str().unwrap();
 
         // Create an executable file
-        tokio::fs::write(dir.join("script.sh"), b"#!/bin/sh\necho hi")
+        tokio::fs::write(dir.path().join("script.sh"), b"#!/bin/sh\necho hi")
             .await
             .unwrap();
         let perms = std::fs::Permissions::from_mode(0o100755);
-        tokio::fs::set_permissions(dir.join("script.sh"), perms)
+        tokio::fs::set_permissions(dir.path().join("script.sh"), perms)
             .await
             .unwrap();
 
-        let db_path = dir.join("test.db");
+        let db_path = dir.path().join("test.db");
         let db = crate::db::Database::open(&db_path).unwrap();
         db.execute_batch(TEST_SEED_SQL).unwrap();
 
         save_snapshot(&db_path, "cp1", dir_str).await.unwrap();
 
         // Overwrite with non-executable
-        tokio::fs::write(dir.join("script.sh"), b"changed")
+        tokio::fs::write(dir.path().join("script.sh"), b"changed")
             .await
             .unwrap();
 
         // Restore should bring back executable permission
         restore_snapshot(&db_path, "cp1", dir_str).await.unwrap();
 
-        let metadata = tokio::fs::metadata(dir.join("script.sh")).await.unwrap();
+        let metadata = tokio::fs::metadata(dir.path().join("script.sh"))
+            .await
+            .unwrap();
         let mode = metadata.permissions().mode();
         assert_eq!(mode & 0o111, 0o111, "executable bits should be preserved");
-
-        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 }
