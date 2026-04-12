@@ -18,7 +18,17 @@
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
+  position: relative;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+/* Chip content fades out as the badge fades in */
+.chip > :not(:global(.shortcut-badge)) {
+  transition: opacity 0.5s ease;
+}
+.chip:has(:global(.shortcut-badge-visible)) > :not(:global(.shortcut-badge)) {
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .chip:hover:not(:disabled) {
@@ -46,4 +56,14 @@
 .chipLabel {
   font-size: 12px;
   line-height: 1;
+}
+
+/* Inside chips, the badge floats centered over the content at its natural size */
+.chip :global(.shortcut-badge) {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  z-index: 1;
 }

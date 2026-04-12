@@ -355,6 +355,98 @@ return 'All traces removed';
 JS
 ```
 
+### `hotkeys on` — lock hotkey badges visible for layout inspection
+
+Overrides `setMetaKeyHeld` to ignore `false` — badges stay on through Cmd+Tab, blur, keypresses.
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const store = window.__CLAUDETTE_STORE__;
+const orig = store.getState().setMetaKeyHeld;
+window.__META_ORIG__ = orig;
+store.setState({ setMetaKeyHeld: (held) => { if (held) orig(held); } });
+orig(true);
+return 'Hotkey badges LOCKED on';
+JS
+```
+
+### `hotkeys off` — unlock and hide hotkey badges
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const store = window.__CLAUDETTE_STORE__;
+if (window.__META_ORIG__) {
+  store.setState({ setMetaKeyHeld: window.__META_ORIG__ });
+  window.__META_ORIG__(false);
+  delete window.__META_ORIG__;
+}
+return 'Hotkey badges unlocked';
+JS
+```
+
+### `maximize` — toggle window maximize for resize testing
+
+Programmatically maximize the window, wait, then restore. Useful for testing resize flash behavior.
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const { getCurrentWindow } = window.__TAURI__.window ?? await import("@tauri-apps/api/window");
+const win = getCurrentWindow();
+const wasMax = await win.isMaximized();
+if (wasMax) {
+  await win.unmaximize();
+  return 'Window unmaximized';
+} else {
+  await win.maximize();
+  return 'Window maximized';
+}
+JS
+```
+
+### `maximize-cycle` — maximize then restore after delay
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const { getCurrentWindow } = window.__TAURI__.window ?? await import("@tauri-apps/api/window");
+const win = getCurrentWindow();
+await win.maximize();
+await new Promise(r => setTimeout(r, 1500));
+await win.unmaximize();
+return 'Maximize cycle complete';
+JS
+```
+
+### `resize-info` — inspect native window/webview layer state
+
+```bash
+.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+const { getCurrentWindow } = window.__TAURI__.window ?? await import("@tauri-apps/api/window");
+const win = getCurrentWindow();
+const size = await win.innerSize();
+const pos = await win.innerPosition();
+const isMax = await win.isMaximized();
+const isFull = await win.isFullscreen();
+const scaleFactor = await win.scaleFactor();
+const root = document.documentElement;
+const body = document.body;
+const rootBg = getComputedStyle(root).backgroundColor;
+const bodyBg = getComputedStyle(body).backgroundColor;
+return {
+  windowSize: { width: size.width, height: size.height },
+  position: { x: pos.x, y: pos.y },
+  isMaximized: isMax,
+  isFullscreen: isFull,
+  scaleFactor,
+  innerWidth: window.innerWidth,
+  innerHeight: window.innerHeight,
+  devicePixelRatio: window.devicePixelRatio,
+  rootBackground: rootBg,
+  bodyBackground: bodyBg,
+  htmlInlineStyle: root.style.cssText || '(none)',
+};
+JS
+```
+
 ### `snapshot` — full store state dump
 
 ```bash

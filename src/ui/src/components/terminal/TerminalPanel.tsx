@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -28,9 +28,10 @@ interface TermInstance {
   unlisten: (() => void) | null;
   container: HTMLDivElement;
   resizeObserver: ResizeObserver;
+  fitTimer: ReturnType<typeof setTimeout> | null;
 }
 
-export function TerminalPanel() {
+export const TerminalPanel = memo(function TerminalPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
   const terminalTabs = useAppStore((s) => s.terminalTabs);
@@ -128,7 +129,11 @@ export function TerminalPanel() {
       ptyId: -1,
       unlisten: null,
       container: tabContainer,
-      resizeObserver: new ResizeObserver(() => fit.fit()),
+      fitTimer: null,
+      resizeObserver: new ResizeObserver(() => {
+        if (instance.fitTimer) clearTimeout(instance.fitTimer);
+        instance.fitTimer = setTimeout(() => fit.fit(), 150);
+      }),
     };
     instance.resizeObserver.observe(tabContainer);
     instancesRef.current.set(activeTerminalTabId, instance);
@@ -183,6 +188,7 @@ export function TerminalPanel() {
         console.error("Failed to initialize terminal:", e);
         const inst = instancesRef.current.get(currentTabId);
         if (inst) {
+          if (inst.fitTimer) clearTimeout(inst.fitTimer);
           inst.resizeObserver.disconnect();
           inst.term.dispose();
           inst.container.remove();
@@ -222,6 +228,7 @@ export function TerminalPanel() {
     );
     for (const [tabId, inst] of instancesRef.current) {
       if (!allTabIds.has(tabId)) {
+        if (inst.fitTimer) clearTimeout(inst.fitTimer);
         inst.resizeObserver.disconnect();
         inst.term.dispose();
         if (inst.unlisten) inst.unlisten();
@@ -236,6 +243,7 @@ export function TerminalPanel() {
   useEffect(() => {
     return () => {
       for (const inst of instancesRef.current.values()) {
+        if (inst.fitTimer) clearTimeout(inst.fitTimer);
         inst.resizeObserver.disconnect();
         inst.term.dispose();
         if (inst.unlisten) inst.unlisten();
@@ -311,4 +319,4 @@ export function TerminalPanel() {
       <div className={styles.termContainer} ref={containerRef} />
     </div>
   );
-}
+});
