@@ -57,9 +57,13 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
       if (cancelled) return;
       const loadedModel = model ?? defModel ?? "opus";
       setSelectedModel(workspaceId, loadedModel);
-      setFastMode(workspaceId, fast === "true" || (!fast && defFast === "true"));
-      setThinkingEnabled(workspaceId, thinking === "true" || (!thinking && defThinking === "true"));
-      setPlanMode(workspaceId, !fast && !thinking && defPlan === "true");
+      const effectiveFast = fast === "true" || (!fast && defFast === "true");
+      const effectiveThinking = thinking === "true" || (!thinking && defThinking === "true");
+      setFastMode(workspaceId, effectiveFast);
+      setThinkingEnabled(workspaceId, effectiveThinking);
+      // Plan mode is not persisted per-workspace (in-memory only); apply global
+      // default only when fast/thinking aren't already enabled.
+      setPlanMode(workspaceId, !effectiveFast && !effectiveThinking && defPlan === "true");
       // Normalize effort against the loaded model to prevent stale values.
       const effectiveEffort = effort ?? defEffort;
       if (effectiveEffort) {
@@ -75,7 +79,7 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
     }
     load();
     return () => { cancelled = true; };
-  }, [workspaceId, setSelectedModel, setFastMode, setThinkingEnabled, setEffortLevel, setShowThinkingBlocks]);
+  }, [workspaceId, setSelectedModel, setFastMode, setThinkingEnabled, setPlanMode, setEffortLevel, setShowThinkingBlocks]);
 
   const handleModelSelect = useCallback(
     async (model: string) => {

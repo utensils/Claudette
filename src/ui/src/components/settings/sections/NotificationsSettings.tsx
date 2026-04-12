@@ -38,12 +38,24 @@ export function NotificationsSettings() {
   }, []);
 
   const handleSoundChange = async (sound: string) => {
+    const prev = notificationSound;
     setNotificationSound(sound);
-    await setAppSetting("notification_sound", sound);
+    try {
+      setError(null);
+      await setAppSetting("notification_sound", sound);
+    } catch (e) {
+      setNotificationSound(prev);
+      setError(String(e));
+    }
   };
 
   const handleCommandBlur = async () => {
-    await setAppSetting("notification_command", notificationCommand);
+    try {
+      setError(null);
+      await setAppSetting("notification_command", notificationCommand);
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   const handleTestCommand = async () => {
