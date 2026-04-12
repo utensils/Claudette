@@ -66,7 +66,7 @@ export function StatusBar() {
         title={`Toggle sidebar (${mod}B)`}
       >
         sidebar
-        <kbd className={`${styles.shortcutBadge} ${metaKeyHeld ? styles.shortcutBadgeVisible : ""}`}>{mod}B</kbd>
+        <kbd className={`shortcut-badge ${metaKeyHeld ? "shortcut-badge-visible" : ""}`}>{mod}B</kbd>
       </button>
       <button
         className={`${styles.toggle} ${terminalPanelVisible ? styles.active : ""}`}
@@ -74,7 +74,7 @@ export function StatusBar() {
         title={`Toggle terminal (${mod}\`)`}
       >
         terminal
-        <kbd className={`${styles.shortcutBadge} ${metaKeyHeld && hasWorkspace ? styles.shortcutBadgeVisible : ""}`}>{mod}`</kbd>
+        <kbd className={`shortcut-badge ${metaKeyHeld && hasWorkspace ? "shortcut-badge-visible" : ""}`}>{mod}`</kbd>
       </button>
       <button
         className={`${styles.toggle} ${rightSidebarVisible ? styles.active : ""}`}
@@ -82,7 +82,7 @@ export function StatusBar() {
         title={`Toggle changes (${mod}D)`}
       >
         changes
-        <kbd className={`${styles.shortcutBadge} ${metaKeyHeld && hasWorkspace ? styles.shortcutBadgeVisible : ""}`}>{mod}D</kbd>
+        <kbd className={`shortcut-badge ${metaKeyHeld && hasWorkspace ? "shortcut-badge-visible" : ""}`}>{mod}D</kbd>
       </button>
     </div>
   );

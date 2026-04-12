@@ -185,9 +185,9 @@
   transform: translateY(-50%);
   font-size: 11px;
   font-family: inherit;
-  color: var(--text-dim);
-  background: var(--hover-bg);
-  border: 1px solid var(--divider);
+  color: var(--accent-primary);
+  background: var(--accent-bg-strong);
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
   padding: 2px 6px;
   border-radius: 4px;
   pointer-events: none;

@@ -68,25 +68,6 @@
   transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
 }
 
-.shortcutBadge {
-  font-size: 11px;
-  font-family: inherit;
-  color: var(--text-dim);
-  background: var(--hover-bg);
-  border: 1px solid var(--divider);
-  padding: 2px 6px;
-  border-radius: 4px;
-  pointer-events: none;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0s;
-}
-
-.shortcutBadgeVisible {
-  opacity: 1;
-  transition: opacity 0.5s ease;
-}
-
 .toggle:hover {
   background: var(--hover-bg);
   color: var(--text-muted);
