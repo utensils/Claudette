@@ -197,6 +197,19 @@ body,
   }
 }
 
+/* Window drag regions for custom titlebar (Overlay mode) */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] select,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] [role="button"] {
+  -webkit-app-region: no-drag;
+}
+
 /* Keyboard shortcut badge — shown when Cmd/Ctrl is held alone.
    Always rendered; visibility toggled via .shortcut-badge-visible.
    Fade-in is a 0.5s CSS transition; fade-out is instant.

@@ -13,7 +13,6 @@
   right: 0;
   height: 38px;
   z-index: 1;
-  -webkit-app-region: drag;
 }
 
 /* ── Settings sidebar ── */
