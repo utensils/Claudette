@@ -80,8 +80,11 @@ export function useAutoUpdater() {
     setUpdateDismissed(true);
   }, [setUpdateDismissed]);
 
-  // Periodic update checks.
+  // Periodic update checks — disabled in dev mode where the updater endpoint
+  // won't have matching artifacts and relaunch() can't restart the dev server.
   useEffect(() => {
+    if (import.meta.env.DEV) return;
+
     checkForUpdate();
     const intervalId = window.setInterval(checkForUpdate, CHECK_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
