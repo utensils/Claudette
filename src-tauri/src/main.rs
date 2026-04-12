@@ -55,102 +55,107 @@ fn main() {
     let app_state = state::AppState::new(db_path, worktree_base_dir);
     let remote_manager = remote::RemoteConnectionManager::new();
 
-    let builder = tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .manage(app_state)
-        .manage(remote_manager)
-        // Custom app menu: replace the default Quit item (which on macOS calls
-        // NSApp.terminate() immediately) with a custom one we can intercept
-        // to confirm quit when agents are running.
-        .menu(|app| {
-            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-            let app_menu = Submenu::with_items(
-                app,
-                "Claudette",
-                true,
-                &[
-                    &PredefinedMenuItem::about(app, None, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::services(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::hide(app, None)?,
-                    &PredefinedMenuItem::hide_others(app, None)?,
-                    &PredefinedMenuItem::show_all(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &MenuItem::with_id(
-                        app,
-                        "quit-app",
-                        "Quit Claudette",
-                        true,
-                        Some("CmdOrCtrl+Q"),
-                    )?,
-                ],
-            )?;
-            let edit_menu = Submenu::with_items(
-                app,
-                "Edit",
-                true,
-                &[
-                    &PredefinedMenuItem::undo(app, None)?,
-                    &PredefinedMenuItem::redo(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::cut(app, None)?,
-                    &PredefinedMenuItem::copy(app, None)?,
-                    &PredefinedMenuItem::paste(app, None)?,
-                    &PredefinedMenuItem::select_all(app, None)?,
-                ],
-            )?;
-            let window_menu = Submenu::with_items(
-                app,
-                "Window",
-                true,
-                &[
-                    &PredefinedMenuItem::minimize(app, None)?,
-                    &PredefinedMenuItem::maximize(app, None)?,
-                    &PredefinedMenuItem::close_window(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::fullscreen(app, None)?,
-                ],
-            )?;
-            Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
-        })
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == "quit-app" {
-                let state = app.state::<state::AppState>();
-                // If the lock is contended (write held during turn start),
-                // assume agents are running — safer to confirm than to quit.
-                let running = state
-                    .agents
-                    .try_read()
-                    .map_or(true, |a| tray::has_running_agents(&a));
-                if running {
-                    let handle = app.clone();
-                    {
-                        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-                        handle
-                            .dialog()
-                            .message("Agents are still running. Quit anyway?")
-                            .title("Quit Claudette")
-                            .buttons(MessageDialogButtons::OkCancelCustom(
-                                "Quit".into(),
-                                "Cancel".into(),
-                            ))
-                            .show(move |confirmed| {
-                                if confirmed {
-                                    handle.exit(0);
-                                }
-                            });
+        .manage(remote_manager);
+
+    // Custom app menu (macOS only): replace the default Quit item (which
+    // calls NSApp.terminate() immediately) with one we can intercept to
+    // confirm quit when agents are running.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .menu(|app| {
+                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+                let app_menu = Submenu::with_items(
+                    app,
+                    "Claudette",
+                    true,
+                    &[
+                        &PredefinedMenuItem::about(app, None, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::services(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::hide(app, None)?,
+                        &PredefinedMenuItem::hide_others(app, None)?,
+                        &PredefinedMenuItem::show_all(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &MenuItem::with_id(
+                            app,
+                            "quit-app",
+                            "Quit Claudette",
+                            true,
+                            Some("CmdOrCtrl+Q"),
+                        )?,
+                    ],
+                )?;
+                let edit_menu = Submenu::with_items(
+                    app,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(app, None)?,
+                        &PredefinedMenuItem::redo(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::cut(app, None)?,
+                        &PredefinedMenuItem::copy(app, None)?,
+                        &PredefinedMenuItem::paste(app, None)?,
+                        &PredefinedMenuItem::select_all(app, None)?,
+                    ],
+                )?;
+                let window_menu = Submenu::with_items(
+                    app,
+                    "Window",
+                    true,
+                    &[
+                        &PredefinedMenuItem::minimize(app, None)?,
+                        &PredefinedMenuItem::maximize(app, None)?,
+                        &PredefinedMenuItem::close_window(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::fullscreen(app, None)?,
+                    ],
+                )?;
+                Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
+            })
+            .on_menu_event(|app, event| {
+                if event.id().as_ref() == "quit-app" {
+                    let state = app.state::<state::AppState>();
+                    let running = state
+                        .agents
+                        .try_read()
+                        .map_or(true, |a| tray::has_running_agents(&a));
+                    if running {
+                        let handle = app.clone();
+                        {
+                            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+                            handle
+                                .dialog()
+                                .message("Agents are still running. Quit anyway?")
+                                .title("Quit Claudette")
+                                .buttons(MessageDialogButtons::OkCancelCustom(
+                                    "Quit".into(),
+                                    "Cancel".into(),
+                                ))
+                                .show(move |confirmed| {
+                                    if confirmed {
+                                        handle.exit(0);
+                                    }
+                                });
+                        }
+                    } else {
+                        app.exit(0);
                     }
-                } else {
-                    app.exit(0);
                 }
-            }
-        })
-        .setup(move |app| {
+            });
+    }
+
+    let builder = builder.setup(move |app| {
             // Start mDNS browser to discover nearby claudette-server instances.
             if let Err(e) = mdns::start_mdns_browser(app.handle(), saved_fingerprints) {
                 eprintln!("[mdns] Failed to start browser: {e}");
