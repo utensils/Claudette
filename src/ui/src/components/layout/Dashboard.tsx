@@ -2,6 +2,7 @@ import { memo, useMemo, useEffect, useState } from "react";
 import { GitBranch, Layers, Globe } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { RepoIcon } from "../shared/RepoIcon";
+import { PanelToggles } from "../shared/PanelToggles";
 import styles from "./Dashboard.module.css";
 
 /** Strip markdown syntax for a clean one-line preview. */
@@ -189,13 +190,16 @@ export function Dashboard() {
 
   return (
     <div className={styles.dashboard}>
-      <div className={styles.header}>
-        Active Workspaces
-        {runningCount > 0 && (
-          <span className={styles.headerCount}>
-            {runningCount} running
-          </span>
-        )}
+      <div className={styles.toolbar} data-tauri-drag-region>
+        <div className={styles.header}>
+          Active Workspaces
+          {runningCount > 0 && (
+            <span className={styles.headerCount}>
+              {runningCount} running
+            </span>
+          )}
+        </div>
+        <PanelToggles />
       </div>
       <div className={styles.grid}>
         {activeWorkspaces.map((ws, i) => {

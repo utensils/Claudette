@@ -17,6 +17,10 @@
   overflow-y: auto;
 }
 
+[data-platform="mac"] .sidebar {
+  padding-top: 38px;
+}
+
 .backLink {
   display: flex;
   align-items: center;

@@ -55,8 +55,10 @@ export function AppLayout() {
     setTerminalHeight(Math.max(100, Math.min(800, current - delta)));
   }, [setTerminalHeight]);
 
+  const isMac = typeof navigator !== "undefined" && navigator.platform.startsWith("Mac");
+
   return (
-    <div className={styles.container}>
+    <div className={styles.container} {...(isMac ? { "data-platform": "mac" } : {})}>
       <UpdateBanner installNow={installNow} installWhenIdle={installWhenIdle} dismiss={dismiss} />
       <div className={styles.main}>
         {settingsOpen ? (
