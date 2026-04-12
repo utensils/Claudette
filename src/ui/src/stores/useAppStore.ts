@@ -117,8 +117,8 @@ interface AppState {
   clearPlanApproval: (wsId: string) => void;
 
   // -- Queued Messages (sent while agent is running, dispatched when idle) --
-  queuedMessages: Record<string, string>;
-  setQueuedMessage: (wsId: string, content: string) => void;
+  queuedMessages: Record<string, { content: string; mentionedFiles?: string[] }>;
+  setQueuedMessage: (wsId: string, content: string, mentionedFiles?: string[]) => void;
   clearQueuedMessage: (wsId: string) => void;
 
   // -- Checkpoints --
@@ -528,9 +528,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   // -- Queued Messages --
   queuedMessages: {},
-  setQueuedMessage: (wsId, content) =>
+  setQueuedMessage: (wsId, content, mentionedFiles) =>
     set((s) => ({
-      queuedMessages: { ...s.queuedMessages, [wsId]: content },
+      queuedMessages: { ...s.queuedMessages, [wsId]: { content, mentionedFiles } },
     })),
   clearQueuedMessage: (wsId) =>
     set((s) => {

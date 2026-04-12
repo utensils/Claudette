@@ -19,9 +19,10 @@ import {
   stopAgent,
   getAppSetting,
   setAppSetting,
+  listWorkspaceFiles,
 } from "../../services/tauri";
 import { reconstructCompletedTurns } from "../../utils/reconstructTurns";
-import type { SlashCommand } from "../../services/tauri";
+import type { SlashCommand, FileEntry } from "../../services/tauri";
 import type { ChatMessage } from "../../types/chat";
 import { useAgentStream } from "../../hooks/useAgentStream";
 import { extractToolSummary } from "../../hooks/toolSummary";
@@ -31,6 +32,7 @@ import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { HeaderMenu } from "./HeaderMenu";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
+import { FileMentionPicker, matchFiles } from "./FileMentionPicker";
 import { checkpointHasFileChanges, clearAllHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { debugChat } from "../../utils/chatDebug";
@@ -449,27 +451,33 @@ export function ChatPanel() {
   ]);
 
   // Auto-dispatch queued message when agent becomes idle.
-  const handleSendRef = useRef<((content: string) => void) | null>(null);
+  const handleSendRef = useRef<((content: string, mentionedFiles?: Set<string>) => void) | null>(null);
   useEffect(() => {
     if (isRunning || !selectedWorkspaceId || !queuedMessage) return;
     // Agent just finished — dispatch the queued message.
-    const content = queuedMessage;
+    const { content, mentionedFiles } = queuedMessage;
     clearQueuedMessage(selectedWorkspaceId);
+    const filesSet = mentionedFiles?.length ? new Set(mentionedFiles) : undefined;
     // Use a microtask to avoid calling handleSend during render.
-    queueMicrotask(() => handleSendRef.current?.(content));
+    queueMicrotask(() => handleSendRef.current?.(content, filesSet));
   }, [isRunning, selectedWorkspaceId, queuedMessage, clearQueuedMessage]);
 
   if (!ws) return null;
 
-  const handleSend = async (content: string) => {
+  const handleSend = async (content: string, mentionedFiles?: Set<string>) => {
     const trimmed = content.trim();
     if (!trimmed || !selectedWorkspaceId) return;
+
+    // Convert mentioned files set to array for the backend.
+    const mentionedFilesArray = mentionedFiles?.size
+      ? [...mentionedFiles]
+      : undefined;
 
     // If the agent is running, queue the message instead of interrupting.
     // The user can press Escape to stop the agent if they want to interrupt.
     // Queued messages are auto-sent when the current turn finishes.
     if (isRunning) {
-      setQueuedMessage(selectedWorkspaceId, trimmed);
+      setQueuedMessage(selectedWorkspaceId, trimmed, mentionedFilesArray);
       return;
     }
 
@@ -506,6 +514,7 @@ export function ChatPanel() {
         await sendRemoteCommand(ws.remote_connection_id, "send_chat_message", {
           workspace_id: selectedWorkspaceId,
           content: trimmed,
+          mentioned_files: mentionedFilesArray,
           permission_level: permissionLevel,
           model: state.selectedModel[selectedWorkspaceId] || null,
           fast_mode: state.fastMode[selectedWorkspaceId] || false,
@@ -523,6 +532,7 @@ export function ChatPanel() {
         await sendChatMessage(
           selectedWorkspaceId,
           trimmed,
+          mentionedFilesArray,
           permissionLevel,
           model,
           fastMode || undefined,
@@ -716,7 +726,7 @@ export function ChatPanel() {
             {queuedMessage && selectedWorkspaceId && (
               <div className={styles.queuedMessage}>
                 <span className={styles.queuedLabel}>Queued</span>
-                <span className={styles.queuedContent}>{queuedMessage}</span>
+                <span className={styles.queuedContent}>{queuedMessage.content}</span>
                 <button
                   className={styles.queuedCancel}
                   onClick={() => clearQueuedMessage(selectedWorkspaceId)}
@@ -1107,6 +1117,19 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
   );
 });
 
+/** Extract the @-query based on cursor position in the textarea. */
+function extractMentionQuery(text: string, cursorPos: number): string | null {
+  const before = text.slice(0, cursorPos);
+  const atIndex = before.lastIndexOf("@");
+  if (atIndex === -1) return null;
+  // The @ must be at start of input or preceded by whitespace.
+  if (atIndex > 0 && !/\s/.test(before[atIndex - 1])) return null;
+  const query = before.slice(atIndex + 1);
+  // If query contains whitespace, the mention is "closed".
+  if (/\s/.test(query)) return null;
+  return query;
+}
+
 // Separate component for input area to prevent full ChatPanel re-renders on every keystroke
 function ChatInputArea({
   onSend,
@@ -1117,7 +1140,7 @@ function ChatInputArea({
   historyIndexRef,
   draftRef,
 }: {
-  onSend: (content: string) => Promise<void>;
+  onSend: (content: string, mentionedFiles?: Set<string>) => Promise<void>;
   isRunning: boolean;
   selectedWorkspaceId: string;
   projectPath: string | undefined;
@@ -1126,10 +1149,17 @@ function ChatInputArea({
   draftRef: React.MutableRefObject<string>;
 }) {
   const [chatInput, setChatInput] = useState("");
+  const [cursorPos, setCursorPos] = useState(0);
   const [slashPickerIndex, setSlashPickerIndex] = useState(0);
   const [slashPickerDismissed, setSlashPickerDismissed] = useState(false);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [filePickerIndex, setFilePickerIndex] = useState(0);
+  const [filePickerDismissed, setFilePickerDismissed] = useState(false);
+  const [workspaceFiles, setWorkspaceFiles] = useState<FileEntry[]>([]);
+  const [filesLoaded, setFilesLoaded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const filesCache = useRef<Record<string, FileEntry[]>>({});
+  const mentionedFilesRef = useRef<Set<string>>(new Set());
 
   // Per-workspace draft storage: save input when switching away,
   // restore when switching back.
@@ -1143,6 +1173,10 @@ function ChatInputArea({
       // Restore draft for the workspace we're entering.
       setChatInput(draftsRef.current[selectedWorkspaceId] ?? "");
       prevWorkspaceRef.current = selectedWorkspaceId;
+      // Reset file picker state for new workspace.
+      setFilesLoaded(false);
+      setWorkspaceFiles([]);
+      mentionedFilesRef.current = new Set();
     }
   }, [selectedWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1199,6 +1233,72 @@ function ChatInputArea({
     setSlashPickerDismissed(false);
   }, [slashQuery]);
 
+  // --- File mention picker ---
+
+  const loadFiles = useCallback(async () => {
+    if (filesCache.current[selectedWorkspaceId]) {
+      setWorkspaceFiles(filesCache.current[selectedWorkspaceId]);
+      setFilesLoaded(true);
+      return;
+    }
+    try {
+      const files = await listWorkspaceFiles(selectedWorkspaceId);
+      filesCache.current[selectedWorkspaceId] = files;
+      setWorkspaceFiles(files);
+      setFilesLoaded(true);
+    } catch (e) {
+      console.error("Failed to load workspace files:", e);
+    }
+  }, [selectedWorkspaceId]);
+
+  const mentionQuery = extractMentionQuery(chatInput, cursorPos);
+  const mentionResults = useMemo(
+    () => (mentionQuery === null ? [] : matchFiles(workspaceFiles, mentionQuery)),
+    [workspaceFiles, mentionQuery],
+  );
+  const showFilePicker =
+    mentionQuery !== null && mentionResults.length > 0 && !filePickerDismissed && filesLoaded;
+
+  // Lazy-load file list on first @ trigger.
+  useEffect(() => {
+    if (mentionQuery !== null && !filesLoaded) {
+      loadFiles();
+    }
+  }, [mentionQuery, filesLoaded, loadFiles]);
+
+  // Reset picker index when query changes.
+  useEffect(() => {
+    setFilePickerIndex(0);
+    setFilePickerDismissed(false);
+  }, [mentionQuery]);
+
+  const insertFileMention = useCallback(
+    (file: FileEntry) => {
+      const before = chatInput.slice(0, cursorPos);
+      const atIndex = before.lastIndexOf("@");
+      const after = chatInput.slice(cursorPos);
+      const mention = `@${file.path}`;
+      // Directories: no trailing space so the user can keep narrowing.
+      // Files: add a trailing space to close the mention.
+      const suffix = file.is_directory ? "" : " ";
+      const newText = before.slice(0, atIndex) + mention + suffix + after;
+      setChatInput(newText);
+      const newCursor = atIndex + mention.length + suffix.length;
+      setCursorPos(newCursor);
+      if (!file.is_directory) {
+        mentionedFilesRef.current.add(file.path);
+      }
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.selectionStart = ta.selectionEnd = newCursor;
+          ta.focus();
+        }
+      });
+    },
+    [chatInput, cursorPos],
+  );
+
   // Auto-resize textarea based on content
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -1211,8 +1311,18 @@ function ChatInputArea({
   }, [chatInput]);
 
   const handleSend = () => {
-    onSend(chatInput);
+    // Only include files whose @path tokens are still in the text, so that
+    // removed references don't get expanded.
+    const activeFiles = new Set<string>();
+    for (const path of mentionedFilesRef.current) {
+      if (chatInput.includes(`@${path}`)) {
+        activeFiles.add(path);
+      }
+    }
+    const files = activeFiles.size > 0 ? activeFiles : undefined;
+    onSend(chatInput, files);
     setChatInput("");
+    mentionedFilesRef.current = new Set();
   };
 
   const planMode = useAppStore(
@@ -1226,6 +1336,37 @@ function ChatInputArea({
       e.preventDefault();
       setPlanMode(selectedWorkspaceId, !planMode);
       return;
+    }
+
+    // File mention picker navigation (takes priority over slash picker)
+    if (showFilePicker) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFilePickerIndex((i) => Math.min(i + 1, mentionResults.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFilePickerIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const result = mentionResults[filePickerIndex];
+        if (result) insertFileMention(result.file);
+        return;
+      }
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        const result = mentionResults[filePickerIndex];
+        if (result) insertFileMention(result.file);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setFilePickerDismissed(true);
+        return;
+      }
     }
 
     // Slash command picker navigation
@@ -1302,6 +1443,14 @@ function ChatInputArea({
 
   return (
     <div className={styles.inputArea}>
+      {showFilePicker && (
+        <FileMentionPicker
+          results={mentionResults}
+          selectedIndex={filePickerIndex}
+          onSelect={insertFileMention}
+          onHover={setFilePickerIndex}
+        />
+      )}
       {showSlashPicker && (
         <SlashCommandPicker
           commands={slashResults}
@@ -1320,7 +1469,13 @@ function ChatInputArea({
         ref={textareaRef}
         className={styles.input}
         value={chatInput}
-        onChange={(e) => setChatInput(e.target.value)}
+        onChange={(e) => {
+          setChatInput(e.target.value);
+          setCursorPos(e.target.selectionStart ?? 0);
+        }}
+        onSelect={(e) => {
+          setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+        }}
         onKeyDown={handleKeyDown}
         placeholder={isRunning ? "Type to queue a message..." : "Send a message..."}
       />
