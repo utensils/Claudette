@@ -1,18 +1,18 @@
+import { SlidersHorizontal, Cpu, Palette, Bell, GitBranch, FlaskConical } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { RepoIcon } from "../shared/RepoIcon";
 import styles from "./Settings.module.css";
 
 const APP_SECTIONS = [
-  { id: "general", label: "General" },
-  { id: "models", label: "Models" },
-  { id: "appearance", label: "Appearance" },
-  { id: "notifications", label: "Notifications" },
-  { id: "git", label: "Git" },
+  { id: "general", label: "General", icon: SlidersHorizontal },
+  { id: "models", label: "Models", icon: Cpu },
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "git", label: "Git", icon: GitBranch },
 ];
 
 const MORE_SECTIONS = [
-  { id: "experimental", label: "Experimental" },
-  { id: "advanced", label: "Advanced" },
+  { id: "experimental", label: "Experimental", icon: FlaskConical },
 ];
 
 export function SettingsSidebar() {
@@ -35,6 +35,7 @@ export function SettingsSidebar() {
           }
           onClick={() => setSettingsSection(s.id)}
         >
+          <s.icon size={14} />
           {s.label}
         </button>
       ))}
@@ -48,6 +49,7 @@ export function SettingsSidebar() {
           }
           onClick={() => setSettingsSection(s.id)}
         >
+          <s.icon size={14} />
           {s.label}
         </button>
       ))}

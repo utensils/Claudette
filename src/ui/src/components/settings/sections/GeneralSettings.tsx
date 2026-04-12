@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { FolderOpen } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "../../../stores/useAppStore";
 import { getAppSetting, setAppSetting } from "../../../services/tauri";
 import styles from "../Settings.module.css";
@@ -60,13 +62,34 @@ export function GeneralSettings() {
           </div>
         </div>
         <div className={styles.settingControl}>
-          <input
-            className={styles.input}
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            onBlur={handlePathBlur}
-            placeholder="~/.claudette/workspaces"
-          />
+          <div className={styles.inlineControl}>
+            <input
+              className={styles.input}
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              onBlur={handlePathBlur}
+              placeholder="~/.claudette/workspaces"
+            />
+            <button
+              className={styles.iconBtn}
+              onClick={async () => {
+                try {
+                  const selected = await open({ directory: true, multiple: false });
+                  if (selected) {
+                    setPath(selected);
+                    setError(null);
+                    await setAppSetting("worktree_base_dir", selected);
+                    setWorktreeBaseDir(selected);
+                  }
+                } catch (e) {
+                  setError(String(e));
+                }
+              }}
+              title="Browse"
+            >
+              <FolderOpen size={14} />
+            </button>
+          </div>
         </div>
       </div>
 

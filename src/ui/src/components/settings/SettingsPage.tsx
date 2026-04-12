@@ -17,7 +17,6 @@ function SectionContent({ section }: { section: string | null }) {
   if (section === "git") return <GitSettings />;
   if (section === "experimental")
     return <PlaceholderSettings title="Experimental" />;
-  if (section === "advanced") return <PlaceholderSettings title="Advanced" />;
   if (section.startsWith("repo:"))
     return <RepoSettings repoId={section.slice(5)} />;
   return <GeneralSettings />;
