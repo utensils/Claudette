@@ -12,7 +12,7 @@ mod tray;
 
 use std::path::PathBuf;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use claudette::db::Database;
 
@@ -80,6 +80,14 @@ fn main() {
                     &[
                         &PredefinedMenuItem::about(app, None, None)?,
                         &PredefinedMenuItem::separator(app)?,
+                        &MenuItem::with_id(
+                            app,
+                            "open-settings",
+                            "Settings...",
+                            true,
+                            Some("CmdOrCtrl+,"),
+                        )?,
+                        &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::services(app, None)?,
                         &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::hide(app, None)?,
@@ -124,7 +132,10 @@ fn main() {
                 Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
             })
             .on_menu_event(|app, event| {
-                if event.id().as_ref() == "quit-app" {
+                if event.id().as_ref() == "open-settings" {
+                    tray::show_and_focus(app);
+                    let _ = app.emit("open-settings", ());
+                } else if event.id().as_ref() == "quit-app" {
                     let state = app.state::<state::AppState>();
                     let running = state
                         .agents

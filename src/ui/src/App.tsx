@@ -133,6 +133,11 @@ function App() {
       clearAttention(event.payload).catch(() => {});
     });
 
+    // Listen for open-settings events from app menu / tray.
+    const unlistenSettings = listen("open-settings", () => {
+      useAppStore.getState().openSettings();
+    });
+
     return () => {
       isActive = false;
       window.clearInterval(discoveredServersPollId);
@@ -141,6 +146,7 @@ function App() {
         unlisten();
       });
       unlistenTray.then((fn) => fn());
+      unlistenSettings.then((fn) => fn());
     };
   }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages, setRemoteConnections, setDiscoveredServers, setLocalServerRunning, setLocalServerConnectionString, setCurrentThemeId]);
 

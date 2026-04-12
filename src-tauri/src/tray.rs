@@ -54,6 +54,9 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
                 // Bring window to front and select the workspace.
                 show_and_focus(app);
                 let _ = app.emit("tray-select-workspace", ws_id.to_string());
+            } else if id == "open-settings" {
+                show_and_focus(app);
+                let _ = app.emit("open-settings", ());
             } else if id == "show" {
                 show_and_focus(app);
                 navigate_to_attention(app);
@@ -316,6 +319,10 @@ fn build_tray_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
     let sep = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
     items.push(Box::new(sep));
 
+    let settings = MenuItem::with_id(app, "open-settings", "Settings", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    items.push(Box::new(settings));
+
     let show = MenuItem::with_id(app, "show", "Show Claudette", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     items.push(Box::new(show));
@@ -385,7 +392,7 @@ fn send_notification(app: &AppHandle, workspace_id: &str, title: &str, body: &st
     }
 }
 
-fn show_and_focus(app: &AppHandle) {
+pub(crate) fn show_and_focus(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
