@@ -10,14 +10,29 @@ pub async fn get_claude_code_usage(state: State<'_, AppState>) -> Result<ClaudeC
 
 #[tauri::command]
 pub async fn open_usage_settings() -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let cmd = "open";
-    #[cfg(not(target_os = "macos"))]
-    let cmd = "xdg-open";
+    let url = "https://claude.ai/settings/usage";
 
-    tokio::process::Command::new(cmd)
-        .arg("https://claude.ai/settings/usage")
-        .spawn()
-        .map_err(|e| format!("Failed to open URL: {e}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        tokio::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        tokio::process::Command::new("cmd")
+            .args(["/C", "start", url])
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        tokio::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+    }
+
     Ok(())
 }

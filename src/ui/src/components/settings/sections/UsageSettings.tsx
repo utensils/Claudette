@@ -92,7 +92,7 @@ function ExtraUsageSection({ extra }: { extra: ExtraUsage }) {
             </span>
             <button
               className={styles.usageManageLink}
-              onClick={() => openUsageSettings()}
+              onClick={() => void openUsageSettings().catch(() => {})}
             >
               Enable
             </button>
@@ -116,7 +116,7 @@ function ExtraUsageSection({ extra }: { extra: ExtraUsage }) {
         <div className={styles.usageExtraHeader}>Extra Usage</div>
         <button
           className={styles.usageManageLink}
-          onClick={() => openUsageSettings()}
+          onClick={() => void openUsageSettings().catch(() => {})}
         >
           Manage
         </button>
@@ -166,7 +166,7 @@ export function UsageSettings() {
   }, [setUsage, setLoading, setError]);
 
   useEffect(() => {
-    // Always fetch on mount — the Rust 60s cache prevents API flooding.
+    // Always fetch on mount — the Rust 5-minute cache prevents API flooding.
     // This ensures reopening settings shows fresh data.
     fetchUsage();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

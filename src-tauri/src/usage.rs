@@ -415,7 +415,7 @@ pub async fn get_usage(cache: &RwLock<Option<UsageCacheEntry>>) -> Result<Claude
         {
             let age = now - entry.last_usage_fetched_at;
             if let Some(ref usage) = entry.last_usage {
-                // Have data — use 30-minute TTL.
+                // Have data — use success TTL (5 minutes).
                 if age < USAGE_CACHE_TTL_MS {
                     return Ok(usage.clone());
                 }
