@@ -240,6 +240,13 @@ export const Sidebar = memo(function Sidebar() {
                 setDraggedRepoId(null);
                 setDropTargetIdx(null);
               }}
+              onPointerLeave={() => {
+                // Without eager pointer capture, pointerup may not fire if the
+                // pointer leaves before the drag threshold. Clear stale state.
+                if (!draggedRepoId && dragStartPos.current?.id === repo.id) {
+                  dragStartPos.current = null;
+                }
+              }}
             >
               {draggedRepoId && dropTargetIdx === repoIdx && draggedRepoId !== repo.id && (
                 <div className={styles.dropIndicator} />
