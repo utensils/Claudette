@@ -170,6 +170,19 @@ pub async fn restore_snapshot(
             continue;
         }
         let full_path = base.join(&f.file_path);
+
+        // If the target path currently exists as a symlink or directory,
+        // remove it first. A symlink would cause writes to follow it
+        // (potentially outside the worktree), and a directory would cause
+        // tokio::fs::write to fail with "is a directory".
+        if let Ok(meta) = tokio::fs::symlink_metadata(&full_path).await {
+            if meta.is_symlink() {
+                let _ = tokio::fs::remove_file(&full_path).await;
+            } else if meta.is_dir() {
+                let _ = tokio::fs::remove_dir_all(&full_path).await;
+            }
+        }
+
         match &f.content {
             Some(content) => {
                 if let Some(parent) = full_path.parent() {
@@ -226,7 +239,12 @@ async fn clean_empty_dirs(root: &Path) {
     let mut subdirs = Vec::new();
     while let Ok(Some(entry)) = entries.next_entry().await {
         let path = entry.path();
-        if path.is_dir() {
+        // Use symlink_metadata to avoid following symlinks into
+        // directories outside the worktree.
+        let is_real_dir = tokio::fs::symlink_metadata(&path)
+            .await
+            .is_ok_and(|m| m.is_dir());
+        if is_real_dir {
             // Skip .git directory
             if path.file_name().is_some_and(|n| n == ".git") {
                 continue;
