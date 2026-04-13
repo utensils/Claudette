@@ -267,6 +267,10 @@ interface AppState {
   detectedApps: DetectedApp[];
   setDetectedApps: (apps: DetectedApp[]) => void;
 
+  // -- Experimental --
+  usageInsightsEnabled: boolean;
+  setUsageInsightsEnabled: (enabled: boolean) => void;
+
   // -- Claude Code Usage --
   claudeCodeUsage: ClaudeCodeUsage | null;
   claudeCodeUsageLoading: boolean;
@@ -868,6 +872,10 @@ export const useAppStore = create<AppState>((set) => ({
   // -- Detected Apps --
   detectedApps: [],
   setDetectedApps: (apps) => set({ detectedApps: apps }),
+
+  // -- Experimental --
+  usageInsightsEnabled: false,
+  setUsageInsightsEnabled: (enabled) => set({ usageInsightsEnabled: enabled }),
 
   // -- Claude Code Usage --
   claudeCodeUsage: null,

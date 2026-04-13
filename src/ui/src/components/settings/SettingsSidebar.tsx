@@ -6,7 +6,6 @@ import styles from "./Settings.module.css";
 const APP_SECTIONS = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "models", label: "Models", icon: Cpu },
-  { id: "usage", label: "Usage", icon: BarChart3 },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "git", label: "Git", icon: GitBranch },
@@ -21,6 +20,7 @@ export function SettingsSidebar() {
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
   const closeSettings = useAppStore((s) => s.closeSettings);
   const repositories = useAppStore((s) => s.repositories);
+  const usageInsightsEnabled = useAppStore((s) => s.usageInsightsEnabled);
 
   return (
     <div className={styles.sidebar}>
@@ -40,6 +40,18 @@ export function SettingsSidebar() {
           {s.label}
         </button>
       ))}
+
+      {usageInsightsEnabled && (
+        <button
+          className={
+            settingsSection === "usage" ? styles.navItemActive : styles.navItem
+          }
+          onClick={() => setSettingsSection("usage")}
+        >
+          <BarChart3 size={14} />
+          Usage
+        </button>
+      )}
 
       <div className={styles.groupLabel}>More</div>
       {MORE_SECTIONS.map((s) => (

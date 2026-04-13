@@ -6,7 +6,7 @@ import { AppearanceSettings } from "./sections/AppearanceSettings";
 import { NotificationsSettings } from "./sections/NotificationsSettings";
 import { GitSettings } from "./sections/GitSettings";
 import { RepoSettings } from "./sections/RepoSettings";
-import { PlaceholderSettings } from "./sections/PlaceholderSettings";
+import { ExperimentalSettings } from "./sections/ExperimentalSettings";
 import { UsageSettings } from "./sections/UsageSettings";
 import styles from "./Settings.module.css";
 
@@ -17,8 +17,7 @@ function SectionContent({ section }: { section: string | null }) {
   if (section === "appearance") return <AppearanceSettings />;
   if (section === "notifications") return <NotificationsSettings />;
   if (section === "git") return <GitSettings />;
-  if (section === "experimental")
-    return <PlaceholderSettings title="Experimental" />;
+  if (section === "experimental") return <ExperimentalSettings />;
   if (section.startsWith("repo:"))
     return <RepoSettings repoId={section.slice(5)} />;
   return <GeneralSettings />;
