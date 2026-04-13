@@ -11,9 +11,16 @@ function barColor(pct: number): string {
   return "var(--accent-primary)";
 }
 
-function formatResetTime(resetsAt: number): string {
-  const nowSec = Date.now() / 1000;
-  const diffSec = resetsAt - nowSec;
+function formatResetTime(resetsAt: string | number): string {
+  // Handle ISO 8601 strings or unix timestamps (seconds or milliseconds).
+  let resetMs: number;
+  if (typeof resetsAt === "string") {
+    resetMs = new Date(resetsAt).getTime();
+  } else {
+    // If the number looks like seconds (< year 2100 in seconds), convert.
+    resetMs = resetsAt < 1e12 ? resetsAt * 1000 : resetsAt;
+  }
+  const diffSec = (resetMs - Date.now()) / 1000;
   if (diffSec <= 0) return "resetting now";
   const hours = Math.floor(diffSec / 3600);
   const minutes = Math.floor((diffSec % 3600) / 60);

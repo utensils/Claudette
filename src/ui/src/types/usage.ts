@@ -1,6 +1,6 @@
 export interface UsageLimit {
   utilization: number;
-  resets_at: number;
+  resets_at: string | number;
 }
 
 export interface ExtraUsage {

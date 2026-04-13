@@ -44,23 +44,33 @@ pub struct TokenRefreshResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageLimit {
     pub utilization: f64,
-    pub resets_at: f64,
+    pub resets_at: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtraUsage {
     pub is_enabled: bool,
+    #[serde(default)]
     pub monthly_limit: Option<f64>,
+    #[serde(default)]
     pub used_credits: Option<f64>,
+    #[serde(default)]
     pub utilization: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// The usage API response. We accept unknown fields gracefully since the
+/// API shape is not officially documented and may contain extra fields.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UsageData {
+    #[serde(default)]
     pub five_hour: Option<UsageLimit>,
+    #[serde(default)]
     pub seven_day: Option<UsageLimit>,
+    #[serde(default)]
     pub seven_day_sonnet: Option<UsageLimit>,
+    #[serde(default)]
     pub seven_day_opus: Option<UsageLimit>,
+    #[serde(default)]
     pub extra_usage: Option<ExtraUsage>,
 }
 
@@ -78,11 +88,20 @@ pub struct ClaudeCodeUsage {
 
 pub struct UsageCacheEntry {
     pub access_token: String,
+    /// Kept for potential future token refresh from cache.
+    #[allow(dead_code)]
     pub refresh_token: String,
     pub token_expires_at: u64,
     pub subscription_type: Option<String>,
     pub rate_limit_tier: Option<String>,
+    /// Cached usage response to avoid hammering the API.
+    pub last_usage: Option<ClaudeCodeUsage>,
+    /// When the usage was last fetched (unix millis).
+    pub last_usage_fetched_at: u64,
 }
+
+/// Minimum interval between usage API calls (60 seconds).
+const USAGE_CACHE_TTL_MS: u64 = 60_000;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -107,13 +126,15 @@ fn now_millis() -> u64 {
 
 #[cfg(target_os = "macos")]
 async fn read_credentials_platform() -> Result<CredentialFile, String> {
+    // Claude Code stores credentials under $USER, not a fixed account name.
+    let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
     let output = tokio::process::Command::new("security")
         .args([
             "find-generic-password",
             "-s",
             "Claude Code-credentials",
             "-a",
-            "root",
+            &user,
             "-w",
         ])
         .output()
@@ -202,138 +223,133 @@ async fn fetch_usage(access_token: &str) -> Result<UsageData, String> {
         return Err(format!("Usage API error ({status}): {body}"));
     }
 
+    // Read as text first for debug visibility, then parse.
     let body = resp
         .text()
         .await
         .map_err(|e| format!("Failed to read usage response: {e}"))?;
     eprintln!("[usage] Raw API response: {body}");
-    serde_json::from_str(&body).map_err(|e| format!("Failed to parse usage response: {e}"))
+
+    // Parse permissively: extract only the fields we care about from
+    // whatever the API returns. Unknown fields are silently ignored.
+    let raw: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Usage API returned invalid JSON: {e}"))?;
+
+    // The response may wrap usage data in a top-level object or return it
+    // directly. Try to extract our known fields from the top-level.
+    serde_json::from_value(raw).map_err(|e| format!("Failed to parse usage data: {e}"))
 }
 
 // ---------------------------------------------------------------------------
-// High-level: ensure valid token, fetch usage, update cache
+// High-level: resolve a valid access token
+// ---------------------------------------------------------------------------
+
+/// Resolve an access token, trying in order:
+/// 1. In-memory cache (if token not expired)
+/// 2. Platform keychain / credentials file (with refresh if expired)
+///
+/// Note: CLAUDE_CODE_OAUTH_TOKEN env var is intentionally NOT used here.
+/// Those tokens only have `user:inference` scope and cannot access the
+/// usage API which requires full OAuth scopes.
+async fn resolve_token(
+    cache: &RwLock<Option<UsageCacheEntry>>,
+) -> Result<(String, Option<String>, Option<String>), String> {
+    let now = now_millis();
+
+    // 1. Check cache.
+    {
+        let cached = cache.read().await;
+        if let Some(entry) = cached.as_ref()
+            && entry.token_expires_at > now + 60_000
+        {
+            return Ok((
+                entry.access_token.clone(),
+                entry.subscription_type.clone(),
+                entry.rate_limit_tier.clone(),
+            ));
+        }
+    }
+
+    // 2. Read from platform keychain / credentials file.
+    let creds = read_credentials_platform().await?;
+    let oauth = &creds.claude_ai_oauth;
+
+    let (token, rt, expires) = if oauth.expires_at <= now + 60_000 {
+        // Token expired — refresh.
+        let refreshed = refresh_token(&oauth.refresh_token).await?;
+        let new_expires = now + refreshed.expires_in.unwrap_or(3600) * 1000;
+        let new_refresh = refreshed
+            .refresh_token
+            .unwrap_or_else(|| oauth.refresh_token.clone());
+        (refreshed.access_token, new_refresh, new_expires)
+    } else {
+        (
+            oauth.access_token.clone(),
+            oauth.refresh_token.clone(),
+            oauth.expires_at,
+        )
+    };
+
+    let sub_type = oauth.subscription_type.clone();
+    let tier = oauth.rate_limit_tier.clone();
+
+    let mut w = cache.write().await;
+    *w = Some(UsageCacheEntry {
+        access_token: token.clone(),
+        refresh_token: rt,
+        token_expires_at: expires,
+        subscription_type: sub_type.clone(),
+        rate_limit_tier: tier.clone(),
+        last_usage: None,
+        last_usage_fetched_at: 0,
+    });
+
+    Ok((token, sub_type, tier))
+}
+
+// ---------------------------------------------------------------------------
+// Public API
 // ---------------------------------------------------------------------------
 
 pub async fn get_usage(cache: &RwLock<Option<UsageCacheEntry>>) -> Result<ClaudeCodeUsage, String> {
-    // Try to use cached token first.
     let now = now_millis();
-    let cached = cache.read().await;
-    let (access_token, refresh_tok, sub_type, tier) = if let Some(entry) = cached.as_ref() {
-        if entry.token_expires_at > now + 60_000 {
-            // Token still valid (with 60s margin).
-            (
-                entry.access_token.clone(),
-                entry.refresh_token.clone(),
-                entry.subscription_type.clone(),
-                entry.rate_limit_tier.clone(),
-            )
-        } else {
-            // Token expired, need refresh.
-            drop(cached);
-            let creds_for_refresh = {
-                let c = cache.read().await;
-                c.as_ref().map(|e| {
-                    (
-                        e.refresh_token.clone(),
-                        e.subscription_type.clone(),
-                        e.rate_limit_tier.clone(),
-                    )
-                })
-            };
-            if let Some((rt, st, rl)) = creds_for_refresh {
-                let refreshed = refresh_token(&rt).await?;
-                let new_expires = now + refreshed.expires_in.unwrap_or(3600) * 1000;
-                let new_refresh = refreshed.refresh_token.unwrap_or(rt);
-                let mut w = cache.write().await;
-                *w = Some(UsageCacheEntry {
-                    access_token: refreshed.access_token.clone(),
-                    refresh_token: new_refresh,
-                    token_expires_at: new_expires,
-                    subscription_type: st.clone(),
-                    rate_limit_tier: rl.clone(),
-                });
-                (
-                    refreshed.access_token,
-                    w.as_ref().unwrap().refresh_token.clone(),
-                    st,
-                    rl,
-                )
-            } else {
-                return Err("No cached credentials to refresh".into());
-            }
+
+    // Return cached usage if it's fresh enough (< 60s old).
+    {
+        let cached = cache.read().await;
+        if let Some(entry) = cached.as_ref()
+            && let Some(ref usage) = entry.last_usage
+            && now - entry.last_usage_fetched_at < USAGE_CACHE_TTL_MS
+        {
+            return Ok(usage.clone());
         }
-    } else {
-        // No cache — read from keychain.
-        drop(cached);
-        let creds = read_credentials_platform().await?;
-        let oauth = &creds.claude_ai_oauth;
+    }
 
-        let (token, rt, expires) = if oauth.expires_at <= now + 60_000 {
-            // Token expired, refresh immediately.
-            let refreshed = refresh_token(&oauth.refresh_token).await?;
-            let new_expires = now + refreshed.expires_in.unwrap_or(3600) * 1000;
-            let new_refresh = refreshed
-                .refresh_token
-                .unwrap_or_else(|| oauth.refresh_token.clone());
-            (refreshed.access_token, new_refresh, new_expires)
-        } else {
-            (
-                oauth.access_token.clone(),
-                oauth.refresh_token.clone(),
-                oauth.expires_at,
-            )
-        };
+    let (access_token, sub_type, tier) = resolve_token(cache).await?;
 
-        let sub_type = oauth.subscription_type.clone();
-        let tier = oauth.rate_limit_tier.clone();
-
-        let mut w = cache.write().await;
-        *w = Some(UsageCacheEntry {
-            access_token: token.clone(),
-            refresh_token: rt.clone(),
-            token_expires_at: expires,
-            subscription_type: sub_type.clone(),
-            rate_limit_tier: tier.clone(),
-        });
-
-        (token, rt, sub_type, tier)
-    };
-
-    // Fetch usage with valid token.
     match fetch_usage(&access_token).await {
-        Ok(usage) => Ok(ClaudeCodeUsage {
-            subscription_type: sub_type,
-            rate_limit_tier: tier,
-            usage,
-            fetched_at: now,
-        }),
-        Err(e) => {
-            // If we get a 401, the token might be stale despite not being expired.
-            // Try one refresh cycle.
-            if e.contains("401") {
-                let refreshed = refresh_token(&refresh_tok).await?;
-                let new_expires = now_millis() + refreshed.expires_in.unwrap_or(3600) * 1000;
-                let new_refresh = refreshed.refresh_token.unwrap_or(refresh_tok);
-
-                let mut w = cache.write().await;
-                *w = Some(UsageCacheEntry {
-                    access_token: refreshed.access_token.clone(),
-                    refresh_token: new_refresh,
-                    token_expires_at: new_expires,
-                    subscription_type: sub_type.clone(),
-                    rate_limit_tier: tier.clone(),
-                });
-
-                let usage = fetch_usage(&refreshed.access_token).await?;
-                Ok(ClaudeCodeUsage {
-                    subscription_type: sub_type,
-                    rate_limit_tier: tier,
-                    usage,
-                    fetched_at: now_millis(),
-                })
-            } else {
-                Err(e)
+        Ok(usage_data) => {
+            let result = ClaudeCodeUsage {
+                subscription_type: sub_type,
+                rate_limit_tier: tier,
+                usage: usage_data,
+                fetched_at: now,
+            };
+            // Cache the result.
+            let mut w = cache.write().await;
+            if let Some(entry) = w.as_mut() {
+                entry.last_usage = Some(result.clone());
+                entry.last_usage_fetched_at = now;
             }
+            Ok(result)
+        }
+        Err(e) => {
+            // On 401, invalidate cache so next call re-resolves the token.
+            if e.contains("401") {
+                let mut w = cache.write().await;
+                *w = None;
+            }
+            Err(e)
         }
     }
 }
