@@ -72,6 +72,16 @@ export const Sidebar = memo(function Sidebar() {
           thinking: null,
         });
       }
+      // Check for MCP servers and prompt user to configure them.
+      try {
+        openModal("mcpSelection", {
+          workspaceId: result.workspace.id,
+          repoId,
+        });
+      } catch {
+        // Error opening MCP modal - continue with setup script check.
+      }
+
       // Check if a setup script exists and prompt user to review it.
       try {
         const config = await getRepoConfig(repoId);

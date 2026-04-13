@@ -252,6 +252,10 @@ fn main() {
             commands::workspace::generate_workspace_name,
             commands::workspace::refresh_branches,
             commands::workspace::open_workspace_in_terminal,
+            // MCP
+            commands::mcp::detect_mcp_servers,
+            commands::mcp::configure_workspace_mcps,
+            commands::mcp::read_workspace_mcps,
             // Slash commands
             commands::slash_commands::list_slash_commands,
             commands::slash_commands::record_slash_command_usage,
