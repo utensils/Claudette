@@ -270,6 +270,7 @@
 .badgePlan,
 .badgeAsk {
   flex-shrink: 0;
+  display: inline-flex;
   animation: pulse-badge 2s ease-in-out infinite;
 }
 
