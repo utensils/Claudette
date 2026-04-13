@@ -100,12 +100,12 @@ pub struct UsageCacheEntry {
     pub last_usage_fetched_at: u64,
 }
 
-/// Minimum interval between usage API calls (30 minutes).
-/// The /api/oauth/usage endpoint has aggressive rate limiting — once a 429
-/// is triggered, it persists for 30+ minutes with no Retry-After header.
-/// Claude Code itself only calls this on-demand (no polling). We cache
-/// aggressively to avoid triggering rate limits.
+/// Cache TTL for successful usage data (30 minutes).
 const USAGE_CACHE_TTL_MS: u64 = 30 * 60 * 1000;
+
+/// Backoff after a failed fetch (2 minutes). Short enough to recover
+/// quickly once a rate limit clears, long enough to avoid hammering.
+const USAGE_ERROR_BACKOFF_MS: u64 = 2 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -122,6 +122,29 @@ fn now_millis() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+/// Detect the installed Claude Code version by running `claude --version`.
+/// Returns a User-Agent string like `claude-code/2.1.104`.
+/// Cached after first call via `std::sync::OnceLock`.
+fn claude_code_user_agent() -> String {
+    static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            let output = std::process::Command::new("claude")
+                .arg("--version")
+                .output();
+            match output {
+                Ok(o) if o.status.success() => {
+                    let raw = String::from_utf8_lossy(&o.stdout);
+                    // Output is like "2.1.104 (Claude Code)"
+                    let version = raw.split_whitespace().next().unwrap_or("0.0.0");
+                    format!("claude-code/{version}")
+                }
+                _ => "claude-code/0.0.0".to_string(),
+            }
+        })
+        .clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +254,7 @@ async fn fetch_usage(access_token: &str) -> Result<UsageData, String> {
         .header("Authorization", format!("Bearer {access_token}"))
         .header("anthropic-beta", ANTHROPIC_BETA)
         .header("Content-Type", "application/json")
-        .header("User-Agent", "claudette/0.8.0")
+        .header("User-Agent", claude_code_user_agent())
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
@@ -367,21 +390,24 @@ async fn resolve_token(
 pub async fn get_usage(cache: &RwLock<Option<UsageCacheEntry>>) -> Result<ClaudeCodeUsage, String> {
     let now = now_millis();
 
-    // Return cached usage if within TTL (30 minutes).
-    // Also respect the TTL when we have NO cached data — this prevents
-    // hammering the API after a 429 when there's no stale data to return.
+    // Return cached data or respect error backoff.
     {
         let cached = cache.read().await;
         if let Some(entry) = cached.as_ref()
             && entry.last_usage_fetched_at > 0
-            && now - entry.last_usage_fetched_at < USAGE_CACHE_TTL_MS
         {
+            let age = now - entry.last_usage_fetched_at;
             if let Some(ref usage) = entry.last_usage {
-                return Ok(usage.clone());
+                // Have data — use 30-minute TTL.
+                if age < USAGE_CACHE_TTL_MS {
+                    return Ok(usage.clone());
+                }
+            } else {
+                // No data (previous fetch failed) — use 2-minute backoff.
+                if age < USAGE_ERROR_BACKOFF_MS {
+                    return Err("Usage data temporarily unavailable. Try again later.".into());
+                }
             }
-            // We attempted a fetch recently but got no data (e.g. 429).
-            // Don't retry yet — respect the backoff.
-            return Err("Usage data temporarily unavailable. Try again later.".into());
         }
     }
 
@@ -665,5 +691,100 @@ mod tests {
         // No stale data to fall back to — should return an error.
         let result = rt.block_on(get_usage(&cache));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn error_backoff_shorter_than_success_ttl() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Simulate a failed fetch: no usage data, fetched recently.
+        let cache = RwLock::new(Some(UsageCacheEntry {
+            access_token: "tok".into(),
+            refresh_token: "ref".into(),
+            token_expires_at: now_millis() + 3_600_000,
+            subscription_type: Some("max".into()),
+            rate_limit_tier: None,
+            last_usage: None,
+            // Fetched 3 minutes ago — past error backoff (2min) but within success TTL (30min).
+            last_usage_fetched_at: now_millis() - 3 * 60 * 1000,
+        }));
+
+        // Should NOT return the "temporarily unavailable" error — the 2-minute
+        // backoff has expired, so it should retry the API (which fails without
+        // a real server, returning an error different from the backoff message).
+        let result = rt.block_on(get_usage(&cache));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            !err.contains("temporarily unavailable"),
+            "Should retry after error backoff expires, got: {err}"
+        );
+    }
+
+    #[test]
+    fn error_backoff_blocks_retry_within_window() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Simulate a failed fetch: no usage data, fetched 30 seconds ago.
+        let cache = RwLock::new(Some(UsageCacheEntry {
+            access_token: "tok".into(),
+            refresh_token: "ref".into(),
+            token_expires_at: now_millis() + 3_600_000,
+            subscription_type: Some("max".into()),
+            rate_limit_tier: None,
+            last_usage: None,
+            last_usage_fetched_at: now_millis() - 30_000, // 30s ago
+        }));
+
+        // Within the 2-minute backoff — should return the backoff message
+        // without hitting the API.
+        let result = rt.block_on(get_usage(&cache));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("temporarily unavailable"));
+    }
+
+    // -- User-Agent detection -------------------------------------------------
+
+    #[test]
+    fn claude_code_user_agent_returns_valid_format() {
+        let ua = claude_code_user_agent();
+        assert!(
+            ua.starts_with("claude-code/"),
+            "Expected 'claude-code/...' but got: {ua}"
+        );
+    }
+
+    // -- Real API response parsing --------------------------------------------
+
+    #[test]
+    fn parse_real_api_response() {
+        // Actual response shape from the production API.
+        let json = r#"{
+            "five_hour": {"utilization": 56.0, "resets_at": "2026-04-13T17:59:59.656569+00:00"},
+            "seven_day": {"utilization": 12.0, "resets_at": "2026-04-19T01:00:00.656587+00:00"},
+            "seven_day_oauth_apps": null,
+            "seven_day_opus": null,
+            "seven_day_sonnet": {"utilization": 2.0, "resets_at": "2026-04-14T01:00:00.656595+00:00"},
+            "seven_day_cowork": null,
+            "iguana_necktie": null,
+            "extra_usage": {"is_enabled": true, "monthly_limit": 30000, "used_credits": 0.0, "utilization": null}
+        }"#;
+        let raw: serde_json::Value = serde_json::from_str(json).unwrap();
+        let data: UsageData = serde_json::from_value(raw).unwrap();
+
+        let five = data.five_hour.unwrap();
+        assert!((five.utilization - 56.0).abs() < f64::EPSILON);
+
+        let seven = data.seven_day.unwrap();
+        assert!((seven.utilization - 12.0).abs() < f64::EPSILON);
+
+        let sonnet = data.seven_day_sonnet.unwrap();
+        assert!((sonnet.utilization - 2.0).abs() < f64::EPSILON);
+
+        assert!(data.seven_day_opus.is_none());
+
+        let extra = data.extra_usage.unwrap();
+        assert!(extra.is_enabled);
+        assert_eq!(extra.monthly_limit, Some(30000.0));
+        assert_eq!(extra.used_credits, Some(0.0));
+        assert_eq!(extra.utilization, None);
     }
 }
