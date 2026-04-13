@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "./stores/useAppStore";
-import { loadInitialData, getAppSetting, listRemoteConnections, listDiscoveredServers, getLocalServerStatus, clearAttention, detectInstalledApps } from "./services/tauri";
+import { loadInitialData, getAppSetting, listRemoteConnections, listDiscoveredServers, getLocalServerStatus, clearAttention, detectInstalledApps, getClaudeCodeUsage } from "./services/tauri";
 import { applyTheme, loadAllThemes, findTheme } from "./utils/theme";
 import { AppLayout } from "./components/layout/AppLayout";
 import type { CommandEvent } from "./types";
@@ -20,6 +20,7 @@ function App() {
   const setLocalServerConnectionString = useAppStore((s) => s.setLocalServerConnectionString);
   const setCurrentThemeId = useAppStore((s) => s.setCurrentThemeId);
   const setDetectedApps = useAppStore((s) => s.setDetectedApps);
+  const setClaudeCodeUsage = useAppStore((s) => s.setClaudeCodeUsage);
 
   useEffect(() => {
     loadInitialData().then((data) => {
@@ -77,6 +78,10 @@ function App() {
     detectInstalledApps()
       .then(setDetectedApps)
       .catch((err) => console.error("Failed to detect installed apps:", err));
+
+    getClaudeCodeUsage()
+      .then(setClaudeCodeUsage)
+      .catch(() => {}); // Usage is non-critical; fail silently on startup
 
     // Listen for terminal command events
     const setupCommandListeners = async () => {
@@ -153,7 +158,7 @@ function App() {
       unlistenTray.then((fn) => fn());
       unlistenSettings.then((fn) => fn());
     };
-  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages, setRemoteConnections, setDiscoveredServers, setLocalServerRunning, setLocalServerConnectionString, setCurrentThemeId, setDetectedApps]);
+  }, [setRepositories, setWorkspaces, setWorktreeBaseDir, setDefaultBranches, setTerminalFontSize, setLastMessages, setRemoteConnections, setDiscoveredServers, setLocalServerRunning, setLocalServerConnectionString, setCurrentThemeId, setDetectedApps, setClaudeCodeUsage]);
 
   return <AppLayout />;
 }

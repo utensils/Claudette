@@ -1,4 +1,4 @@
-import { SlidersHorizontal, Cpu, Palette, Bell, GitBranch, FlaskConical } from "lucide-react";
+import { SlidersHorizontal, Cpu, Palette, Bell, GitBranch, FlaskConical, BarChart3 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { RepoIcon } from "../shared/RepoIcon";
 import styles from "./Settings.module.css";
@@ -6,6 +6,7 @@ import styles from "./Settings.module.css";
 const APP_SECTIONS = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "models", label: "Models", icon: Cpu },
+  { id: "usage", label: "Usage", icon: BarChart3 },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "git", label: "Git", icon: GitBranch },

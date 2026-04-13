@@ -9,6 +9,7 @@ mod remote;
 mod state;
 mod transport;
 mod tray;
+mod usage;
 
 use std::path::PathBuf;
 
@@ -304,6 +305,8 @@ fn main() {
             commands::remote::list_discovered_servers,
             commands::remote::add_remote_connection,
             commands::remote::send_remote_command,
+            // Usage
+            commands::usage::get_claude_code_usage,
             // Local server
             commands::remote::start_local_server,
             commands::remote::stop_local_server,

@@ -50,3 +50,28 @@
 .statUpdate:hover {
   text-decoration: underline;
 }
+
+.statUsage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+}
+
+.statUsage:hover {
+  color: var(--text-primary);
+}
+
+.usageDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

@@ -7,11 +7,13 @@ import { NotificationsSettings } from "./sections/NotificationsSettings";
 import { GitSettings } from "./sections/GitSettings";
 import { RepoSettings } from "./sections/RepoSettings";
 import { PlaceholderSettings } from "./sections/PlaceholderSettings";
+import { UsageSettings } from "./sections/UsageSettings";
 import styles from "./Settings.module.css";
 
 function SectionContent({ section }: { section: string | null }) {
   if (!section || section === "general") return <GeneralSettings />;
   if (section === "models") return <ModelSettings />;
+  if (section === "usage") return <UsageSettings />;
   if (section === "appearance") return <AppearanceSettings />;
   if (section === "notifications") return <NotificationsSettings />;
   if (section === "git") return <GitSettings />;

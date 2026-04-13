@@ -16,6 +16,7 @@ import type {
 } from "../types";
 import type { RemoteInitialData } from "../types/remote";
 import type { DetectedApp } from "../types/apps";
+import type { ClaudeCodeUsage } from "../types/usage";
 
 export type PermissionLevel = "readonly" | "standard" | "full";
 
@@ -263,6 +264,14 @@ interface AppState {
   // -- Detected Apps --
   detectedApps: DetectedApp[];
   setDetectedApps: (apps: DetectedApp[]) => void;
+
+  // -- Claude Code Usage --
+  claudeCodeUsage: ClaudeCodeUsage | null;
+  claudeCodeUsageLoading: boolean;
+  claudeCodeUsageError: string | null;
+  setClaudeCodeUsage: (usage: ClaudeCodeUsage | null) => void;
+  setClaudeCodeUsageLoading: (loading: boolean) => void;
+  setClaudeCodeUsageError: (error: string | null) => void;
 
   // -- Updater --
   updateAvailable: boolean;
@@ -852,6 +861,17 @@ export const useAppStore = create<AppState>((set) => ({
   // -- Detected Apps --
   detectedApps: [],
   setDetectedApps: (apps) => set({ detectedApps: apps }),
+
+  // -- Claude Code Usage --
+  claudeCodeUsage: null,
+  claudeCodeUsageLoading: false,
+  claudeCodeUsageError: null,
+  setClaudeCodeUsage: (usage) =>
+    set({ claudeCodeUsage: usage, claudeCodeUsageError: null }),
+  setClaudeCodeUsageLoading: (loading) =>
+    set({ claudeCodeUsageLoading: loading }),
+  setClaudeCodeUsageError: (error) =>
+    set({ claudeCodeUsageError: error, claudeCodeUsageLoading: false }),
 
   // -- Updater --
   updateAvailable: false,
