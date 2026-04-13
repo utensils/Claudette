@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 
 use crate::commands::apps::DetectedApp;
 use crate::remote::DiscoveredServer;
+use crate::usage::UsageCacheEntry;
 
 /// Re-export for use in tray module without direct tauri::tray import.
 pub type TrayIcon = tauri::tray::TrayIcon;
@@ -92,6 +93,8 @@ pub struct AppState {
     pub detected_apps: RwLock<Vec<DetectedApp>>,
     /// System tray icon handle (None when tray is disabled).
     pub tray_handle: Mutex<Option<TrayIcon>>,
+    /// Cached Claude Code OAuth token and usage data.
+    pub usage_cache: RwLock<Option<UsageCacheEntry>>,
 }
 
 impl AppState {
@@ -106,6 +109,7 @@ impl AppState {
             local_server: RwLock::new(None),
             detected_apps: RwLock::new(Vec::new()),
             tray_handle: Mutex::new(None),
+            usage_cache: RwLock::new(None),
         }
     }
 
