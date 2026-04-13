@@ -309,11 +309,14 @@ async fn resolve_token(
 // Public API
 // ---------------------------------------------------------------------------
 
-pub async fn get_usage(cache: &RwLock<Option<UsageCacheEntry>>) -> Result<ClaudeCodeUsage, String> {
+pub async fn get_usage(
+    cache: &RwLock<Option<UsageCacheEntry>>,
+    force: bool,
+) -> Result<ClaudeCodeUsage, String> {
     let now = now_millis();
 
-    // Return cached usage if it's fresh enough (< 60s old).
-    {
+    // Return cached usage if it's fresh enough (< 60s old), unless forced.
+    if !force {
         let cached = cache.read().await;
         if let Some(entry) = cached.as_ref()
             && let Some(ref usage) = entry.last_usage
@@ -559,7 +562,7 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let cache = make_cache_with_usage(now_millis());
 
-        let result = rt.block_on(get_usage(&cache)).unwrap();
+        let result = rt.block_on(get_usage(&cache, false)).unwrap();
         assert_eq!(result.subscription_type.as_deref(), Some("max"));
     }
 
@@ -572,7 +575,19 @@ mod tests {
         // Cache is stale — get_usage will try to fetch from the API.
         // Without a real server it will fail, but the point is it doesn't
         // return the stale cached data.
-        let result = rt.block_on(get_usage(&cache));
+        let result = rt.block_on(get_usage(&cache, false));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn force_refresh_bypasses_cache() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Cache is fresh — but force=true should bypass it and hit the API.
+        let cache = make_cache_with_usage(now_millis());
+
+        // With force=true, it skips cache and tries to fetch from the API.
+        // Without a real server it will fail, proving it bypassed the cache.
+        let result = rt.block_on(get_usage(&cache, true));
         assert!(result.is_err());
     }
 }

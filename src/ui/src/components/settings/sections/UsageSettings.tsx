@@ -153,10 +153,10 @@ export function UsageSettings() {
   const setLoading = useAppStore((s) => s.setClaudeCodeUsageLoading);
   const setError = useAppStore((s) => s.setClaudeCodeUsageError);
 
-  const fetchUsage = useCallback(async () => {
+  const fetchUsage = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const data = await getClaudeCodeUsage();
+      const data = await getClaudeCodeUsage(force);
       setUsage(data);
     } catch (e) {
       setError(String(e));
@@ -194,7 +194,7 @@ export function UsageSettings() {
       {error && !usage && (
         <div className={styles.usageEmptyState}>
           <span>{error}</span>
-          <button className={styles.usageRefreshBtn} onClick={fetchUsage}>
+          <button className={styles.usageRefreshBtn} onClick={() => fetchUsage(true)}>
             <RefreshCw size={12} /> Retry
           </button>
         </div>
@@ -232,7 +232,7 @@ export function UsageSettings() {
           <div className={styles.usageFooter}>
             <button
               className={styles.usageRefreshBtn}
-              onClick={fetchUsage}
+              onClick={() => fetchUsage(true)}
               disabled={loading}
             >
               <RefreshCw size={12} style={loading ? { animation: "spin 1s linear infinite" } : undefined} />
