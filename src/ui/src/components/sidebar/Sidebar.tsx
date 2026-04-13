@@ -128,7 +128,7 @@ export const Sidebar = memo(function Sidebar() {
 
   return (
     <div className={styles.sidebar}>
-      <div className={styles.header}>
+      <div className={styles.header} data-tauri-drag-region>
         <span className={styles.title}>Workspaces</span>
       </div>
 
@@ -171,7 +171,6 @@ export const Sidebar = memo(function Sidebar() {
                 if (!header) return;
                 // Record start position — don't activate drag until threshold
                 dragStartPos.current = { x: e.clientX, y: e.clientY, id: repo.id, pointerId: e.pointerId };
-                e.currentTarget.setPointerCapture(e.pointerId);
               }}
               onPointerMove={(e) => {
                 if (!dragStartPos.current) return;
@@ -182,6 +181,7 @@ export const Sidebar = memo(function Sidebar() {
                   const dx = e.clientX - dragStartPos.current.x;
                   const dy = e.clientY - dragStartPos.current.y;
                   if (Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+                  e.currentTarget.setPointerCapture(dragStartPos.current.pointerId);
                   setDraggedRepoId(repo.id);
                   didDragRef.current = true;
                   // Prevent text selection while dragging

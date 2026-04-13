@@ -139,7 +139,7 @@ export const RightSidebar = memo(function RightSidebar() {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.tabBar}>
+      <div className={styles.tabBar} data-tauri-drag-region>
         <button
           className={`${styles.tab} ${activeTab === "changes" ? styles.tabActive : ""}`}
           onClick={() => setActiveTab("changes")}
