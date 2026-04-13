@@ -260,9 +260,7 @@ pub async fn send_chat_message(
             {
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
-                let already_notified = agents
-                    .get(&ws_id)
-                    .is_some_and(|s| s.needs_attention);
+                let already_notified = agents.get(&ws_id).is_some_and(|s| s.needs_attention);
                 if let Some(session) = agents.get_mut(&ws_id) {
                     session.needs_attention = true;
                 }
