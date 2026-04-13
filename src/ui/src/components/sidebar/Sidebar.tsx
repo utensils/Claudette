@@ -345,15 +345,15 @@ export const Sidebar = memo(function Sidebar() {
                     }}
                   >
                     {badge === "done" ? (
-                      <span className={styles.badgeDone} title="Completed" aria-label="Completed">
+                      <span className={styles.badgeDone} title="Completed" aria-label="Completed" role="img">
                         <BadgeCheck size={14} />
                       </span>
                     ) : badge === "plan" ? (
-                      <span className={styles.badgePlan} title="Plan approval needed" aria-label="Plan approval needed">
+                      <span className={styles.badgePlan} title="Plan approval needed" aria-label="Plan approval needed" role="img">
                         <BadgeInfo size={14} />
                       </span>
                     ) : badge === "ask" ? (
-                      <span className={styles.badgeAsk} title="Question requires attention" aria-label="Question requires attention">
+                      <span className={styles.badgeAsk} title="Question requires attention" aria-label="Question requires attention" role="img">
                         <BadgeQuestionMark size={14} />
                       </span>
                     ) : (

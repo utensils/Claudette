@@ -286,7 +286,7 @@
   color: var(--badge-ask);
 }
 
-.wsUnread {
+.wsUnread .wsName {
   font-weight: 700;
 }
 
