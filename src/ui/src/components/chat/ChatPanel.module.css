@@ -172,8 +172,6 @@
 .message {
   max-width: 100%;
   animation: fadeInUp 0.15s ease both;
-  content-visibility: auto;
-  contain-intrinsic-size: auto none;
 }
 
 /* User messages — compact input blocks */
@@ -641,8 +639,6 @@
   transition: border-color var(--transition-fast);
   overflow: hidden;
   flex-shrink: 0;
-  content-visibility: auto;
-  contain-intrinsic-size: auto none;
 }
 
 .turnSummary:hover {

@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
  * Sticky-scroll hook: auto-scrolls to bottom when user is at the bottom of a
  * scrollable container, but stops when the user scrolls up.
  *
- * Tracks position via scroll events + ResizeObserver (catches content loads,
- * streaming growth, and window focus without external coordination).
+ * Tracks position via scroll events, ResizeObserver (container resizes), and
+ * MutationObserver (DOM changes like new messages, tool call expansion, and
+ * streaming content updates).
  *
  * Returns `isAtBottom` for rendering a "jump to bottom" indicator, plus
  * `scrollToBottom` and `handleContentChanged` helpers.
@@ -17,6 +18,29 @@ export function useStickyScroll(
   const isAtBottomRef = useRef(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const programmaticScrollRef = useRef(false);
+  const rafPendingRef = useRef(false);
+
+  /**
+   * Auto-scroll to bottom if the user is already there.
+   * Coalesced: at most one requestAnimationFrame callback per frame,
+   * preventing stacked RAFs from racing during fast streaming.
+   */
+  const handleContentChanged = useCallback(() => {
+    if (rafPendingRef.current) return;
+    rafPendingRef.current = true;
+    requestAnimationFrame(() => {
+      rafPendingRef.current = false;
+      if (!isAtBottomRef.current) return;
+      const el = containerRef.current;
+      if (el) {
+        const prev = el.scrollTop;
+        el.scrollTop = el.scrollHeight;
+        if (el.scrollTop !== prev) {
+          programmaticScrollRef.current = true;
+        }
+      }
+    });
+  }, [containerRef]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -39,13 +63,29 @@ export function useStickyScroll(
       checkPosition();
     };
 
-    // ResizeObserver catches content height changes (message load, streaming
-    // growth, content-visibility recalc) that don't fire scroll events.
-    const resizeObserver = new ResizeObserver(() => checkPosition());
+    // ResizeObserver: catches container resizes (panel toggle, window resize).
+    const resizeObserver = new ResizeObserver(() => {
+      checkPosition();
+      handleContentChanged();
+    });
     resizeObserver.observe(el);
 
+    // MutationObserver: catches all DOM changes within the scroll container
+    // (new messages, tool call expansion/collapse, streaming content).
+    // This is critical — ResizeObserver only watches the container's border
+    // box, which doesn't change when children grow inside a flex:1 container.
+    const mutationObserver = new MutationObserver(() => handleContentChanged());
+    mutationObserver.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
     // Re-check on window focus (content may arrive while app is backgrounded).
-    const onFocus = () => checkPosition();
+    const onFocus = () => {
+      checkPosition();
+      handleContentChanged();
+    };
 
     el.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("focus", onFocus);
@@ -53,8 +93,9 @@ export function useStickyScroll(
       el.removeEventListener("scroll", onScroll);
       window.removeEventListener("focus", onFocus);
       resizeObserver.disconnect();
+      mutationObserver.disconnect();
     };
-  }, [containerRef, threshold]);
+  }, [containerRef, threshold, handleContentChanged]);
 
   /** Programmatically scroll to bottom and re-enable auto-follow. */
   const scrollToBottom = useCallback(() => {
@@ -69,25 +110,6 @@ export function useStickyScroll(
       if (!containerRef.current) return;
       programmaticScrollRef.current = true;
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    });
-  }, [containerRef]);
-
-  /**
-   * Call when new content is added. Auto-scrolls only if the user is already
-   * at the bottom. The check is inside the RAF callback so a user scroll that
-   * fires between scheduling and execution correctly cancels the auto-scroll.
-   */
-  const handleContentChanged = useCallback(() => {
-    requestAnimationFrame(() => {
-      if (!isAtBottomRef.current) return;
-      const el = containerRef.current;
-      if (el) {
-        const prev = el.scrollTop;
-        el.scrollTop = el.scrollHeight;
-        if (el.scrollTop !== prev) {
-          programmaticScrollRef.current = true;
-        }
-      }
     });
   }, [containerRef]);
 
