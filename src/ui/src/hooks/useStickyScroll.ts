@@ -64,9 +64,14 @@ export function useStickyScroll(
     };
 
     // ResizeObserver: catches container resizes (panel toggle, window resize).
+    // Scroll first if pinned to bottom — prevents checkPosition() from
+    // flipping isAtBottomRef to false before auto-scroll can act on it.
     const resizeObserver = new ResizeObserver(() => {
+      if (isAtBottomRef.current) {
+        programmaticScrollRef.current = true;
+        el.scrollTop = el.scrollHeight;
+      }
       checkPosition();
-      handleContentChanged();
     });
     resizeObserver.observe(el);
 
@@ -105,7 +110,7 @@ export function useStickyScroll(
     el.scrollTop = el.scrollHeight;
     isAtBottomRef.current = true;
     setIsAtBottom(true);
-    // Second pass after layout settles (content-visibility recalc).
+    // Second pass after layout settles (React may flush a pending render).
     requestAnimationFrame(() => {
       if (!containerRef.current) return;
       programmaticScrollRef.current = true;
