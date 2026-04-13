@@ -426,6 +426,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_restore_worktree() {
+        let dir = setup_temp_repo().await;
+        let repo_path = dir.path().to_str().unwrap();
+
+        // Create a branch via create_worktree, then remove the worktree.
+        let wt_dir = tempfile::tempdir().unwrap();
+        let wt_path = wt_dir.path().to_str().unwrap();
+        create_worktree(repo_path, "claudette/restore-test", wt_path)
+            .await
+            .unwrap();
+        remove_worktree(repo_path, wt_path, true).await.unwrap();
+
+        // Restore the worktree for the existing branch.
+        let wt_dir2 = tempfile::tempdir().unwrap();
+        let wt_path2 = wt_dir2.path().to_str().unwrap();
+        let abs = restore_worktree(repo_path, "claudette/restore-test", wt_path2)
+            .await
+            .unwrap();
+        assert!(!abs.is_empty());
+
+        // The restored worktree should be on the expected branch.
+        let branch = current_branch(wt_path2).await.unwrap();
+        assert_eq!(branch, "claudette/restore-test");
+
+        // Clean up.
+        remove_worktree(repo_path, wt_path2, true).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn test_rename_branch() {
         let dir = setup_temp_repo().await;
         let path = dir.path().to_str().unwrap();
