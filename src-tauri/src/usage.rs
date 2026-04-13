@@ -129,13 +129,13 @@ fn now_millis() -> u64 {
 /// usage API call doesn't block the async runtime with a sync subprocess.
 static USER_AGENT_CACHE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-/// Pre-warm the User-Agent cache at startup. Call from `setup()` via
-/// `tokio::spawn` so it runs off the main thread.
-pub async fn warm_user_agent_cache() {
-    let output = tokio::process::Command::new("claude")
+/// Pre-warm the User-Agent cache at startup. Uses `std::process::Command`
+/// (sync) and is intended to run on a background `std::thread`, not tokio,
+/// since the tokio runtime may not be available during Tauri's `setup()`.
+pub fn warm_user_agent_cache_sync() {
+    let output = std::process::Command::new("claude")
         .arg("--version")
-        .output()
-        .await;
+        .output();
     let ua = match output {
         Ok(o) if o.status.success() => {
             let raw = String::from_utf8_lossy(&o.stdout);
