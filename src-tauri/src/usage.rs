@@ -223,12 +223,10 @@ async fn fetch_usage(access_token: &str) -> Result<UsageData, String> {
         return Err(format!("Usage API error ({status}): {body}"));
     }
 
-    // Read as text first for debug visibility, then parse.
     let body = resp
         .text()
         .await
         .map_err(|e| format!("Failed to read usage response: {e}"))?;
-    eprintln!("[usage] Raw API response: {body}");
 
     // Parse permissively: extract only the fields we care about from
     // whatever the API returns. Unknown fields are silently ignored.
@@ -351,5 +349,230 @@ pub async fn get_usage(cache: &RwLock<Option<UsageCacheEntry>>) -> Result<Claude
             }
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- Credential parsing --------------------------------------------------
+
+    #[test]
+    fn parse_credential_file() {
+        let json = r#"{
+            "claudeAiOauth": {
+                "accessToken": "sk-ant-oat01-test",
+                "refreshToken": "sk-ant-ort01-test",
+                "expiresAt": 1769163729172,
+                "scopes": ["user:inference", "user:profile"],
+                "subscriptionType": "max",
+                "rateLimitTier": "default_claude_max_20x"
+            }
+        }"#;
+        let creds: CredentialFile = serde_json::from_str(json).unwrap();
+        assert_eq!(creds.claude_ai_oauth.access_token, "sk-ant-oat01-test");
+        assert_eq!(creds.claude_ai_oauth.refresh_token, "sk-ant-ort01-test");
+        assert_eq!(creds.claude_ai_oauth.expires_at, 1769163729172);
+        assert_eq!(
+            creds.claude_ai_oauth.subscription_type.as_deref(),
+            Some("max")
+        );
+        assert_eq!(
+            creds.claude_ai_oauth.rate_limit_tier.as_deref(),
+            Some("default_claude_max_20x")
+        );
+    }
+
+    #[test]
+    fn parse_credential_file_minimal() {
+        // subscription_type and rate_limit_tier are optional.
+        let json = r#"{
+            "claudeAiOauth": {
+                "accessToken": "tok",
+                "refreshToken": "ref",
+                "expiresAt": 0
+            }
+        }"#;
+        let creds: CredentialFile = serde_json::from_str(json).unwrap();
+        assert_eq!(creds.claude_ai_oauth.subscription_type, None);
+        assert_eq!(creds.claude_ai_oauth.rate_limit_tier, None);
+    }
+
+    // -- Usage data parsing --------------------------------------------------
+
+    #[test]
+    fn parse_usage_with_iso_timestamps() {
+        let json = r#"{
+            "five_hour": {
+                "utilization": 42.5,
+                "resets_at": "2026-04-13T17:59:59.859408+00:00"
+            },
+            "seven_day": {
+                "utilization": 15.3,
+                "resets_at": "2026-04-19T00:00:00+00:00"
+            }
+        }"#;
+        let data: UsageData = serde_json::from_str(json).unwrap();
+        let five = data.five_hour.unwrap();
+        assert!((five.utilization - 42.5).abs() < f64::EPSILON);
+        assert_eq!(
+            five.resets_at.as_str().unwrap(),
+            "2026-04-13T17:59:59.859408+00:00"
+        );
+        assert!(data.seven_day.is_some());
+        assert!(data.seven_day_sonnet.is_none());
+        assert!(data.seven_day_opus.is_none());
+        assert!(data.extra_usage.is_none());
+    }
+
+    #[test]
+    fn parse_usage_with_numeric_timestamps() {
+        let json = r#"{
+            "five_hour": {
+                "utilization": 10.0,
+                "resets_at": 1681234567
+            }
+        }"#;
+        let data: UsageData = serde_json::from_str(json).unwrap();
+        let five = data.five_hour.unwrap();
+        assert_eq!(five.resets_at.as_f64().unwrap() as u64, 1681234567);
+    }
+
+    #[test]
+    fn parse_usage_with_extra_usage() {
+        let json = r#"{
+            "five_hour": {
+                "utilization": 0.0,
+                "resets_at": "2026-04-13T18:00:00Z"
+            },
+            "extra_usage": {
+                "is_enabled": true,
+                "monthly_limit": 10000,
+                "used_credits": 1234,
+                "utilization": 12.34
+            }
+        }"#;
+        let data: UsageData = serde_json::from_str(json).unwrap();
+        let extra = data.extra_usage.unwrap();
+        assert!(extra.is_enabled);
+        assert_eq!(extra.monthly_limit, Some(10000.0));
+        assert_eq!(extra.used_credits, Some(1234.0));
+        assert!((extra.utilization.unwrap() - 12.34).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn parse_usage_with_extra_usage_unlimited() {
+        let json = r#"{
+            "extra_usage": {
+                "is_enabled": true,
+                "monthly_limit": null,
+                "used_credits": 500,
+                "utilization": null
+            }
+        }"#;
+        let data: UsageData = serde_json::from_str(json).unwrap();
+        let extra = data.extra_usage.unwrap();
+        assert!(extra.is_enabled);
+        assert_eq!(extra.monthly_limit, None);
+        assert_eq!(extra.used_credits, Some(500.0));
+        assert_eq!(extra.utilization, None);
+    }
+
+    #[test]
+    fn parse_usage_ignores_unknown_fields() {
+        // The API may include fields we don't model (e.g. seven_day_oauth_apps).
+        let json = r#"{
+            "five_hour": {
+                "utilization": 5.0,
+                "resets_at": "2026-04-13T18:00:00Z"
+            },
+            "seven_day_oauth_apps": {
+                "utilization": 1.0,
+                "resets_at": "2026-04-19T00:00:00Z"
+            },
+            "some_future_field": "whatever"
+        }"#;
+        let raw: serde_json::Value = serde_json::from_str(json).unwrap();
+        let data: UsageData = serde_json::from_value(raw).unwrap();
+        assert!(data.five_hour.is_some());
+        // Unknown fields are silently dropped.
+    }
+
+    #[test]
+    fn parse_usage_empty_response() {
+        let json = "{}";
+        let data: UsageData = serde_json::from_str(json).unwrap();
+        assert!(data.five_hour.is_none());
+        assert!(data.seven_day.is_none());
+        assert!(data.extra_usage.is_none());
+    }
+
+    // -- Token refresh response parsing --------------------------------------
+
+    #[test]
+    fn parse_token_refresh_response() {
+        let json = r#"{
+            "access_token": "new-tok",
+            "token_type": "bearer",
+            "expires_in": 3600,
+            "scope": "user:inference user:profile",
+            "refresh_token": "new-ref"
+        }"#;
+        let resp: TokenRefreshResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.access_token, "new-tok");
+        assert_eq!(resp.refresh_token.as_deref(), Some("new-ref"));
+        assert_eq!(resp.expires_in, Some(3600));
+    }
+
+    #[test]
+    fn parse_token_refresh_response_minimal() {
+        // refresh_token and expires_in may be absent.
+        let json = r#"{"access_token": "tok"}"#;
+        let resp: TokenRefreshResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.access_token, "tok");
+        assert_eq!(resp.refresh_token, None);
+        assert_eq!(resp.expires_in, None);
+    }
+
+    // -- Cache TTL (sync tests using tokio::runtime::Runtime) ----------------
+
+    fn make_cache_with_usage(fetched_at: u64) -> RwLock<Option<UsageCacheEntry>> {
+        RwLock::new(Some(UsageCacheEntry {
+            access_token: "tok".into(),
+            refresh_token: "ref".into(),
+            token_expires_at: now_millis() + 3_600_000,
+            subscription_type: Some("max".into()),
+            rate_limit_tier: None,
+            last_usage: Some(ClaudeCodeUsage {
+                subscription_type: Some("max".into()),
+                rate_limit_tier: None,
+                usage: UsageData::default(),
+                fetched_at: 0,
+            }),
+            last_usage_fetched_at: fetched_at,
+        }))
+    }
+
+    #[test]
+    fn cache_returns_fresh_usage() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let cache = make_cache_with_usage(now_millis());
+
+        let result = rt.block_on(get_usage(&cache)).unwrap();
+        assert_eq!(result.subscription_type.as_deref(), Some("max"));
+    }
+
+    #[test]
+    fn cache_expires_after_ttl() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Fetched > 60s ago.
+        let cache = make_cache_with_usage(now_millis() - USAGE_CACHE_TTL_MS - 1);
+
+        // Cache is stale — get_usage will try to fetch from the API.
+        // Without a real server it will fail, but the point is it doesn't
+        // return the stale cached data.
+        let result = rt.block_on(get_usage(&cache));
+        assert!(result.is_err());
     }
 }

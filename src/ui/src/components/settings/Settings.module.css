@@ -502,6 +502,21 @@
   padding-top: 8px;
 }
 
+.usageManageLink {
+  font-size: 13px;
+  color: var(--accent-primary);
+  text-decoration: none;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.usageManageLink:hover {
+  text-decoration: underline;
+}
+
 /* ── Placeholder ── */
 
 .placeholder {

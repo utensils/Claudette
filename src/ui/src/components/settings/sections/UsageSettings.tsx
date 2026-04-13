@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from "react";
 import { RefreshCw } from "lucide-react";
 import { useAppStore } from "../../../stores/useAppStore";
-import { getClaudeCodeUsage } from "../../../services/tauri";
+import { getClaudeCodeUsage, openUsageSettings } from "../../../services/tauri";
 import type { UsageLimit, ExtraUsage } from "../../../types/usage";
 import styles from "../Settings.module.css";
 
@@ -78,15 +78,28 @@ function UsageBar({
   );
 }
 
+
+
 function ExtraUsageSection({ extra }: { extra: ExtraUsage }) {
   if (!extra.is_enabled) {
     return (
       <>
         <div className={styles.usageExtraHeader}>Extra Usage</div>
         <div className={styles.usageCard}>
-          <span className={styles.usageCardTitle} style={{ color: "var(--text-dim)" }}>
-            Not enabled
-          </span>
+          <div className={styles.usageCardHeader}>
+            <span className={styles.usageCardTitle} style={{ color: "var(--text-dim)" }}>
+              Not enabled
+            </span>
+            <button
+              className={styles.usageManageLink}
+              onClick={() => openUsageSettings()}
+            >
+              Enable
+            </button>
+          </div>
+          <div className={styles.usageReset}>
+            Turn on extra usage to keep using Claude when you hit your limit
+          </div>
         </div>
       </>
     );
@@ -99,7 +112,15 @@ function ExtraUsageSection({ extra }: { extra: ExtraUsage }) {
 
   return (
     <>
-      <div className={styles.usageExtraHeader}>Extra Usage</div>
+      <div className={styles.usageCardHeader} style={{ paddingTop: 8 }}>
+        <div className={styles.usageExtraHeader}>Extra Usage</div>
+        <button
+          className={styles.usageManageLink}
+          onClick={() => openUsageSettings()}
+        >
+          Manage
+        </button>
+      </div>
       <div className={styles.usageCard}>
         <div className={styles.usageCardHeader}>
           <span className={styles.usageCardTitle}>Monthly spend</span>
@@ -139,6 +160,8 @@ export function UsageSettings() {
       setUsage(data);
     } catch (e) {
       setError(String(e));
+    } finally {
+      setLoading(false);
     }
   }, [setUsage, setLoading, setError]);
 

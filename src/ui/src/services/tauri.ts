@@ -455,6 +455,10 @@ export function getClaudeCodeUsage(): Promise<ClaudeCodeUsage> {
   return invoke("get_claude_code_usage");
 }
 
+export function openUsageSettings(): Promise<void> {
+  return invoke("open_usage_settings");
+}
+
 // -- Debug (dev builds only) --
 
 export function debugEvalJs(js: string): Promise<string> {

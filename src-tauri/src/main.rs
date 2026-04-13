@@ -307,6 +307,7 @@ fn main() {
             commands::remote::send_remote_command,
             // Usage
             commands::usage::get_claude_code_usage,
+            commands::usage::open_usage_settings,
             // Local server
             commands::remote::start_local_server,
             commands::remote::stop_local_server,
