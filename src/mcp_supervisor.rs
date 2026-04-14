@@ -742,12 +742,18 @@ mod tests {
 
     // -- McpSupervisor --
 
+    /// A real PATH-resolvable executable for validation tests.
+    /// `echo` is a shell built-in on Windows, so we use `cmd` there instead.
+    const TEST_COMMAND: &str = if cfg!(windows) { "cmd" } else { "echo" };
+
     fn make_test_server(name: &str, transport_type: &str) -> McpServer {
         let config = match transport_type {
-            "stdio" => serde_json::json!({"type": "stdio", "command": "echo", "args": []}),
+            "stdio" => {
+                serde_json::json!({"type": "stdio", "command": TEST_COMMAND, "args": []})
+            }
             "http" => serde_json::json!({"type": "http", "url": "https://example.com"}),
             "sse" => serde_json::json!({"type": "sse", "url": "https://example.com/sse"}),
-            _ => serde_json::json!({"type": "stdio", "command": "echo"}),
+            _ => serde_json::json!({"type": "stdio", "command": TEST_COMMAND}),
         };
         McpServer {
             name: name.to_string(),
@@ -910,8 +916,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_stdio_server_existing_command() {
-        // `echo` should exist on all Unix systems.
-        let config = serde_json::json!({"type": "stdio", "command": "echo"});
+        let config = serde_json::json!({"type": "stdio", "command": TEST_COMMAND});
         let result = validate_stdio_server(&config).await;
         assert!(result.is_ok());
     }

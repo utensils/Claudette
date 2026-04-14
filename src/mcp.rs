@@ -1053,29 +1053,55 @@ mod tests {
         assert_eq!(names, sorted);
     }
 
-    /// Mutex to serialize tests that mutate the HOME env var. Rust tests run
-    /// in parallel, so without this, concurrent tests calling dirs::home_dir()
-    /// could see a temporarily overridden HOME.
+    /// Mutex to serialize tests that mutate home-related env vars. Rust tests
+    /// run in parallel, so without this, concurrent tests calling
+    /// dirs::home_dir() could see temporarily overridden values.
     static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Override all home-related env vars and restore on drop.
+    struct HomeEnvGuard {
+        home: Option<std::ffi::OsString>,
+        userprofile: Option<std::ffi::OsString>,
+    }
+
+    impl HomeEnvGuard {
+        fn override_with(path: &Path) -> Self {
+            let guard = Self {
+                home: std::env::var_os("HOME"),
+                userprofile: std::env::var_os("USERPROFILE"),
+            };
+            unsafe {
+                std::env::set_var("HOME", path);
+                std::env::set_var("USERPROFILE", path);
+            }
+            guard
+        }
+    }
+
+    impl Drop for HomeEnvGuard {
+        fn drop(&mut self) {
+            match &self.home {
+                Some(v) => unsafe { std::env::set_var("HOME", v) },
+                None => unsafe { std::env::remove_var("HOME") },
+            }
+            match &self.userprofile {
+                Some(v) => unsafe { std::env::set_var("USERPROFILE", v) },
+                None => unsafe { std::env::remove_var("USERPROFILE") },
+            }
+        }
+    }
 
     #[test]
     fn test_detect_mcp_servers_empty_repo() {
         // Isolate from real home dir so user-global and plugin MCPs don't
-        // leak into the test. Override HOME to an empty temp directory.
+        // leak into the test. Override all home-related env vars for
+        // cross-platform determinism (HOME on Unix, USERPROFILE on Windows).
         let _guard = ENV_MUTEX.lock().unwrap();
         let home = TempDir::new().unwrap();
         let repo = TempDir::new().unwrap();
-
-        let orig_home = std::env::var_os("HOME");
-        unsafe { std::env::set_var("HOME", home.path()) };
+        let _home_env = HomeEnvGuard::override_with(home.path());
 
         let servers = detect_mcp_servers(repo.path());
-
-        // Restore before any assertions so panics don't leave env dirty.
-        match orig_home {
-            Some(v) => unsafe { std::env::set_var("HOME", v) },
-            None => unsafe { std::env::remove_var("HOME") },
-        }
 
         assert!(
             servers.is_empty(),

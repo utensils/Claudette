@@ -253,7 +253,6 @@ pub async fn send_chat_message(
     }
     let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
 
-    let has_persistent = session.persistent_session.is_some();
     let custom_instructions = session.custom_instructions.clone();
     session.turn_count += 1;
     session.needs_attention = false;
@@ -392,8 +391,10 @@ pub async fn send_chat_message(
     let repo_id_for_mcp = ws.repository_id.clone();
     tokio::spawn(async move {
         // On the first turn, spawn a background task to auto-rename the branch
-        // using Haiku. This runs concurrently and does not block the event loop.
-        if !has_persistent && has_repo {
+        // using Haiku. Gate on turn count (not persistent_session) because
+        // persistent_session is in-memory only and is None after app restart
+        // even for resumed sessions.
+        if saved_turn_count <= 1 && has_repo {
             let ws_id2 = ws_id.clone();
             let wt_path2 = wt_path.clone();
             let old_branch2 = rename_old_branch.clone();
