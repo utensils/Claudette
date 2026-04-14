@@ -744,20 +744,14 @@ async fn try_auto_rename(
     let slug =
         match agent::generate_branch_name(prompt, worktree_path, branch_rename_preferences).await {
             Ok(s) => s,
-            Err(e) => {
-                eprintln!("[rename] Haiku branch name generation failed: {e}");
-                return;
-            }
+            Err(_) => return,
         };
 
     // Resolve the configured branch prefix.
     let prefix = {
         let db = match Database::open(db_path) {
             Ok(db) => db,
-            Err(e) => {
-                eprintln!("[rename] Failed to open DB for prefix: {e}");
-                return;
-            }
+            Err(_) => return,
         };
         let (mode, custom) = super::workspace::read_branch_prefix_settings(&db);
         // Drop db before the async call (Database is not Sync).
@@ -772,24 +766,18 @@ async fn try_auto_rename(
 
         let db = match Database::open(db_path) {
             Ok(db) => db,
-            Err(e) => {
-                eprintln!("[rename] Failed to open DB: {e}");
-                return;
-            }
+            Err(_) => return,
         };
 
         match db.rename_workspace(ws_id, candidate, &new_branch) {
             Ok(()) => {
                 // DB updated — now rename the git branch.
                 if let Err(e) = git::rename_branch(worktree_path, old_branch, &new_branch).await {
-                    let msg = e.to_string();
-                    eprintln!("[rename] Git branch rename failed: {e} — rolling back DB");
                     let _ = db.rename_workspace(ws_id, old_name, old_branch);
 
                     // If the target branch already exists, fall back to the next
                     // candidate just like we do for DB unique constraint collisions.
-                    if msg.contains("already exists") {
-                        eprintln!("[rename] Branch {new_branch:?} collides, trying next");
+                    if e.to_string().contains("already exists") {
                         continue;
                     }
                     return;
@@ -802,24 +790,16 @@ async fn try_auto_rename(
                     "branch_name": new_branch,
                 });
                 let _ = app.emit("workspace-renamed", &payload);
-                eprintln!("[rename] Workspace {ws_id} renamed to {candidate} ({new_branch})");
                 return;
             }
             Err(e) => {
-                // Check if this is a unique constraint violation by inspecting
-                // the error message (rusqlite is not a direct dependency here).
-                let msg = e.to_string();
-                if msg.contains("UNIQUE constraint failed") {
-                    eprintln!("[rename] Name {candidate:?} collides, trying next");
+                if e.to_string().contains("UNIQUE constraint failed") {
                     continue;
                 }
-                eprintln!("[rename] DB rename failed: {e}");
                 return;
             }
         }
     }
-
-    eprintln!("[rename] All name candidates exhausted for workspace {ws_id}");
 }
 
 #[tauri::command]
