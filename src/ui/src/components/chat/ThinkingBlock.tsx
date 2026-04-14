@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Brain } from "lucide-react";
 import styles from "./ThinkingBlock.module.css";
 
 interface ThinkingBlockProps {
@@ -23,6 +24,7 @@ export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
         <span className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ""}`}>
           ›
         </span>
+        <Brain size={14} />
         <span className={styles.label}>{label}</span>
       </button>
       {expanded && (
