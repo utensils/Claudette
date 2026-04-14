@@ -4,8 +4,13 @@ version = "0.8.0"
 edition = "2024"
 license = "MIT"
 
+[[bin]]
+name = "claudette"
+path = "src/main.rs"
+
 [dependencies]
 claudette = { path = ".." }
+claudette-server = { path = "../src-server", optional = true }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 
@@ -22,7 +27,7 @@ dirs = "6"
 libc = "0.2"
 portable-pty = "0.8"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
-rustls = "0.23"
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
 tokio-rustls = "0.26"
 rustls-pemfile = "2"
 sha2 = "0.10"
@@ -40,7 +45,9 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 mac-notification-sys = "0.6"
 
 [features]
+default = ["server"]
 devtools = ["tauri/devtools"]
+server = ["dep:claudette-server"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -14,6 +14,8 @@ site/.astro/
 
 # Tauri generated
 src-tauri/gen/
+src-tauri/icons/icon.icns
+src-tauri/icons/icon.ico
 
 # Nix
 result

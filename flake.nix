@@ -228,7 +228,7 @@
 
               meta = commonMeta // {
                 description = "Cross-platform desktop orchestrator for parallel Claude Code agents";
-                mainProgram = "claudette-tauri";
+                mainProgram = "claudette";
               };
             }
           );
@@ -416,14 +416,14 @@
             commands = [
               {
                 name = "dev";
-                command = "cd src/ui && bun install && cd ../.. && cargo tauri dev --features devtools";
-                help = "Start Tauri dev mode with hot-reload";
+                command = "cd src/ui && bun install && cd ../.. && cargo tauri dev --features devtools,server";
+                help = "Start Tauri dev mode with hot-reload (includes embedded server)";
                 category = "development";
               }
               {
                 name = "build-app";
-                command = "cargo tauri icon assets/logo.png && cargo tauri build";
-                help = "Build release app bundle (.app / .deb)";
+                command = "cargo tauri icon assets/logo.png && cargo tauri build --features server";
+                help = "Build release app bundle (.app / .deb) with embedded server";
                 category = "development";
               }
               {

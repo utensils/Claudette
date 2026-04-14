@@ -83,7 +83,7 @@ src/
       utils/            — Pure logic helpers (checkpoint utilities, etc.)
       styles/           — CSS custom properties (dark theme)
 src-tauri/
-  Cargo.toml            — Tauri binary crate (depends on claudette)
+  Cargo.toml            — Tauri binary crate (depends on claudette + claudette-server)
   tauri.conf.json       — Tauri configuration
   src/
     main.rs             — Tauri entry point, command registration, custom macOS app menu
@@ -91,6 +91,19 @@ src-tauri/
     state.rs            — managed AppState (db_path, agents, PTYs)
     pty.rs              — PTY management via portable-pty
     tray.rs             — system tray: icon/menu/tooltip, notifications, agent state
+    transport/          — Remote transport trait + WebSocket client
+    remote.rs           — Remote connection manager
+    mdns.rs             — mDNS service browser
+src-server/
+  Cargo.toml            — Server library + standalone binary crate
+  src/
+    lib.rs              — Server library (shared by Tauri binary and standalone CLI)
+    main.rs             — Standalone CLI entry point (clap)
+    ws.rs               — WebSocket accept loop + per-connection handler
+    handler.rs          — JSON-RPC command dispatcher
+    tls.rs              — Self-signed TLS certificate management
+    auth.rs             — Pairing token + session token auth
+    mdns.rs             — mDNS service advertisement
 ```
 
 ### Guidelines for new code

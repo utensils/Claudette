@@ -1,12 +1,15 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 use claudette::db::Database;
 
 use crate::remote::{DiscoveredServer, RemoteConnectionInfo, RemoteConnectionManager};
-use crate::state::{AppState, LocalServerState};
+use crate::state::AppState;
+#[cfg(feature = "server")]
+use crate::state::LocalServerState;
 use crate::transport::ws::WebSocketTransport;
+#[cfg(feature = "server")]
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Serialize)]
 pub struct PairResult {
@@ -255,81 +258,108 @@ pub struct LocalServerInfo {
 
 #[tauri::command]
 pub async fn start_local_server(state: State<'_, AppState>) -> Result<LocalServerInfo, String> {
-    // Hold write lock for the entire operation to prevent concurrent spawns.
-    let mut server = state.local_server.write().await;
-
-    if let Some(ref srv) = *server {
-        return Ok(LocalServerInfo {
-            running: true,
-            connection_string: Some(srv.connection_string.clone()),
-        });
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = &state;
+        Err("Server not available: built without the 'server' feature".to_string())
     }
 
-    // Find the claudette-server binary. Try:
-    // 1. Next to the current executable
-    // 2. In PATH
-    let server_bin = find_server_binary().await?;
+    #[cfg(feature = "server")]
+    {
+        // Hold write lock for the entire operation to prevent concurrent spawns.
+        let mut server = state.local_server.write().await;
 
-    let mut child = tokio::process::Command::new(&server_bin)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::inherit()) // inherit stderr to avoid pipe deadlock
-        .kill_on_drop(true) // Automatically kill server when Child handle is dropped
-        .spawn()
-        .map_err(|e| format!("Failed to start claudette-server: {e}"))?;
+        if let Some(ref srv) = *server {
+            return Ok(LocalServerInfo {
+                running: true,
+                connection_string: Some(srv.connection_string.clone()),
+            });
+        }
 
-    // Read stdout lines until we find the connection string.
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("Failed to capture server stdout")?;
-    let mut reader = BufReader::new(stdout).lines();
+        // Spawn ourselves with `--server` to run the embedded server as a subprocess.
+        let server_bin = std::env::current_exe()
+            .map_err(|e| format!("Failed to locate current executable: {e}"))?;
 
-    let mut connection_string = String::new();
-    let timeout = tokio::time::Duration::from_secs(10);
-    let deadline = tokio::time::Instant::now() + timeout;
+        let mut child = tokio::process::Command::new(&server_bin)
+            .arg("--server")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("Failed to start embedded server: {e}"))?;
 
-    while tokio::time::Instant::now() < deadline {
-        let line = tokio::time::timeout_at(deadline, reader.next_line())
-            .await
-            .map_err(|_| "Timed out waiting for server to start")?
-            .map_err(|e| format!("Error reading server output: {e}"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or("Failed to capture server stdout")?;
+        let stderr_handle = child.stderr.take();
+        let mut reader = BufReader::new(stdout).lines();
 
-        if let Some(line) = line {
-            let trimmed = line.trim();
-            if trimmed.starts_with("claudette://") {
-                connection_string = trimmed.to_string();
-                break;
+        let mut connection_string = String::new();
+        let timeout = tokio::time::Duration::from_secs(10);
+        let deadline = tokio::time::Instant::now() + timeout;
+
+        while tokio::time::Instant::now() < deadline {
+            let line = tokio::time::timeout_at(deadline, reader.next_line())
+                .await
+                .map_err(|_| "Timed out waiting for server to start")?
+                .map_err(|e| format!("Error reading server output: {e}"))?;
+
+            if let Some(line) = line {
+                let trimmed = line.trim();
+                if trimmed.starts_with("claudette://") {
+                    connection_string = trimmed.to_string();
+                    break;
+                }
+            } else {
+                // Server exited — capture stderr for a useful error message.
+                let detail = match stderr_handle {
+                    Some(mut se) => {
+                        let mut buf = String::new();
+                        let _ = tokio::io::AsyncReadExt::read_to_string(&mut se, &mut buf).await;
+                        let t = buf.trim();
+                        if t.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {t}")
+                        }
+                    }
+                    None => String::new(),
+                };
+                return Err(format!("Server exited before ready{detail}"));
             }
-        } else {
-            return Err("Server process exited before printing connection string".to_string());
         }
-    }
 
-    if connection_string.is_empty() {
-        let _ = child.kill().await;
-        return Err("Server started but did not print a connection string".to_string());
-    }
-
-    // Spawn a task to continuously drain stdout to prevent broken pipe panics.
-    // The server writes log messages to stdout; if we don't read them, the pipe
-    // buffer fills and the server will panic with "Broken pipe" when we close stdout.
-    tokio::spawn(async move {
-        while let Ok(Some(_)) = reader.next_line().await {
-            // Discard output
+        if connection_string.is_empty() {
+            let _ = child.kill().await;
+            return Err("Server started but did not print a connection string".to_string());
         }
-    });
 
-    let info = LocalServerInfo {
-        running: true,
-        connection_string: Some(connection_string.clone()),
-    };
+        // Spawn tasks to continuously drain stdout and stderr to prevent broken
+        // pipe panics. If we don't read them, the pipe buffer fills and the server
+        // will die with "Broken pipe" on its next write.
+        tokio::spawn(async move {
+            while let Ok(Some(_)) = reader.next_line().await {}
+        });
+        if let Some(se) = stderr_handle {
+            tokio::spawn(async move {
+                let mut stderr_reader = BufReader::new(se).lines();
+                while let Ok(Some(_)) = stderr_reader.next_line().await {}
+            });
+        }
 
-    *server = Some(LocalServerState {
-        child,
-        connection_string,
-    });
+        let info = LocalServerInfo {
+            running: true,
+            connection_string: Some(connection_string.clone()),
+        };
 
-    Ok(info)
+        *server = Some(LocalServerState {
+            child,
+            connection_string,
+        });
+
+        Ok(info)
+    } // #[cfg(feature = "server")]
 }
 
 #[tauri::command]
@@ -357,30 +387,4 @@ pub async fn get_local_server_status(
             connection_string: None,
         }),
     }
-}
-
-async fn find_server_binary() -> Result<String, String> {
-    // 1. Next to the current executable.
-    if let Ok(exe) = std::env::current_exe() {
-        let dir = exe.parent().unwrap_or(std::path::Path::new("."));
-        let candidate = dir.join("claudette-server");
-        if candidate.exists() {
-            return Ok(candidate.to_string_lossy().to_string());
-        }
-    }
-
-    // 2. In PATH (use tokio::process to avoid blocking the async runtime).
-    if let Ok(output) = tokio::process::Command::new("which")
-        .arg("claudette-server")
-        .output()
-        .await
-        && output.status.success()
-    {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !path.is_empty() {
-            return Ok(path);
-        }
-    }
-
-    Err("claudette-server not found. Install it with: cargo install --path src-server".to_string())
 }

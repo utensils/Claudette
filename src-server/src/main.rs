@@ -1,20 +1,9 @@
-mod auth;
-mod handler;
-mod mdns;
-mod tls;
-mod ws;
-
-use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use tokio::net::TcpListener;
 
-use crate::auth::ServerConfig;
-
-/// Default WebSocket port for claudette-server.
-pub const DEFAULT_PORT: u16 = 7683;
+use claudette_server::auth::ServerConfig;
+use claudette_server::{DEFAULT_PORT, ServerOptions, default_config_path};
 
 #[derive(Parser)]
 #[command(
@@ -55,23 +44,6 @@ enum Commands {
     ShowConnectionString,
 }
 
-fn config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("claudette-server")
-}
-
-fn default_config_path() -> PathBuf {
-    config_dir().join("server.toml")
-}
-
-fn db_path() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("claudette")
-        .join("claudette.db")
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -89,7 +61,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "  claudette://{}:{}/{}",
                 host, config.server.port, config.auth.pairing_token
             );
-            return Ok(());
         }
         Some(Commands::ShowConnectionString) => {
             let config = ServerConfig::load_or_create(&config_path)?;
@@ -98,102 +69,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "claudette://{}:{}/{}",
                 host, config.server.port, config.auth.pairing_token
             );
-            return Ok(());
         }
-        None => {}
-    }
-
-    // Load or create config, applying CLI overrides.
-    let mut config = ServerConfig::load_or_create(&config_path)?;
-    config.server.port = cli.port;
-    config.server.bind = cli.bind.clone();
-    if let Some(ref name) = cli.name {
-        config.server.name = name.clone();
-    }
-    config.save(&config_path)?;
-
-    // Load or generate TLS certificate.
-    let tls_config = tls::load_or_generate_tls(&config_dir())?;
-    let fingerprint = tls::cert_fingerprint(&config_dir())?;
-
-    let host = gethostname::gethostname().to_string_lossy().to_string();
-    println!(
-        "claudette-server v{} listening on wss://{}:{}",
-        env!("CARGO_PKG_VERSION"),
-        cli.bind,
-        cli.port,
-    );
-    println!("Name: {}", config.server.name);
-    println!();
-    println!("Connection string (paste into Claudette):");
-    println!(
-        "  claudette://{}:{}/{}",
-        host, cli.port, config.auth.pairing_token
-    );
-    println!();
-    println!("Certificate fingerprint: {fingerprint}");
-    println!();
-
-    // Wrap config in shared state so all connections see session mutations.
-    let config = Arc::new(tokio::sync::Mutex::new(config));
-    let config_path = Arc::new(config_path);
-
-    // Set up database.
-    let db_path = db_path();
-    let _ = claudette::db::Database::open(&db_path);
-
-    let worktree_base_dir = {
-        let default = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".claudette")
-            .join("workspaces");
-        if let Ok(db) = claudette::db::Database::open(&db_path) {
-            db.get_app_setting("worktree_base_dir")
-                .ok()
-                .flatten()
-                .map(PathBuf::from)
-                .unwrap_or(default)
-        } else {
-            default
+        None => {
+            claudette_server::run(ServerOptions {
+                port: cli.port,
+                bind: cli.bind,
+                name: cli.name,
+                no_mdns: cli.no_mdns,
+                config_path: cli.config,
+            })
+            .await?;
         }
-    };
-
-    let state = Arc::new(ws::ServerState::new(db_path, worktree_base_dir));
-
-    // Start mDNS advertisement.
-    if !cli.no_mdns {
-        let short_fp = &fingerprint[..fingerprint.len().min(16)];
-        let config_guard = config.lock().await;
-        let server_name = config_guard.server.name.clone();
-        drop(config_guard);
-        let _mdns = mdns::advertise(&server_name, cli.port, short_fp)?;
-        println!("mDNS: advertising as _claudette._tcp on port {}", cli.port);
     }
 
-    // Bind TCP listener.
-    let addr: SocketAddr = format!("{}:{}", cli.bind, cli.port).parse()?;
-    let listener = TcpListener::bind(addr).await?;
-    let acceptor = tokio_rustls::TlsAcceptor::from(tls_config);
-
-    println!("Ready for connections.\n");
-
-    loop {
-        let (stream, peer_addr) = listener.accept().await?;
-        let acceptor = acceptor.clone();
-        let state = Arc::clone(&state);
-        let config = Arc::clone(&config);
-        let config_path = Arc::clone(&config_path);
-
-        tokio::spawn(async move {
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => {
-                    ws::handle_tls_connection(state, config, config_path, tls_stream, peer_addr)
-                        .await;
-                }
-                Err(e) => {
-                    eprintln!("[tls] handshake failed from {peer_addr}: {e}");
-                }
-            }
-        });
-    }
+    Ok(())
 }

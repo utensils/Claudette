@@ -135,7 +135,7 @@ jobs:
       - name: Install frontend dependencies
         run: cd src/ui && bun install --frozen-lockfile
 
-      - name: Build and upload binaries
+      - name: Build and upload desktop app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -151,3 +151,15 @@ jobs:
           tagName: ${{ needs.release-please.outputs.tag_name }}
           releaseName: ${{ needs.release-please.outputs.tag_name }}
           args: --target ${{ matrix.rust-target }} --bundles ${{ matrix.bundles }}
+
+      - name: Build headless server
+        run: cargo build --release -p claudette-server --target ${{ matrix.rust-target }}
+
+      - name: Upload headless server binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BIN="target/${{ matrix.rust-target }}/release/claudette-server"
+          ASSET="claudette-server-${{ matrix.label }}"
+          cp "$BIN" "$ASSET"
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" "$ASSET" --clobber

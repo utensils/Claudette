@@ -20,6 +20,27 @@ use tauri::Manager;
 use claudette::db::Database;
 
 fn main() {
+    // Install the rustls crypto provider before any TLS usage. Both
+    // aws-lc-rs and ring are active (tauri-plugin-updater pulls in ring),
+    // so rustls cannot auto-detect — we must pick one explicitly.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // When spawned with `--server`, run the embedded claudette-server
+    // instead of the GUI. This enables single-binary distribution while
+    // keeping process isolation (server crash doesn't crash the app).
+    #[cfg(feature = "server")]
+    if std::env::args().any(|a| a == "--server") {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(async {
+            if let Err(e) = claudette_server::run(claudette_server::ServerOptions::default()).await
+            {
+                eprintln!("Server error: {e}");
+                std::process::exit(1);
+            }
+        });
+        return;
+    }
+
     // Determine database and worktree paths.
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))

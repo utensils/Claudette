@@ -74,9 +74,10 @@ src-tauri/
     remote.rs           # Remote connection manager
     mdns.rs             # mDNS service browser
 src-server/
-  Cargo.toml            # Headless server binary crate
+  Cargo.toml            # Server library + standalone binary crate
   src/
-    main.rs             # CLI entry point (clap)
+    lib.rs              # Server library (shared by Tauri binary and standalone CLI)
+    main.rs             # Standalone CLI entry point (clap)
     ws.rs               # WebSocket accept loop + per-connection handler
     handler.rs          # JSON-RPC command dispatcher
     tls.rs              # Self-signed TLS certificate management
@@ -180,26 +181,32 @@ After adding the snippet, restart your terminal or run `source ~/.zshrc` (or `~/
 
 ## Remote access
 
-Claudette can connect to workspaces on another machine. The remote machine runs `claudette-server`, a headless backend that communicates over an encrypted WebSocket connection. The local Claudette app discovers or connects to it and displays remote repos, agents, and terminals alongside local ones.
+Claudette can connect to workspaces on another machine over an encrypted WebSocket connection. The local app discovers or connects to a remote server and displays remote repos, agents, and terminals alongside local ones.
 
-### Setting up the remote server
+### Sharing from the desktop app
 
-```sh
-# Build and install the server binary
-cargo install --path src-server
-
-# Start it (generates a TLS certificate and pairing token on first run)
-claudette-server
-```
+Click **Share this machine** in the sidebar. The server starts automatically as a subprocess and displays a connection string to share. No separate installation required — the server is embedded in the Claudette binary (gated behind the default-enabled `server` feature).
 
 On startup the server prints a connection string:
 
 ```
-claudette-server v0.1.0 listening on wss://0.0.0.0:7683
+claudette-server v0.8.0 listening on wss://0.0.0.0:7683
 Name: Work Laptop
 
 Connection string (paste into Claudette):
   claudette://work-laptop.local:7683/aBcDeFgH1234...
+```
+
+### Headless server (standalone)
+
+For headless machines without a GUI, the standalone server binary is still available:
+
+```sh
+# Build and install the standalone server binary
+cargo install --path src-server
+
+# Start it (generates a TLS certificate and pairing token on first run)
+claudette-server
 ```
 
 ### Connecting from the local app

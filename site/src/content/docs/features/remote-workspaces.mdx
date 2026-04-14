@@ -3,26 +3,32 @@ title: Remote Workspaces
 description: Connect to workspaces on remote machines via encrypted WebSocket.
 ---
 
-Claudette can connect to workspaces on another machine. The remote machine runs `claudette-server`, a headless backend that communicates over an encrypted WebSocket connection. The local Claudette app discovers or connects to it and displays remote repos, agents, and terminals alongside local ones.
+Claudette can connect to workspaces on another machine over an encrypted WebSocket connection. The local app discovers or connects to a remote server and displays remote repos, agents, and terminals alongside local ones.
 
-## Setting Up the Remote Server
+## Sharing from the Desktop App
 
-```bash
-# Build and install the server binary
-cargo install --path src-server
-
-# Start it (generates a TLS certificate and pairing token on first run)
-claudette-server
-```
+Click **Share this machine** in the sidebar. The server starts automatically as a subprocess — no separate installation required. The server is embedded in the Claudette binary (gated behind the default-enabled `server` feature).
 
 On startup the server prints a connection string:
 
 ```
-claudette-server v0.1.0 listening on wss://0.0.0.0:7683
+claudette-server v0.8.0 listening on wss://0.0.0.0:7683
 Name: Work Laptop
 
 Connection string (paste into Claudette):
   claudette://work-laptop.local:7683/aBcDeFgH1234...
+```
+
+## Headless Server (Standalone)
+
+For headless machines without a GUI, the standalone server binary is still available:
+
+```bash
+# Build and install the standalone server binary
+cargo install --path src-server
+
+# Start it (generates a TLS certificate and pairing token on first run)
+claudette-server
 ```
 
 ## Connecting from the Local App
