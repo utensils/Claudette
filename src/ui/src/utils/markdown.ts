@@ -1,3 +1,4 @@
+import type { PluggableList } from "unified";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -91,11 +92,10 @@ export const SANITIZE_SCHEMA = {
   },
 };
 
-// Shared rehype plugin list (stable reference avoids re-creating on every render)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const REHYPE_PLUGINS: any[] = [
+// Shared plugin lists (stable references avoid re-creating on every render)
+export const REHYPE_PLUGINS: PluggableList = [
   rehypeRaw,
   [rehypeSanitize, SANITIZE_SCHEMA],
   rehypeHighlight,
 ];
-export const REMARK_PLUGINS = [remarkGfm];
+export const REMARK_PLUGINS: PluggableList = [remarkGfm];
