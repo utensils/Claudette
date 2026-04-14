@@ -130,6 +130,10 @@
   color: var(--text-dim);
   display: flex;
   align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
 }
 
 .prLink:hover {
@@ -191,6 +195,10 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
 }
 
 .checkLink:hover {

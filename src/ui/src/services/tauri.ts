@@ -724,6 +724,10 @@ export function openReleaseNotes(): Promise<void> {
 
 import type { PluginInfo, ScmDetail, PullRequest } from "../types/plugin";
 
+export function openUrl(url: string): Promise<void> {
+  return invoke("open_url", { url });
+}
+
 export function listScmProviders(): Promise<PluginInfo[]> {
   return invoke("list_scm_providers");
 }

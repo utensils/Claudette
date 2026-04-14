@@ -12,7 +12,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
-import { loadScmDetail, scmRefresh } from "../../services/tauri";
+import { loadScmDetail, scmRefresh, openUrl } from "../../services/tauri";
 import type { PullRequest, CiCheck } from "../../types/plugin";
 import styles from "./ScmPanel.module.css";
 
@@ -151,15 +151,13 @@ function PrCard({ pr }: { pr: PullRequest }) {
           {pr.state}
         </span>
         {pr.url && (
-          <a
-            href={pr.url}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
             className={styles.prLink}
             title="Open in browser"
+            onClick={() => openUrl(pr.url)}
           >
             <ExternalLink size={12} />
-          </a>
+          </button>
         )}
       </div>
       <div className={styles.prTitle}>{pr.title}</div>
@@ -182,15 +180,13 @@ function CiCheckRow({ check }: { check: CiCheck }) {
       <StatusIcon size={14} style={{ color }} />
       <span className={styles.checkName}>{check.name}</span>
       {check.url && (
-        <a
-          href={check.url}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
           className={styles.checkLink}
           title="View details"
+          onClick={() => openUrl(check.url!)}
         >
           <ExternalLink size={10} />
-        </a>
+        </button>
       )}
     </div>
   );
