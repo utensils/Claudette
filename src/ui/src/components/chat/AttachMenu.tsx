@@ -8,7 +8,7 @@ import {
   getMcpStatus,
   reconnectMcpServer,
 } from "../../services/mcp";
-import type { SavedMcpServer, McpConnectionState } from "../../types/mcp";
+import type { SavedMcpServer, McpConnectionState, McpSource } from "../../types/mcp";
 import { MCP_SOURCE_LABELS } from "../../types/mcp";
 import styles from "./AttachMenu.module.css";
 
@@ -151,7 +151,7 @@ export function AttachMenu({
                 <div key={source}>
                   <div className={styles.divider} />
                   <div className={styles.groupLabel}>
-                    {MCP_SOURCE_LABELS[source] ?? source}
+                    {MCP_SOURCE_LABELS[source as McpSource] ?? source}
                   </div>
                   {list.map((server) => {
                     const status = mcpStatus?.servers.find(

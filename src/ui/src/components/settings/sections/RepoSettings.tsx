@@ -10,7 +10,7 @@ import {
   getMcpStatus,
 } from "../../../services/mcp";
 import type { RepoConfigInfo } from "../../../types/repository";
-import type { SavedMcpServer } from "../../../types/mcp";
+import type { SavedMcpServer, McpSource } from "../../../types/mcp";
 import { MCP_SOURCE_LABELS } from "../../../types/mcp";
 import { RepoIcon } from "../../shared/RepoIcon";
 import { IconPicker } from "../../modals/IconPicker";
@@ -352,7 +352,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
               return [...groups.entries()].map(([source, servers]) => (
                 <div key={source}>
                   <div className={styles.mcpGroupLabel}>
-                    {MCP_SOURCE_LABELS[source] ?? source}
+                    {MCP_SOURCE_LABELS[source as McpSource] ?? source}
                   </div>
                   {servers.map((server) => {
                     let transport = "unknown";
