@@ -16,6 +16,19 @@ pub struct DiffFile {
     pub deletions: Option<u32>,
 }
 
+/// Changed files grouped by git stage, mirroring `git status` output.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct StagedDiffFiles {
+    /// Changes on this branch vs the merge-base (already committed).
+    pub committed: Vec<DiffFile>,
+    /// Changes in the index, ready to commit.
+    pub staged: Vec<DiffFile>,
+    /// Changes in the working tree, not yet staged.
+    pub unstaged: Vec<DiffFile>,
+    /// New files not tracked by git.
+    pub untracked: Vec<DiffFile>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum DiffViewMode {
     Unified,

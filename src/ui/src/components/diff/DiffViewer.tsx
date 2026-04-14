@@ -46,6 +46,7 @@ function pairLines(lines: DiffLine[]): SideBySideRow[] {
 
 export function DiffViewer() {
   const diffSelectedFile = useAppStore((s) => s.diffSelectedFile);
+  const diffSelectedLayer = useAppStore((s) => s.diffSelectedLayer);
   const diffContent = useAppStore((s) => s.diffContent);
   const diffMergeBase = useAppStore((s) => s.diffMergeBase);
   const diffViewMode = useAppStore((s) => s.diffViewMode);
@@ -62,7 +63,7 @@ export function DiffViewer() {
   useEffect(() => {
     if (!diffSelectedFile || !ws?.worktree_path || !diffMergeBase) return;
     setDiffLoading(true);
-    loadFileDiff(ws.worktree_path, diffMergeBase, diffSelectedFile)
+    loadFileDiff(ws.worktree_path, diffMergeBase, diffSelectedFile, diffSelectedLayer ?? undefined)
       .then((content) => {
         setDiffContent(content);
         setDiffLoading(false);
@@ -73,6 +74,7 @@ export function DiffViewer() {
       });
   }, [
     diffSelectedFile,
+    diffSelectedLayer,
     ws?.worktree_path,
     diffMergeBase,
     setDiffContent,

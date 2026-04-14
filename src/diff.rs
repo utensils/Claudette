@@ -3,7 +3,9 @@ use std::path::Path;
 
 use tokio::process::Command;
 
-use crate::model::diff::{DiffFile, DiffHunk, DiffLine, DiffLineType, FileDiff, FileStatus};
+use crate::model::diff::{
+    DiffFile, DiffHunk, DiffLine, DiffLineType, FileDiff, FileStatus, StagedDiffFiles,
+};
 
 #[derive(Debug, Clone)]
 pub enum DiffError {
@@ -67,37 +69,115 @@ pub async fn changed_files(
     worktree_path: &str,
     merge_base: &str,
 ) -> Result<Vec<DiffFile>, DiffError> {
-    let mut files = Vec::new();
-
-    // Tracked changes (committed + uncommitted) vs merge base
-    let output = run_git(worktree_path, &["diff", "--name-status", merge_base]).await?;
-    for line in output.lines() {
-        if let Some(file) = parse_name_status_line(line) {
-            files.push(file);
-        }
-    }
+    let mut files =
+        parse_name_status(&run_git(worktree_path, &["diff", "--name-status", merge_base]).await?);
 
     // Untracked files
-    let untracked = run_git(
-        worktree_path,
-        &["ls-files", "--others", "--exclude-standard"],
-    )
-    .await?;
-    for line in untracked.lines() {
-        let path = line.trim();
-        if !path.is_empty() {
-            files.push(DiffFile {
-                path: path.to_string(),
-                status: FileStatus::Added,
-                additions: None,
-                deletions: None,
-            });
-        }
-    }
+    let untracked = parse_untracked(
+        &run_git(
+            worktree_path,
+            &["ls-files", "--others", "--exclude-standard"],
+        )
+        .await?,
+    );
+    files.extend(untracked);
 
-    // Get diff stats for tracked files
-    let numstat = run_git(worktree_path, &["diff", "--numstat", merge_base]).await?;
-    let stats: std::collections::HashMap<String, (u32, u32)> = numstat
+    apply_numstat(
+        &mut files,
+        &run_git(worktree_path, &["diff", "--numstat", merge_base]).await?,
+    );
+    sort_diff_files(&mut files);
+
+    Ok(files)
+}
+
+/// List changed files grouped by git stage (committed, staged, unstaged, untracked).
+pub async fn staged_changed_files(
+    worktree_path: &str,
+    merge_base: &str,
+) -> Result<StagedDiffFiles, DiffError> {
+    let range = format!("{merge_base}..HEAD");
+
+    // Build arg arrays before the join so borrows live long enough
+    let committed_ns_args = ["diff", "--name-status", &range];
+    let committed_num_args = ["diff", "--numstat", &range];
+
+    // Run all git commands concurrently
+    let (
+        committed_ns,
+        committed_num,
+        staged_ns,
+        staged_num,
+        unstaged_ns,
+        unstaged_num,
+        untracked_out,
+    ) = tokio::join!(
+        run_git(worktree_path, &committed_ns_args),
+        run_git(worktree_path, &committed_num_args),
+        run_git(worktree_path, &["diff", "--cached", "--name-status"]),
+        run_git(worktree_path, &["diff", "--cached", "--numstat"]),
+        run_git(worktree_path, &["diff", "--name-status"]),
+        run_git(worktree_path, &["diff", "--numstat"]),
+        run_git(
+            worktree_path,
+            &["ls-files", "--others", "--exclude-standard"],
+        ),
+    );
+
+    let committed_ns = committed_ns?;
+    let committed_num = committed_num?;
+    let staged_ns = staged_ns?;
+    let staged_num = staged_num?;
+    let unstaged_ns = unstaged_ns?;
+    let unstaged_num = unstaged_num?;
+    let untracked_out = untracked_out?;
+
+    let mut committed = parse_name_status(&committed_ns);
+    apply_numstat(&mut committed, &committed_num);
+    sort_diff_files(&mut committed);
+
+    let mut staged = parse_name_status(&staged_ns);
+    apply_numstat(&mut staged, &staged_num);
+    sort_diff_files(&mut staged);
+
+    let mut unstaged = parse_name_status(&unstaged_ns);
+    apply_numstat(&mut unstaged, &unstaged_num);
+    sort_diff_files(&mut unstaged);
+
+    let mut untracked = parse_untracked(&untracked_out);
+    sort_diff_files(&mut untracked);
+
+    Ok(StagedDiffFiles {
+        committed,
+        staged,
+        unstaged,
+        untracked,
+    })
+}
+
+/// Parse `--name-status` output into a list of DiffFiles.
+fn parse_name_status(output: &str) -> Vec<DiffFile> {
+    output.lines().filter_map(parse_name_status_line).collect()
+}
+
+/// Parse `ls-files --others` output into untracked DiffFiles.
+fn parse_untracked(output: &str) -> Vec<DiffFile> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|path| DiffFile {
+            path: path.to_string(),
+            status: FileStatus::Added,
+            additions: None,
+            deletions: None,
+        })
+        .collect()
+}
+
+/// Apply `--numstat` output to enrich DiffFiles with addition/deletion counts.
+fn apply_numstat(files: &mut [DiffFile], numstat_output: &str) {
+    let stats: std::collections::HashMap<String, (u32, u32)> = numstat_output
         .lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -112,23 +192,22 @@ pub async fn changed_files(
         })
         .collect();
 
-    // Apply stats to files
-    for file in &mut files {
+    for file in files.iter_mut() {
         if let Some((adds, dels)) = stats.get(&file.path) {
             file.additions = Some(*adds);
             file.deletions = Some(*dels);
         }
     }
+}
 
-    // Sort: modified first, then added, renamed, deleted
+/// Sort files: modified first, then added, renamed, deleted.
+fn sort_diff_files(files: &mut [DiffFile]) {
     files.sort_by_key(|f| match &f.status {
         FileStatus::Modified => 0,
         FileStatus::Added => 1,
         FileStatus::Renamed { .. } => 2,
         FileStatus::Deleted => 3,
     });
-
-    Ok(files)
 }
 
 fn parse_name_status_line(line: &str) -> Option<DiffFile> {
@@ -215,6 +294,59 @@ pub async fn file_diff(
 
     // Tracked file — diff against merge base
     run_git(worktree_path, &["diff", merge_base, "--", file_path]).await
+}
+
+/// Get the unified diff for a specific file within a particular git layer.
+///
+/// The layer determines which git diff variant is used:
+/// - `"committed"` — diff between merge-base and HEAD (what's on the branch)
+/// - `"staged"` — diff between HEAD and index (what's staged)
+/// - `"unstaged"` — diff between index and working tree (what's modified)
+/// - `"untracked"` — diff against /dev/null (new file)
+/// - `None` — default behavior: diff between merge-base and working tree
+pub async fn file_diff_for_layer(
+    worktree_path: &str,
+    merge_base: &str,
+    file_path: &str,
+    layer: Option<&str>,
+) -> Result<String, DiffError> {
+    validate_file_path(file_path)?;
+
+    match layer {
+        Some("committed") => {
+            let range = format!("{merge_base}..HEAD");
+            run_git(worktree_path, &["diff", &range, "--", file_path]).await
+        }
+        Some("staged") => run_git(worktree_path, &["diff", "--cached", "--", file_path]).await,
+        Some("unstaged") => run_git(worktree_path, &["diff", "--", file_path]).await,
+        Some("untracked") => {
+            // Diff against /dev/null for untracked files
+            let full_path = Path::new(worktree_path).join(file_path);
+            let output = Command::new("git")
+                .args(["-C", worktree_path])
+                .args([
+                    "diff",
+                    "--no-index",
+                    "--",
+                    "/dev/null",
+                    full_path.to_str().unwrap_or(file_path),
+                ])
+                .output()
+                .await
+                .map_err(|e| DiffError::CommandFailed(e.to_string()))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            if stdout.trim().is_empty() && !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                return Err(DiffError::CommandFailed(stderr));
+            }
+            Ok(stdout)
+        }
+        _ => {
+            // Default: full diff from merge-base to working tree (existing behavior)
+            file_diff(worktree_path, merge_base, file_path).await
+        }
+    }
 }
 
 /// Revert a file to its merge-base version.
@@ -956,5 +1088,86 @@ mod integration_tests {
         let head = git_cmd(dir, &["rev-parse", "HEAD"]);
         let files = changed_files(dir.to_str().unwrap(), &head).await.unwrap();
         assert!(files.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_staged_changed_files_categorizes_correctly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        // Set up repo with initial commit on main
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        std::fs::write(dir.join("base.txt"), "base content\n").unwrap();
+        std::fs::write(dir.join("will-modify.txt"), "original\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        // Create feature branch
+        git_cmd(dir, &["checkout", "-b", "feature"]);
+
+        // 1. Committed change: modify and commit a file
+        std::fs::write(dir.join("will-modify.txt"), "committed change\n").unwrap();
+        std::fs::write(dir.join("committed-new.txt"), "new file\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "committed changes"]);
+
+        // 2. Staged change: modify and stage (but don't commit)
+        std::fs::write(dir.join("staged-new.txt"), "staged content\n").unwrap();
+        git_cmd(dir, &["add", "staged-new.txt"]);
+
+        // 3. Unstaged change: modify a committed file without staging
+        std::fs::write(
+            dir.join("will-modify.txt"),
+            "committed change\nunstaged edit\n",
+        )
+        .unwrap();
+
+        // 4. Untracked file
+        std::fs::write(dir.join("untracked.txt"), "not tracked\n").unwrap();
+
+        let base = merge_base(dir.to_str().unwrap(), "feature", "main")
+            .await
+            .unwrap();
+        let staged = staged_changed_files(dir.to_str().unwrap(), &base)
+            .await
+            .unwrap();
+
+        // Committed: will-modify.txt + committed-new.txt
+        let committed_paths: Vec<&str> = staged.committed.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            committed_paths.contains(&"will-modify.txt"),
+            "committed should contain will-modify.txt, got: {committed_paths:?}"
+        );
+        assert!(
+            committed_paths.contains(&"committed-new.txt"),
+            "committed should contain committed-new.txt, got: {committed_paths:?}"
+        );
+
+        // Staged: staged-new.txt
+        let staged_paths: Vec<&str> = staged.staged.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            staged_paths.contains(&"staged-new.txt"),
+            "staged should contain staged-new.txt, got: {staged_paths:?}"
+        );
+
+        // Unstaged: will-modify.txt (has uncommitted modifications)
+        let unstaged_paths: Vec<&str> = staged.unstaged.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            unstaged_paths.contains(&"will-modify.txt"),
+            "unstaged should contain will-modify.txt, got: {unstaged_paths:?}"
+        );
+
+        // Untracked: untracked.txt
+        let untracked_paths: Vec<&str> = staged.untracked.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            untracked_paths.contains(&"untracked.txt"),
+            "untracked should contain untracked.txt, got: {untracked_paths:?}"
+        );
+
+        // will-modify.txt appears in BOTH committed AND unstaged
+        assert!(committed_paths.contains(&"will-modify.txt"));
+        assert!(unstaged_paths.contains(&"will-modify.txt"));
     }
 }

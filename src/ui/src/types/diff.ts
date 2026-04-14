@@ -11,6 +11,15 @@ export interface DiffFile {
   deletions?: number;
 }
 
+export type DiffLayer = "committed" | "staged" | "unstaged" | "untracked";
+
+export interface StagedDiffFiles {
+  committed: DiffFile[];
+  staged: DiffFile[];
+  unstaged: DiffFile[];
+  untracked: DiffFile[];
+}
+
 export type DiffViewMode = "Unified" | "SideBySide";
 
 export interface FileDiff {

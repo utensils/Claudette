@@ -114,7 +114,17 @@ pub async fn handle_request(
             let worktree_path = param_str(&params, "worktree_path");
             let file_path = param_str(&params, "file_path");
             let merge_base = param_str(&params, "merge_base");
-            handle_load_file_diff(&worktree_path, &file_path, &merge_base).await
+            let diff_layer = params
+                .get("diff_layer")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            handle_load_file_diff(
+                &worktree_path,
+                &file_path,
+                &merge_base,
+                diff_layer.as_deref(),
+            )
+            .await
         }
         "spawn_pty" => {
             let workspace_id = param_str(&params, "workspace_id");
@@ -662,13 +672,18 @@ async fn handle_load_diff_files(
         .await
         .map_err(|e| format!("{e:?}"))?;
 
-    let files = claudette::diff::changed_files(worktree_path, &merge_base)
-        .await
-        .map_err(|e| format!("{e:?}"))?;
+    let (files, staged_files) = tokio::join!(
+        claudette::diff::changed_files(worktree_path, &merge_base),
+        claudette::diff::staged_changed_files(worktree_path, &merge_base),
+    );
+
+    let files = files.map_err(|e| format!("{e:?}"))?;
+    let staged_files = staged_files.ok();
 
     Ok(json!({
         "files": files,
         "merge_base": merge_base,
+        "staged_files": staged_files,
     }))
 }
 
@@ -676,10 +691,12 @@ async fn handle_load_file_diff(
     worktree_path: &str,
     file_path: &str,
     merge_base: &str,
+    diff_layer: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let raw = claudette::diff::file_diff(worktree_path, merge_base, file_path)
-        .await
-        .map_err(|e| format!("{e:?}"))?;
+    let raw =
+        claudette::diff::file_diff_for_layer(worktree_path, merge_base, file_path, diff_layer)
+            .await
+            .map_err(|e| format!("{e:?}"))?;
     let parsed = claudette::diff::parse_unified_diff(&raw, file_path);
     Ok(serde_json::to_value(parsed).unwrap_or_default())
 }

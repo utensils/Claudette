@@ -3,7 +3,7 @@ use tauri::State;
 use claudette::db::Database;
 use claudette::diff;
 use claudette::git;
-use claudette::model::diff::{DiffFile, FileDiff};
+use claudette::model::diff::{DiffFile, FileDiff, StagedDiffFiles};
 
 use crate::state::AppState;
 
@@ -11,6 +11,7 @@ use crate::state::AppState;
 pub struct DiffFilesResult {
     pub files: Vec<DiffFile>,
     pub merge_base: String,
+    pub staged_files: Option<StagedDiffFiles>,
 }
 
 #[tauri::command]
@@ -44,11 +45,20 @@ pub async fn load_diff_files(
         .await
         .map_err(|e| e.to_string())?;
 
-    let files = diff::changed_files(worktree_path, &merge_base)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Get both the flat file list (backward compat) and staged groups
+    let (files, staged_files) = tokio::join!(
+        diff::changed_files(worktree_path, &merge_base),
+        diff::staged_changed_files(worktree_path, &merge_base),
+    );
 
-    Ok(DiffFilesResult { files, merge_base })
+    let files = files.map_err(|e| e.to_string())?;
+    let staged_files = staged_files.ok();
+
+    Ok(DiffFilesResult {
+        files,
+        merge_base,
+        staged_files,
+    })
 }
 
 #[tauri::command]
@@ -56,10 +66,16 @@ pub async fn load_file_diff(
     worktree_path: String,
     merge_base: String,
     file_path: String,
+    diff_layer: Option<String>,
 ) -> Result<FileDiff, String> {
-    let raw = diff::file_diff(&worktree_path, &merge_base, &file_path)
-        .await
-        .map_err(|e| e.to_string())?;
+    let raw = diff::file_diff_for_layer(
+        &worktree_path,
+        &merge_base,
+        &file_path,
+        diff_layer.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(diff::parse_unified_diff(&raw, &file_path))
 }

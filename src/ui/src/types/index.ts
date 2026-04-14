@@ -7,12 +7,14 @@ export type {
 export type { ChatMessage, ChatRole, ChatAttachment, AttachmentInput, PendingAttachment } from "./chat";
 export type {
   DiffFile,
+  DiffLayer,
   FileStatus,
   DiffViewMode,
   FileDiff,
   DiffHunk,
   DiffLine,
   DiffLineType,
+  StagedDiffFiles,
 } from "./diff";
 export type {
   TerminalTab,

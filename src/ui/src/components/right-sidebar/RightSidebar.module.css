@@ -149,3 +149,54 @@
 .deletions {
   color: var(--diff-removed-text);
 }
+
+/* File group (collapsible section) */
+.fileGroup {
+  border-left: 2px solid transparent;
+  margin-bottom: 2px;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.groupHeader:hover {
+  color: var(--text-muted);
+}
+
+.groupChevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.groupChevronOpen {
+  transform: rotate(90deg);
+}
+
+.groupLabel {
+  flex: 1;
+  text-align: left;
+}
+
+.groupCount {
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--hover-bg);
+  color: var(--text-dim);
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 16px;
+}

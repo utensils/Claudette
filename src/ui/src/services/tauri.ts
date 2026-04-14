@@ -497,9 +497,12 @@ export function readPlanFile(path: string): Promise<string> {
 
 // -- Diff --
 
+import type { DiffLayer, StagedDiffFiles } from "../types/diff";
+
 export interface DiffFilesResult {
   files: DiffFile[];
   merge_base: string;
+  staged_files?: StagedDiffFiles;
 }
 
 export function loadDiffFiles(workspaceId: string): Promise<DiffFilesResult> {
@@ -509,9 +512,15 @@ export function loadDiffFiles(workspaceId: string): Promise<DiffFilesResult> {
 export function loadFileDiff(
   worktreePath: string,
   mergeBase: string,
-  filePath: string
+  filePath: string,
+  diffLayer?: DiffLayer,
 ): Promise<FileDiff> {
-  return invoke("load_file_diff", { worktreePath, mergeBase, filePath });
+  return invoke("load_file_diff", {
+    worktreePath,
+    mergeBase,
+    filePath,
+    diffLayer: diffLayer ?? null,
+  });
 }
 
 export function revertFile(

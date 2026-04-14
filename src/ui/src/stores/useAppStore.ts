@@ -185,12 +185,14 @@ interface AppState {
   diffFiles: DiffFile[];
   diffMergeBase: string | null;
   diffSelectedFile: string | null;
+  diffSelectedLayer: import("../types/diff").DiffLayer | null;
+  diffStagedFiles: import("../types/diff").StagedDiffFiles | null;
   diffContent: FileDiff | null;
   diffViewMode: DiffViewMode;
   diffLoading: boolean;
   diffError: string | null;
-  setDiffFiles: (files: DiffFile[], mergeBase: string) => void;
-  setDiffSelectedFile: (path: string | null) => void;
+  setDiffFiles: (files: DiffFile[], mergeBase: string, stagedFiles?: import("../types/diff").StagedDiffFiles) => void;
+  setDiffSelectedFile: (path: string | null, layer?: import("../types/diff").DiffLayer | null) => void;
   setDiffContent: (content: FileDiff | null) => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
   setDiffLoading: (loading: boolean) => void;
@@ -801,13 +803,15 @@ export const useAppStore = create<AppState>((set) => ({
   diffFiles: [],
   diffMergeBase: null,
   diffSelectedFile: null,
+  diffSelectedLayer: null,
+  diffStagedFiles: null,
   diffContent: null,
   diffViewMode: "Unified",
   diffLoading: false,
   diffError: null,
-  setDiffFiles: (files, mergeBase) =>
-    set({ diffFiles: files, diffMergeBase: mergeBase }),
-  setDiffSelectedFile: (path) => set({ diffSelectedFile: path }),
+  setDiffFiles: (files, mergeBase, stagedFiles) =>
+    set({ diffFiles: files, diffMergeBase: mergeBase, diffStagedFiles: stagedFiles ?? null }),
+  setDiffSelectedFile: (path, layer) => set({ diffSelectedFile: path, diffSelectedLayer: layer ?? null }),
   setDiffContent: (content) => set({ diffContent: content }),
   setDiffViewMode: (mode) => set({ diffViewMode: mode }),
   setDiffLoading: (loading) => set({ diffLoading: loading }),
@@ -817,6 +821,8 @@ export const useAppStore = create<AppState>((set) => ({
       diffFiles: [],
       diffMergeBase: null,
       diffSelectedFile: null,
+      diffSelectedLayer: null,
+      diffStagedFiles: null,
       diffContent: null,
       diffError: null,
     }),
