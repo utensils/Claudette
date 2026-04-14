@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.9.0](https://github.com/utensils/Claudette/compare/v0.8.0...v0.9.0) (2026-04-14)
+
+
+### Features
+
+* add --chrome flag support for browser automation ([#169](https://github.com/utensils/Claudette/issues/169)) ([b46cb16](https://github.com/utensils/Claudette/commit/b46cb1627708544eb52497644112f7218869c106))
+* add agent task tracking UI with right sidebar tabs ([#162](https://github.com/utensils/Claudette/issues/162)) ([caa50db](https://github.com/utensils/Claudette/commit/caa50dbb2496bdaead4659f290222492738eb249))
+* add Claude Code usage display for Pro/Max subscribers ([#172](https://github.com/utensils/Claudette/issues/172)) ([a045921](https://github.com/utensils/Claudette/commit/a045921f713c71bebc91cd2ff525446757bd91be))
+* auto-detect installed apps for workspace actions ([#159](https://github.com/utensils/Claudette/issues/159)) ([fc4bd6f](https://github.com/utensils/Claudette/commit/fc4bd6fb99958f0c22332d1b6d9d53b55e261af8))
+* highlight chat input with dashed border when plan mode is active ([#160](https://github.com/utensils/Claudette/issues/160)) ([303727a](https://github.com/utensils/Claudette/commit/303727a11abe724acd4b51d00d1581d5beb96958))
+* implement MCP configuration detection and --mcp-config injection ([#177](https://github.com/utensils/Claudette/issues/177)) ([8d21a36](https://github.com/utensils/Claudette/commit/8d21a3629c37c4f9f55a506d1aa0b8058a566704))
+* render plan approval content as rich markdown ([#176](https://github.com/utensils/Claudette/issues/176)) ([23291d7](https://github.com/utensils/Claudette/commit/23291d73716049ac7831499301b785e60298eca1))
+* support image and PDF attachments in chat ([#137](https://github.com/utensils/Claudette/issues/137)) ([#182](https://github.com/utensils/Claudette/issues/182)) ([1fd294a](https://github.com/utensils/Claudette/commit/1fd294afb93dfc9d9334ba7f58b31ebe60f7cf15))
+* UI polish — panel resize, sticky scroll, hotkey hints, streaming highlight ([#149](https://github.com/utensils/Claudette/issues/149)) ([f41db9b](https://github.com/utensils/Claudette/commit/f41db9b23cc8ba012173ce984b87536bcbafa227))
+* **ui:** add brain icon to thinking block header ([#179](https://github.com/utensils/Claudette/issues/179)) ([8dc1586](https://github.com/utensils/Claudette/commit/8dc15864b798203eec504102fbd490b55368e6cd))
+* **ui:** add themed attention badges to sidebar ([#165](https://github.com/utensils/Claudette/issues/165)) ([fd1ae71](https://github.com/utensils/Claudette/commit/fd1ae71c3f5208176a85804d30a1863f6797733e))
+
+
+### Bug Fixes
+
+* add end-of-options separator before branch names in git commands ([#167](https://github.com/utensils/Claudette/issues/167)) ([ecac000](https://github.com/utensils/Claudette/commit/ecac000a340f23ef9bf11af6f2f989f377f3e426))
+* always force-delete branch on archive/delete ([#166](https://github.com/utensils/Claudette/issues/166)) ([91ac1e9](https://github.com/utensils/Claudette/commit/91ac1e9c9c6f81eb1230e6ad9f67efd0e72f640c))
+* **chat:** reliable sticky scroll with MutationObserver ([#168](https://github.com/utensils/Claudette/issues/168)) ([79fee78](https://github.com/utensils/Claudette/commit/79fee78d96ef1fa2f33e33bf18394c4c10bda403))
+* embed claudette-server into the Tauri binary ([#178](https://github.com/utensils/Claudette/issues/178)) ([e9f361b](https://github.com/utensils/Claudette/commit/e9f361b1633ab624536d8b32e951ec70f08daa7c))
+* resolve claude CLI path for GUI-launched apps ([#181](https://github.com/utensils/Claudette/issues/181)) ([bbe2471](https://github.com/utensils/Claudette/commit/bbe247143b3a017616aac958628831d51ce55415))
+* **ui:** enable window dragging for custom overlay titlebar ([#161](https://github.com/utensils/Claudette/issues/161)) ([232fdd6](https://github.com/utensils/Claudette/commit/232fdd6c8961dca4245656174690db174afa2334))
+
 ## [0.8.0](https://github.com/utensils/Claudette/compare/v0.7.0...v0.8.0) (2026-04-12)
 
 
