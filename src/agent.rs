@@ -330,13 +330,30 @@ async fn resolve_claude_path() -> OsString {
         return cached.clone();
     }
     let resolved = tokio::task::spawn_blocking(|| {
-        resolve_claude_path_inner(dirs::home_dir(), login_shell_path(), |p| p.is_file())
+        resolve_claude_path_inner(dirs::home_dir(), login_shell_path(), is_executable_file)
     })
     .await
     .unwrap_or_else(|_| OsString::from("claude"));
     // Another task may have raced us — that's fine, OnceLock deduplicates.
     let _ = RESOLVED.set(resolved.clone());
     resolved
+}
+
+/// Check that a path is a regular file with execute permission.
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.is_file()
+        && path
+            .metadata()
+            .map(|m| m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+}
+
+/// Check that a path is a regular file (non-Unix fallback).
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
 }
 
 /// Pure, testable search logic — no filesystem or process side effects.
@@ -375,8 +392,13 @@ fn resolve_claude_path_inner(
     }
 
     // 2. Search directories from the login shell's PATH.
+    //    Skip non-absolute entries (e.g. "." or "") to avoid resolving a
+    //    repo-local `claude` binary relative to the working directory.
     if let Some(shell_path) = shell_path {
         for dir in std::env::split_paths(&shell_path) {
+            if !dir.is_absolute() {
+                continue;
+            }
             let candidate = dir.join("claude");
             if exists(&candidate) {
                 return candidate.into_os_string();
@@ -463,7 +485,8 @@ pub async fn run_turn(
         settings,
     );
 
-    let mut cmd = Command::new(resolve_claude_path().await);
+    let claude_path = resolve_claude_path().await;
+    let mut cmd = Command::new(&claude_path);
     cmd.args(&args)
         .current_dir(working_dir)
         .stdin(std::process::Stdio::null())
@@ -484,7 +507,7 @@ pub async fn run_turn(
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("Failed to spawn claude: {e}"))?;
+        .map_err(|e| format!("Failed to spawn claude at {:?}: {e}", claude_path))?;
 
     let pid = child
         .id()
@@ -618,7 +641,8 @@ pub async fn generate_branch_name(
     // Truncate prompt to keep the Haiku call fast and cheap.
     let truncated: String = prompt_text.chars().take(200).collect();
 
-    let mut cmd = Command::new(resolve_claude_path().await);
+    let claude_path = resolve_claude_path().await;
+    let mut cmd = Command::new(&claude_path);
     cmd.stdin(std::process::Stdio::null());
     // Run in the user's worktree so the CLI loads *their* project context.
     cmd.current_dir(worktree_path);
@@ -658,10 +682,12 @@ pub async fn generate_branch_name(
     cmd.env_remove("CLAUDECODE");
     cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
 
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn claude for branch name: {e}"))?;
+    let output = cmd.output().await.map_err(|e| {
+        format!(
+            "Failed to spawn claude at {:?} for branch name: {e}",
+            claude_path
+        )
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1506,5 +1532,42 @@ mod tests {
         let result =
             resolve_claude_path_inner(None, None, |p| p == Path::new("/usr/local/bin/claude"));
         assert_eq!(result, OsString::from("/usr/local/bin/claude"));
+    }
+
+    #[test]
+    fn test_resolve_skips_relative_path_entries() {
+        // A PATH containing "." or relative dirs should not match — prevents
+        // executing a repo-local `claude` binary.
+        let shell_path = OsString::from(".:/relative/bin:/abs/bin");
+        let result = resolve_claude_path_inner(None, Some(shell_path), |p| {
+            // Everything "exists" — only absolute entries should be checked.
+            p == Path::new("./claude")
+                || p == Path::new("relative/bin/claude")
+                || p == Path::new("/abs/bin/claude")
+        });
+        assert_eq!(result, OsString::from("/abs/bin/claude"));
+    }
+
+    #[test]
+    fn test_resolve_skips_empty_path_entry() {
+        // Empty segments in PATH (e.g. "/good/bin::") resolve to "." — must be
+        // skipped because they are not absolute.
+        let shell_path = OsString::from(":/good/bin:");
+        let result = resolve_claude_path_inner(None, Some(shell_path), |p| {
+            p == Path::new("/good/bin/claude")
+        });
+        assert_eq!(result, OsString::from("/good/bin/claude"));
+    }
+
+    #[test]
+    fn test_resolve_all_relative_falls_through_to_bare() {
+        // If the shell PATH contains only relative entries and no well-known
+        // locations exist, fall through to the bare "claude" fallback.
+        let shell_path = OsString::from(".:./bin:relative");
+        let result = resolve_claude_path_inner(None, Some(shell_path), |p| {
+            // Only "exists" for relative candidates — system paths don't exist.
+            !p.is_absolute()
+        });
+        assert_eq!(result, OsString::from("claude"));
     }
 }
