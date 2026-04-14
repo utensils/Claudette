@@ -16,6 +16,7 @@ Claudette is a cross-platform desktop application built with [Tauri 2](https://t
 - Platform dependencies for Tauri:
   - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
   - **Linux**: System libraries for WebKitGTK. On Debian/Ubuntu:
+
     ```sh
     sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
       libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev

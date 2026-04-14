@@ -96,7 +96,7 @@
             #   nix build .#frontend 2>&1 | grep 'got:' | awk '{print $2}'
             outputHash =
               if pkgs.stdenv.isDarwin then
-                "sha256-HpWPW+dgVuwwOn/m8APmZu4yKrJu217mWmP73AVT+Uk="
+                "sha256-B+wRHIcqz0W03/C0XEhyIFTDULm3p80uh9Noq6Gs+Vg="
               else
                 "sha256-Zoht+jChNYNKQvNftpnu/o3lod+xXYQUzOupugrRDt8=";
 
