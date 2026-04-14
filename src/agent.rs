@@ -264,9 +264,11 @@ pub fn build_claude_args(
         args.push("--chrome".to_string());
     }
 
-    // MCP config is session-level — only inject on the first turn.
-    // Resumed sessions inherit MCP servers from the initial turn.
-    if !is_resume && let Some(ref mcp_json) = settings.mcp_config {
+    // MCP config is passed on every turn to handle MCP server restarts.
+    // HTTP-based MCP servers (via mcp-remote) can crash or disconnect, and the
+    // Claude CLI doesn't automatically restart them. By passing --mcp-config
+    // on every turn, we ensure MCP servers are reinitialized if they fail.
+    if let Some(ref mcp_json) = settings.mcp_config {
         args.push("--mcp-config".to_string());
         args.push(mcp_json.clone());
     }
@@ -1648,13 +1650,14 @@ mod tests {
     }
 
     #[test]
-    fn test_build_args_mcp_config_skipped_on_resume() {
+    fn test_build_args_mcp_config_passed_on_resume() {
+        // MCP config is now passed on every turn to handle server restarts
         let settings = AgentSettings {
-            mcp_config: Some(r#"{"mcpServers":{}}"#.to_string()),
+            mcp_config: Some(r#"{"mcpServers":{"test":{"type":"stdio","command":"x"}}}"#.to_string()),
             ..Default::default()
         };
         let args = build_claude_args("sess-1", "hello", true, &[], None, &settings, false);
-        assert!(!args.contains(&"--mcp-config".to_string()));
+        assert!(args.contains(&"--mcp-config".to_string()));
     }
 
     #[test]
