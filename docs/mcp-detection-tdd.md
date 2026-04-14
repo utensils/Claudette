@@ -150,7 +150,7 @@ Since it's gitignored, it is **never** checked out in worktrees.
 
 #### FR1: MCP Detection
 - **FR1.1**: Detect project-scoped MCPs from `~/.claude.json` (nested `projects[repo_path].mcpServers`)
-- **FR1.2**: Detect MCPs from gitignored `{repo}/.claude.json` (verify it's not tracked by git)
+- **FR1.2**: Detect MCPs from `{repo}/.claude.json` only when the file is explicitly gitignored (via `git check-ignore`)
 - **FR1.3**: Parse all three transport types: stdio, http, sse
 - **FR1.4**: Handle missing or malformed config files gracefully (return empty, not error)
 - **FR1.5**: Do NOT scan `.mcp.json` or global (non-project) user MCPs (these are auto-available)
@@ -269,7 +269,6 @@ Since it's gitignored, it is **never** checked out in worktrees.
 **Purpose**: Detect non-portable MCP configurations for a given repository path.
 
 ```rust
-use std::collections::HashMap;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 
@@ -353,9 +352,10 @@ fn detect_repo_local_mcps(repo_path: &Path) -> Option<Vec<McpServer>> {
         return None;
     }
 
-    // Only include if the file is NOT tracked by git.
-    // `git ls-files --error-unmatch` exits non-zero if the file is not tracked.
-    if is_tracked_by_git(repo_path, ".claude.json") {
+    // Only include if the file is explicitly gitignored.
+    // A newly created but not-yet-ignored .claude.json should NOT be picked
+    // up — it may be an accidental file the user hasn't committed or ignored.
+    if !is_gitignored(repo_path, ".claude.json") {
         return None;
     }
 
@@ -375,10 +375,14 @@ fn detect_repo_local_mcps(repo_path: &Path) -> Option<Vec<McpServer>> {
     Some(servers)
 }
 
-/// Check if a file is tracked by git (returns true if tracked).
-fn is_tracked_by_git(repo_path: &Path, file: &str) -> bool {
+/// Check if a file is explicitly gitignored (returns true if ignored).
+///
+/// Uses `git check-ignore -q` which exits 0 if the file matches a gitignore
+/// rule. This is stricter than checking "not tracked" — an untracked file
+/// that isn't in any .gitignore will return false.
+fn is_gitignored(repo_path: &Path, file: &str) -> bool {
     std::process::Command::new("git")
-        .args(["ls-files", "--error-unmatch", file])
+        .args(["check-ignore", "-q", file])
         .current_dir(repo_path)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -422,14 +426,21 @@ PRAGMA user_version = 15;
 **Database functions** (in `src/db.rs`):
 
 ```rust
+/// Row type returned by DB queries and accepted by bulk replace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepositoryMcpServer {
+    pub id: String,
+    pub repository_id: String,
+    pub name: String,
+    pub config_json: String,
+    pub source: String,
+    pub created_at: String,
+}
+
 /// Insert a selected MCP server for a repository.
 pub fn insert_repository_mcp_server(
     &self,
-    id: &str,
-    repository_id: &str,
-    name: &str,
-    config_json: &str,
-    source: &str,
+    server: &RepositoryMcpServer,
 ) -> Result<(), rusqlite::Error>
 
 /// List all selected MCP servers for a repository.
@@ -444,11 +455,12 @@ pub fn delete_repository_mcp_server(
     id: &str,
 ) -> Result<(), rusqlite::Error>
 
-/// Replace all MCP servers for a repository (bulk upsert).
+/// Replace all MCP servers for a repository (delete + re-insert in a
+/// transaction).
 pub fn replace_repository_mcp_servers(
     &self,
     repository_id: &str,
-    servers: &[(String, String, String, String)],  // (id, name, config_json, source)
+    servers: &[RepositoryMcpServer],
 ) -> Result<(), rusqlite::Error>
 ```
 
@@ -472,11 +484,13 @@ pub async fn save_repository_mcps(
 ) -> Result<(), String>
 
 /// Load saved MCP servers for a repository.
+/// Returns the DB row type (includes id, created_at) so the frontend
+/// can reference individual rows for delete operations.
 #[tauri::command]
 pub async fn load_repository_mcps(
     repo_id: String,
     state: State<'_, AppState>,
-) -> Result<Vec<McpServer>, String>
+) -> Result<Vec<RepositoryMcpServer>, String>
 
 /// Delete a single MCP server from a repository's saved config.
 #[tauri::command]
@@ -520,12 +534,28 @@ In `send_chat_message` (chat command), load MCPs from DB:
 ```rust
 // Load repository MCP configs for injection on first turn.
 let mcp_config = if !is_resume {
-    let mcp_servers = db.list_repository_mcp_servers(&ws.repository_id)
+    let db_rows = db.list_repository_mcp_servers(&ws.repository_id)
         .unwrap_or_default();
-    if mcp_servers.is_empty() {
+    if db_rows.is_empty() {
         None
     } else {
-        Some(claudette::mcp::serialize_for_cli(&mcp_servers))
+        // Convert DB rows (config_json: String) to McpServer (config: Value)
+        let mcp_servers: Vec<claudette::mcp::McpServer> = db_rows
+            .iter()
+            .filter_map(|row| {
+                let config = serde_json::from_str(&row.config_json).ok()?;
+                Some(claudette::mcp::McpServer {
+                    name: row.name.clone(),
+                    config,
+                    source: claudette::mcp::McpSource::UserProjectConfig, // source doesn't matter for serialization
+                })
+            })
+            .collect();
+        if mcp_servers.is_empty() {
+            None
+        } else {
+            Some(claudette::mcp::serialize_for_cli(&mcp_servers))
+        }
     }
 } else {
     None
@@ -753,7 +783,7 @@ export async function deleteRepositoryMcp(serverId: string): Promise<void>;
 | No `mcpServers` key | Valid JSON without MCP section | Empty Vec |
 | Mixed sources | MCPs from both user config and repo config | Combined Vec with correct sources |
 | `serialize_for_cli` | Vec of McpServers | Valid JSON string with `mcpServers` wrapper |
-| Name collision across sources | Same server name in both sources | Both included (user can deselect one) |
+| Name collision across sources | Same server name in both sources | Modal shows conflict; user picks one (or skips). Only one saved per name per repo. |
 
 ### Integration Tests
 
@@ -779,13 +809,13 @@ export async function deleteRepositoryMcp(serverId: string): Promise<void>;
 
 **Scenario**: User has a very large `~/.claude.json` with many projects.
 
-**Handling**: Parse only the relevant project key. `serde_json::Value` handles large files efficiently. If parsing fails, return empty Vec and log warning.
+**Handling**: The implementation deserializes the entire file into a `serde_json::Value`, then indexes into `projects[repo_path]` to extract only the relevant entry. Full-file parsing is simple and fast enough for typical configs. If parsing fails, return empty Vec and log warning. If large-file performance becomes a real issue, we can switch to a streaming `serde_json::Deserializer` approach that scans project keys without materializing the entire document.
 
 ### Edge Case 2: Duplicate Server Names Across Sources
 
 **Scenario**: Same MCP server name appears in both `~/.claude.json` project config and gitignored `.claude.json`.
 
-**Handling**: Show both in the selection modal with different source labels. User decides which to keep. If both are saved, `--mcp-config` will include both — Claude CLI uses the last one seen (effectively the one listed later in the JSON).
+**Handling**: The DB enforces `UNIQUE(repository_id, name)` and `serialize_for_cli()` builds a JSON object (which cannot have duplicate keys), so at most one config per server name can be stored. In the selection modal, group entries by server name and show each candidate with its source label and config summary. The user may select **at most one** variant for a given name (radio-button behavior within the group, not checkboxes). If neither variant is selected, that server name is skipped entirely. Only the chosen variant is persisted.
 
 ### Edge Case 3: Repository Path Changes
 
