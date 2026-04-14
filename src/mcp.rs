@@ -1053,15 +1053,19 @@ mod tests {
         assert_eq!(names, sorted);
     }
 
+    /// Mutex to serialize tests that mutate the HOME env var. Rust tests run
+    /// in parallel, so without this, concurrent tests calling dirs::home_dir()
+    /// could see a temporarily overridden HOME.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_detect_mcp_servers_empty_repo() {
         // Isolate from real home dir so user-global and plugin MCPs don't
         // leak into the test. Override HOME to an empty temp directory.
+        let _guard = ENV_MUTEX.lock().unwrap();
         let home = TempDir::new().unwrap();
         let repo = TempDir::new().unwrap();
 
-        // SAFETY: test binary runs single-threaded per test by default,
-        // and we restore immediately after the call.
         let orig_home = std::env::var_os("HOME");
         unsafe { std::env::set_var("HOME", home.path()) };
 

@@ -169,9 +169,16 @@ pub async fn ensure_and_validate_mcps(
         .collect();
 
     // Always replace — even with an empty vec — so removed servers are dropped.
-    let _ = db.replace_repository_mcp_servers(&repo_id, &rows);
+    if let Err(e) = db.replace_repository_mcp_servers(&repo_id, &rows) {
+        eprintln!("[mcp] Failed to persist MCP servers for {repo_id}: {e}");
+    }
 
-    let saved = db.list_repository_mcp_servers(&repo_id).unwrap_or_default();
+    let saved = db
+        .list_repository_mcp_servers(&repo_id)
+        .unwrap_or_else(|e| {
+            eprintln!("[mcp] Failed to reload MCP servers for {repo_id}: {e}");
+            Vec::new()
+        });
 
     // Initialize supervisor from persisted state (including empty, so stale
     // in-memory servers are cleared) and validate enabled servers.
@@ -241,21 +248,31 @@ pub async fn set_mcp_server_enabled(
 
     // Invalidate persistent sessions for all workspaces in this repo so the
     // next turn starts a fresh process with the updated MCP config.
-    // Kill the running process so it takes effect immediately.
-    let mut agents = state.agents.write().await;
+    // Collect PIDs under the lock, then drop it before awaiting stop_agent
+    // to avoid blocking other workspace commands during process shutdown.
     let workspaces = db.list_workspaces().unwrap_or_default();
     let repo_workspace_ids: Vec<String> = workspaces
         .iter()
         .filter(|w| w.repository_id == repo_id)
         .map(|w| w.id.clone())
         .collect();
-    for ws_id in &repo_workspace_ids {
-        if let Some(session) = agents.get_mut(ws_id) {
-            if let Some(pid) = session.active_pid.take() {
-                let _ = claudette::agent::stop_agent(pid).await;
+
+    let pids_to_stop = {
+        let mut agents = state.agents.write().await;
+        let mut pids = Vec::new();
+        for ws_id in &repo_workspace_ids {
+            if let Some(session) = agents.get_mut(ws_id) {
+                if let Some(pid) = session.active_pid.take() {
+                    pids.push(pid);
+                }
+                session.persistent_session = None;
             }
-            session.persistent_session = None;
         }
+        pids
+    };
+
+    for pid in pids_to_stop {
+        let _ = claudette::agent::stop_agent(pid).await;
     }
 
     Ok(())

@@ -7,7 +7,7 @@ export type McpSource =
   | "plugin";
 
 /** Human-readable labels for MCP source types (matching Claude Code's grouping). */
-export const MCP_SOURCE_LABELS: Record<string, string> = {
+export const MCP_SOURCE_LABELS: Record<McpSource, string> = {
   user_global_config: "User (~/.claude.json)",
   user_project_config: "User project",
   project_mcp_json: "Project (.mcp.json)",

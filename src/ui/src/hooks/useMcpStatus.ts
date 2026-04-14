@@ -48,7 +48,9 @@ export function useMcpStatus() {
     if (!ws) return;
     const repoId = ws.repository_id;
 
-    // Skip if we already validated this repo.
+    // Skip if we already validated this repo during this session.
+    // This avoids re-running detection on every workspace switch within the
+    // same repo. The AttachMenu always re-detects on open for fresh state.
     if (lastRepoId.current === repoId) return;
     lastRepoId.current = repoId;
 
