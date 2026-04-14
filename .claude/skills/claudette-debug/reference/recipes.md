@@ -1,12 +1,12 @@
 # UAT Recipes
 
 Ready-to-use JS expressions for common UAT verification tasks.
-All run via `.claude/skills/claudette-debug/debug-eval.sh`.
+All run via `${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh`.
 
 ## Verify tool call summaries after a turn
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 const wsId = s.selectedWorkspaceId;
 const turns = s.completedTurns[wsId] || [];
@@ -26,7 +26,7 @@ JS
 Checks if any assistant message has its first quarter repeated in the second quarter (a sign of double-append bugs).
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 const wsId = s.selectedWorkspaceId;
 const msgs = s.chatMessages[wsId] || [];
@@ -41,7 +41,7 @@ JS
 ## Check scroll position
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const c = document.querySelector('[class*="messages_"]');
 if (!c) return 'no container';
 return {
@@ -56,7 +56,7 @@ JS
 Combines tool summaries, doubled content check, scroll position, and message integrity into one eval.
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 const wsId = s.selectedWorkspaceId;
 const msgs = s.chatMessages[wsId] || [];
@@ -86,7 +86,7 @@ JS
 ## Read all messages for a workspace
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 const wsId = s.selectedWorkspaceId;
 return (s.chatMessages[wsId] || []).map((m, i) => ({
@@ -101,7 +101,7 @@ JS
 ## Inspect DOM message structure
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const c = document.querySelector('[class*="messages_"]');
 if (!c) return 'no container';
 return Array.from(c.children).map((el, i) => ({

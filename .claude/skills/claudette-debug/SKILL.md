@@ -1,6 +1,7 @@
 ---
 name: claudette-debug
 description: Debug the running Claudette Tauri app by executing JavaScript in the webview and reading results back. Inspect Zustand store state, trace state changes, monitor sessions long-term, run end-to-end UAT, and diagnose UI bugs in real-time. Only works in dev builds.
+when_to_use: Use when the user asks to inspect UI state, debug the webview, check what's on screen, monitor agent activity, take a screenshot of the app, or diagnose rendering/layout issues. Also use proactively after UI changes to verify they render correctly in the running app.
 argument-hint: "[action] [args...]"
 allowed-tools: Bash Read Grep Glob
 ---
@@ -31,15 +32,16 @@ Execute JavaScript inside the running Claudette Tauri webview via a TCP debug se
 
 ## Scripts
 
+All scripts live in `${CLAUDE_SKILL_DIR}/scripts/`:
+
 | Script | Purpose |
 |--------|---------|
-| `debug-eval.sh` | Single-shot JS eval via TCP |
-| `debug-monitor.sh` | Long-running session monitor (readable key names) |
-| `debug-wait.sh` | Poll until agent idle, return summary JSON |
-| `debug-screenshot.sh` | Cross-platform screenshot capture |
+| `scripts/debug-eval.sh` | Single-shot JS eval via TCP |
+| `scripts/debug-monitor.sh` | Long-running session monitor (readable key names) |
+| `scripts/debug-wait.sh` | Poll until agent idle, return summary JSON |
+| `scripts/debug-screenshot.sh` | Cross-platform screenshot capture |
 
-**IMPORTANT**: Always call scripts using paths relative to the project root:
-`.claude/skills/claudette-debug/debug-eval.sh`
+**IMPORTANT**: Always reference scripts via `${CLAUDE_SKILL_DIR}/scripts/` to ensure correct resolution regardless of working directory.
 
 ## Architecture
 
@@ -57,12 +59,12 @@ Terminal <──TCP────── debug server <──invoke── webview (
 JS must use `return` to send a value back:
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh 'return document.title'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return document.title'
 ```
 
 For multiline JS, use heredoc:
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 return s.workspaces.map(w => w.name);
 JS
@@ -87,7 +89,7 @@ JS
 Runtime introspection — always reflects the current app, even after code changes.
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 return Object.entries(s)
   .filter(([, v]) => typeof v === 'function')
@@ -114,7 +116,7 @@ Read [reference/tauri-commands.md](reference/tauri-commands.md) for the complete
 ### `discover state` — list all state slices
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 return Object.entries(s)
   .filter(([, v]) => typeof v !== 'function')
@@ -135,7 +137,7 @@ JS
 Returns everything needed to assess the active workspace in a single eval.
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 const wsId = s.selectedWorkspaceId;
 if (!wsId) return { error: 'no workspace selected' };
@@ -176,7 +178,7 @@ JS
 Substitute `MESSAGE_TEXT_HERE` with the actual message. Escape backticks with `\``.
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 const wsId = s.selectedWorkspaceId;
 if (!wsId) return 'ERROR: no workspace selected';
@@ -201,7 +203,7 @@ Polls every 2s until done. **Must use `run_in_background: true`**.
 
 ```bash
 # MUST use run_in_background: true
-.claude/skills/claudette-debug/debug-wait.sh
+${CLAUDE_SKILL_DIR}/scripts/debug-wait.sh
 ```
 
 Options: `--timeout N` (default 600s), `--interval N` (default 2s), `--workspace ID`
@@ -211,7 +213,7 @@ Returns: `{ running: false, agentStatus, messageCount, completedTurns, lastTurnT
 ### `screenshot` — capture screen for visual inspection
 
 ```bash
-.claude/skills/claudette-debug/debug-screenshot.sh
+${CLAUDE_SKILL_DIR}/scripts/debug-screenshot.sh
 ```
 
 Returns image path. Use the Read tool to view it. Options: `--output PATH`
@@ -223,7 +225,7 @@ Returns image path. Use the Read tool to view it. Options: `--output PATH`
 ### `state` — contextual store overview
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const s = window.__CLAUDETTE_STORE__.getState();
 const wsId = s.selectedWorkspaceId;
 const lines = [];
@@ -270,13 +272,13 @@ JS
 ### `state <slice>` — dump specific slice
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().SLICE_NAME'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return window.__CLAUDETTE_STORE__.getState().SLICE_NAME'
 ```
 
 ### `eval <js>` — arbitrary JS
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh 'USER_JS_HERE'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'USER_JS_HERE'
 ```
 
 ### `monitor start` — background session monitor
@@ -285,7 +287,7 @@ Run with `run_in_background: true`. Logs state changes with readable keys.
 
 ```bash
 # MUST use run_in_background: true
-.claude/skills/claudette-debug/debug-monitor.sh
+${CLAUDE_SKILL_DIR}/scripts/debug-monitor.sh
 ```
 
 Output keys: `toolCount`, `completedTurns`, `agentStatus`, `scrollGap`, `messageCount`, `lastToolSummary`, `inputJsonValid`, `streaming`, `thinking`, `thinkingEnabled`, `showThinking`, `effortLevel`
@@ -301,7 +303,7 @@ tail -50 /tmp/claudette-debug/monitor.log
 ### `watch <slice>` — subscribe to changes
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 window.__CLAUDETTE_DEBUG_UNSUB__?.();
 window.__CLAUDETTE_DEBUG_UNSUB__ = window.__CLAUDETTE_STORE__.subscribe(
   (state, prev) => {
@@ -317,7 +319,7 @@ JS
 ### `unwatch`
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 window.__CLAUDETTE_DEBUG_UNSUB__?.();
 delete window.__CLAUDETTE_DEBUG_UNSUB__;
 return 'All watchers removed';
@@ -327,7 +329,7 @@ JS
 ### `trace <action>` — monkey-patch store action
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const store = window.__CLAUDETTE_STORE__;
 const orig = store.getState().ACTION_NAME;
 if (typeof orig !== 'function') return 'ERROR: ACTION_NAME is not a function';
@@ -346,7 +348,7 @@ JS
 ### `untrace`
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 (window.__CLAUDETTE_DEBUG_TRACED__ || []).forEach(({ name, orig }) => {
   window.__CLAUDETTE_STORE__.setState({ [name]: orig });
 });
@@ -360,7 +362,7 @@ JS
 Overrides `setMetaKeyHeld` to ignore `false` — badges stay on through Cmd+Tab, blur, keypresses.
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const store = window.__CLAUDETTE_STORE__;
 const orig = store.getState().setMetaKeyHeld;
 window.__META_ORIG__ = orig;
@@ -373,7 +375,7 @@ JS
 ### `hotkeys off` — unlock and hide hotkey badges
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const store = window.__CLAUDETTE_STORE__;
 if (window.__META_ORIG__) {
   store.setState({ setMetaKeyHeld: window.__META_ORIG__ });
@@ -389,7 +391,7 @@ JS
 Programmatically maximize the window, wait, then restore. Useful for testing resize flash behavior.
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const { getCurrentWindow } = window.__TAURI__.window ?? await import("@tauri-apps/api/window");
 const win = getCurrentWindow();
 const wasMax = await win.isMaximized();
@@ -406,7 +408,7 @@ JS
 ### `maximize-cycle` — maximize then restore after delay
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const { getCurrentWindow } = window.__TAURI__.window ?? await import("@tauri-apps/api/window");
 const win = getCurrentWindow();
 await win.maximize();
@@ -419,7 +421,7 @@ JS
 ### `resize-info` — inspect native window/webview layer state
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const { getCurrentWindow } = window.__TAURI__.window ?? await import("@tauri-apps/api/window");
 const win = getCurrentWindow();
 const size = await win.innerSize();
@@ -450,7 +452,7 @@ JS
 ### `snapshot` — full store state dump
 
 ```bash
-.claude/skills/claudette-debug/debug-eval.sh <<'JS'
+${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh <<'JS'
 const state = window.__CLAUDETTE_STORE__.getState();
 return Object.fromEntries(
   Object.entries(state).filter(([, v]) => typeof v !== 'function')

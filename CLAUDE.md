@@ -151,8 +151,8 @@ A debug TCP eval server runs on `127.0.0.1:19432` in dev builds. It executes JS 
 ```
 
 Helper scripts (use relative paths from project root):
-- `.claude/skills/claudette-debug/debug-eval.sh` — single-shot JS eval
-- `.claude/skills/claudette-debug/debug-monitor.sh` — long-running session monitor
+- `.claude/skills/claudette-debug/scripts/debug-eval.sh` — single-shot JS eval
+- `.claude/skills/claudette-debug/scripts/debug-monitor.sh` — long-running session monitor
 
 Key globals exposed in dev mode:
 - `window.__CLAUDETTE_STORE__` — Zustand store (`.getState()` / `.setState()`)

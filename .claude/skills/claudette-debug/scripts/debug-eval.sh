@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Debug eval helper — sends JS to the running Claudette debug server.
-# Usage: .claude/skills/claudette-debug/debug-eval.sh 'return 1 + 1'
-#        echo 'return document.title' | .claude/skills/claudette-debug/debug-eval.sh
+# Usage: ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh 'return 1 + 1'
+#        echo 'return document.title' | ${CLAUDE_SKILL_DIR}/scripts/debug-eval.sh
 set -euo pipefail
 
 PORT="${CLAUDETTE_DEBUG_PORT:-19432}"
