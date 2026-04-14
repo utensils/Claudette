@@ -176,6 +176,39 @@ pub async fn send_chat_message(
         .get_repository(&ws.repository_id)
         .map_err(|e| e.to_string())?;
 
+    // Load repository MCP configs for injection on every turn.
+    // Each Claude CLI process is independent and needs the MCP config passed.
+    // This is done BEFORE acquiring the agents lock to avoid blocking other workspaces.
+    let db_rows = db
+        .list_repository_mcp_servers(&ws.repository_id)
+        .map_err(|e| {
+            eprintln!("[chat] Failed to load MCP servers for {}: {e}", ws.repository_id);
+            e.to_string()
+        })?;
+    let mcp_config = if db_rows.is_empty() {
+        None
+    } else {
+        let mcp_servers: Vec<claudette::mcp::McpServer> = db_rows
+            .iter()
+            .filter_map(|row| {
+                let config: serde_json::Value = serde_json::from_str(&row.config_json).ok()?;
+                let source: claudette::mcp::McpSource =
+                    serde_json::from_str(&format!("\"{}\"", row.source))
+                        .unwrap_or(claudette::mcp::McpSource::UserProjectConfig);
+                Some(claudette::mcp::McpServer {
+                    name: row.name.clone(),
+                    config,
+                    source,
+                })
+            })
+            .collect();
+        if mcp_servers.is_empty() {
+            None
+        } else {
+            Some(claudette::mcp::serialize_for_cli(&mcp_servers))
+        }
+    };
+
     // Get or create agent session. Custom instructions are resolved once on
     // the first turn and cached for the session lifetime.
     //
@@ -239,35 +272,6 @@ pub async fn send_chat_message(
     session.turn_count += 1;
     session.needs_attention = false;
     session.attention_kind = None;
-
-    // Load repository MCP configs for injection on every turn.
-    // Each Claude CLI process is independent and needs the MCP config passed.
-    let db_rows = db
-        .list_repository_mcp_servers(&ws.repository_id)
-        .unwrap_or_default();
-    let mcp_config = if db_rows.is_empty() {
-        None
-    } else {
-        let mcp_servers: Vec<claudette::mcp::McpServer> = db_rows
-            .iter()
-            .filter_map(|row| {
-                let config: serde_json::Value = serde_json::from_str(&row.config_json).ok()?;
-                let source: claudette::mcp::McpSource =
-                    serde_json::from_str(&format!("\"{}\"", row.source))
-                        .unwrap_or(claudette::mcp::McpSource::UserProjectConfig);
-                Some(claudette::mcp::McpServer {
-                    name: row.name.clone(),
-                    config,
-                    source,
-                })
-            })
-            .collect();
-        if mcp_servers.is_empty() {
-            None
-        } else {
-            Some(claudette::mcp::serialize_for_cli(&mcp_servers))
-        }
-    };
 
     // Build agent settings from frontend params.
     let agent_settings = AgentSettings {

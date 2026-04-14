@@ -213,8 +213,9 @@ pub struct AgentSettings {
     /// Enable Chrome browser mode via `--chrome`. Session-level: only applied
     /// on the first turn.
     pub chrome_enabled: bool,
-    /// MCP config JSON string for `--mcp-config`. Session-level: only applied
-    /// on the first turn.
+    /// MCP config JSON string for `--mcp-config`. Per-turn: applied on every
+    /// turn since each `claude` process is independent and doesn't inherit
+    /// MCP connections from previous turns.
     pub mcp_config: Option<String>,
 }
 
