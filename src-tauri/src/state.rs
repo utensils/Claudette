@@ -89,81 +89,93 @@ impl Drop for LocalServerState {
     }
 }
 
-/// Synchronously send SIGKILL to a process and wait for it to exit.
+/// Synchronously try to terminate a process and wait for it to exit.
 ///
-/// This is safe to call from `Drop` impls and the `RunEvent::Exit` handler
-/// where async code cannot run. Uses raw libc calls so it does not depend on
-/// the tokio runtime.
+/// On Unix, this first sends `SIGTERM` and allows a short grace period for
+/// graceful shutdown. If the process does not exit in time, it escalates to
+/// `SIGKILL` and reaps the process. This is safe to call from `Drop` impls
+/// and the `RunEvent::Exit` handler where async code cannot run. Uses raw
+/// libc calls so it does not depend on the tokio runtime.
 pub fn kill_process_sync(pid: u32) {
-    #[cfg(unix)]
-    {
-        use std::time::{Duration, Instant};
-        let pid = pid as i32;
-        // SAFETY: libc::kill with SIGKILL is a standard POSIX call.
-        // A pid of 0 would signal our own process group — guard against it.
-        if pid <= 0 {
-            return;
-        }
+    use std::time::{Duration, Instant};
+    let pid = pid as i32;
+    // A pid of 0 would signal our own process group — guard against it.
+    if pid <= 0 {
+        return;
+    }
 
-        // First try SIGTERM for a graceful shutdown.
-        // SAFETY: pid is a valid positive i32.
-        let ret = unsafe { libc::kill(pid, libc::SIGTERM) };
-        if ret != 0 {
-            // Process already gone — nothing to do.
+    // First try SIGTERM for a graceful shutdown.
+    // SAFETY: pid is a valid positive i32.
+    let ret = unsafe { libc::kill(pid, libc::SIGTERM) };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() == Some(libc::ESRCH) {
             eprintln!("[cleanup] Server process {pid} already exited");
+        } else {
+            eprintln!("[cleanup] Failed to send SIGTERM to server process {pid}: {err}");
+        }
+        return;
+    }
+
+    // Give the server up to 500ms to exit gracefully.
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < deadline {
+        // SAFETY: waitpid with WNOHANG is a standard POSIX call.
+        let mut status: libc::c_int = 0;
+        let ret = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+        if ret == pid {
+            eprintln!("[cleanup] Stopped local claudette-server (pid {pid})");
             return;
         }
-
-        // Give the server up to 500ms to exit gracefully.
-        let deadline = Instant::now() + Duration::from_millis(500);
-        while Instant::now() < deadline {
-            // SAFETY: waitpid with WNOHANG is a standard POSIX call.
-            let mut status: libc::c_int = 0;
-            let ret = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
-            if ret == pid {
+        if ret == -1 {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::ECHILD) {
+                // No such child — already reaped.
                 eprintln!("[cleanup] Stopped local claudette-server (pid {pid})");
                 return;
             }
-            if ret == -1 {
-                let err = std::io::Error::last_os_error();
-                if err.raw_os_error() == Some(libc::ECHILD) {
-                    // No such child — already reaped.
-                    eprintln!("[cleanup] Stopped local claudette-server (pid {pid})");
+            // EINTR or other transient error — retry.
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // Graceful shutdown timed out — force kill.
+    // SAFETY: pid is a valid positive i32.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+
+    // Try to reap the process without blocking indefinitely. If it does not
+    // become waitable in time (e.g. stuck in uninterruptible sleep), give up
+    // so app shutdown cannot hang forever.
+    let reap_deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < reap_deadline {
+        let mut status: libc::c_int = 0;
+        // SAFETY: waitpid with WNOHANG is a standard POSIX call.
+        let ret = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+        if ret == pid {
+            eprintln!("[cleanup] Force-killed local claudette-server (pid {pid})");
+            return;
+        }
+        if ret == -1 {
+            let err = std::io::Error::last_os_error();
+            match err.raw_os_error() {
+                Some(libc::ECHILD) => {
+                    eprintln!("[cleanup] Force-killed local claudette-server (pid {pid})");
                     return;
                 }
-                // EINTR or other transient error — retry.
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-
-        // Graceful shutdown timed out — force kill.
-        // SAFETY: pid is a valid positive i32.
-        unsafe { libc::kill(pid, libc::SIGKILL) };
-
-        // Reap the zombie so the PID is released to the OS. Loop to handle
-        // EINTR — only stop when waitpid returns the pid or ECHILD.
-        loop {
-            // SAFETY: waitpid is a standard POSIX call.
-            let ret = unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0) };
-            if ret == pid {
-                break;
-            }
-            if ret == -1 {
-                let err = std::io::Error::last_os_error();
-                if err.raw_os_error() != Some(libc::EINTR) {
-                    break; // ECHILD or unexpected error — stop.
+                Some(libc::EINTR) => {} // Retry.
+                _ => {
+                    eprintln!(
+                        "[cleanup] Sent SIGKILL to claudette-server (pid {pid}) but could not reap: {err}"
+                    );
+                    return;
                 }
-                // EINTR — retry waitpid.
             }
         }
-        eprintln!("[cleanup] Force-killed local claudette-server (pid {pid})");
+        std::thread::sleep(Duration::from_millis(10));
     }
-
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        // On non-Unix, fall through to tokio's start_kill() in the Drop impl.
-    }
+    eprintln!(
+        "[cleanup] Sent SIGKILL to claudette-server (pid {pid}) but timed out waiting to reap"
+    );
 }
 
 /// Application-wide managed state, shared across all Tauri commands.
@@ -218,15 +230,12 @@ mod tests {
     fn spawn_sleep() -> (tokio::process::Child, u32) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let mut child = tokio::process::Command::new("sleep")
+            let child = tokio::process::Command::new("sleep")
                 .arg("3600")
                 .kill_on_drop(true)
                 .spawn()
                 .expect("failed to spawn sleep");
             let pid = child.id().expect("missing pid");
-            // Detach stdout/stderr ownership so kill_on_drop doesn't race.
-            let _ = child.stdout.take();
-            let _ = child.stderr.take();
             (child, pid)
         })
     }
@@ -279,14 +288,12 @@ mod tests {
     fn local_server_state_drop_kills_child() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let (child, pid) = rt.block_on(async {
-            let mut child = tokio::process::Command::new("sleep")
+            let child = tokio::process::Command::new("sleep")
                 .arg("3600")
                 .kill_on_drop(true)
                 .spawn()
                 .expect("failed to spawn sleep");
             let pid = child.id().expect("missing pid");
-            let _ = child.stdout.take();
-            let _ = child.stderr.take();
             (child, pid)
         });
         assert!(is_alive(pid));
