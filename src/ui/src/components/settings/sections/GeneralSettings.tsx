@@ -118,9 +118,10 @@ export function GeneralSettings() {
   const handleDataDirBlur = async () => {
     const trimmed = dataDirInput.trim();
     if (!dataDirInfo || !trimmed) return;
-    // If the input matches the current active dir and there's no existing
-    // override, nothing to do.
+    // Skip if unchanged: matches current with no override, or matches the
+    // existing configured value. Avoids unnecessary disk I/O on every blur.
     if (trimmed === dataDirInfo.current && !dataDirInfo.configured) return;
+    if (trimmed === dataDirInfo.configured) return;
     try {
       setError(null);
       await setDataDir(trimmed);

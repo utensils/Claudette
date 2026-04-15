@@ -48,16 +48,24 @@ enum Commands {
     ShowConnectionString,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // If --data-dir is provided, set the env var so the shared resolver picks it up.
-    // SAFETY: called before any threads are spawned (single-threaded main at this point).
+    // SAFETY: called before the Tokio runtime is constructed, so no worker
+    // threads have been spawned yet.
     if let Some(ref dir) = cli.data_dir {
         unsafe { std::env::set_var("CLAUDETTE_DATA_DIR", dir) };
     }
 
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    runtime.block_on(async_main(cli))
+}
+
+async fn async_main(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.clone().unwrap_or_else(default_config_path);
 
     match &cli.command {

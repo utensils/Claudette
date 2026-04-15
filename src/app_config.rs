@@ -100,6 +100,12 @@ pub fn save_data_dir_config(data_dir: Option<&str>) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// Guard for tests that mutate the `CLAUDETTE_DATA_DIR` env var.
+    /// `std::env::set_var` is unsafe because it can race with concurrent
+    /// readers. This mutex serializes all env-var-mutating tests so the
+    /// `unsafe` blocks are sound.
+    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_expand_tilde_with_subpath() {
         let result = expand_tilde("~/foo/bar");
@@ -124,16 +130,15 @@ mod tests {
 
     #[test]
     fn test_resolve_data_dir_env_override() {
-        // Temporarily set the env var and verify it takes priority.
+        let _guard = ENV_MUTEX.lock().unwrap();
         let key = "CLAUDETTE_DATA_DIR";
         let prev = std::env::var(key).ok();
-        // SAFETY: test runs serially; no other thread reads this env var concurrently.
+        // SAFETY: ENV_MUTEX serializes all env-var-mutating tests.
         unsafe { std::env::set_var(key, "/tmp/claudette-test-env") };
 
         let result = resolve_data_dir();
         assert_eq!(result, PathBuf::from("/tmp/claudette-test-env"));
 
-        // Restore previous value.
         unsafe {
             match prev {
                 Some(v) => std::env::set_var(key, v),
@@ -144,13 +149,13 @@ mod tests {
 
     #[test]
     fn test_resolve_data_dir_default_has_claudette_suffix() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         let key = "CLAUDETTE_DATA_DIR";
         let prev = std::env::var(key).ok();
-        // SAFETY: test runs serially; no other thread reads this env var concurrently.
+        // SAFETY: ENV_MUTEX serializes all env-var-mutating tests.
         unsafe { std::env::remove_var(key) };
 
         let result = resolve_data_dir();
-        // The default should end with "claudette" (the directory name).
         assert!(
             result
                 .file_name()
@@ -158,17 +163,20 @@ mod tests {
             "Expected default data dir to end with 'claudette', got: {result:?}"
         );
 
-        if let Some(v) = prev {
-            // SAFETY: restoring previous env state.
-            unsafe { std::env::set_var(key, v) };
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
         }
     }
 
     #[test]
     fn test_resolve_db_path_ends_with_db_file() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         let key = "CLAUDETTE_DATA_DIR";
         let prev = std::env::var(key).ok();
-        // SAFETY: test runs serially; no other thread reads this env var concurrently.
+        // SAFETY: ENV_MUTEX serializes all env-var-mutating tests.
         unsafe { std::env::set_var(key, "/tmp/claudette-test-db") };
 
         let result = resolve_db_path();
