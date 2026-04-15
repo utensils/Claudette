@@ -47,7 +47,8 @@ export function updateRepositorySettings(
   icon: string | null,
   setupScript: string | null,
   customInstructions: string | null,
-  branchRenamePreferences: string | null
+  branchRenamePreferences: string | null,
+  setupScriptAutoRun: boolean
 ): Promise<void> {
   return invoke("update_repository_settings", {
     id,
@@ -56,6 +57,7 @@ export function updateRepositorySettings(
     setupScript,
     customInstructions,
     branchRenamePreferences,
+    setupScriptAutoRun,
   });
 }
 
@@ -77,6 +79,10 @@ export function getDefaultBranch(repoId: string): Promise<string | null> {
 
 export function reorderRepositories(ids: string[]): Promise<void> {
   return invoke("reorder_repositories", { ids });
+}
+
+export function setSetupScriptAutoRun(repoId: string, enabled: boolean): Promise<void> {
+  return invoke("set_setup_script_auto_run", { repoId, enabled });
 }
 
 // -- Workspace --

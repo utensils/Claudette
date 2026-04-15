@@ -20,6 +20,8 @@ pub struct Repository {
     pub sort_order: i32,
     /// Custom instructions for how branch names should be generated during auto-rename.
     pub branch_rename_preferences: Option<String>,
+    /// When true, setup scripts run automatically without a confirmation modal.
+    pub setup_script_auto_run: bool,
     /// Runtime-only: whether the repo path still exists on disk. Not persisted.
     pub path_valid: bool,
 }

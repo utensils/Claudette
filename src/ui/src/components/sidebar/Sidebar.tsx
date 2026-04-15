@@ -7,6 +7,7 @@ import {
   generateWorkspaceName,
   createWorkspace,
   getRepoConfig,
+  runWorkspaceSetup,
   connectRemote,
   disconnectRemote,
   removeRemoteConnection,
@@ -117,11 +118,31 @@ export const Sidebar = memo(function Sidebar() {
         const script = config.setup_script ?? repo?.setup_script;
         const source = config.setup_script ? "repo" : "settings";
         if (script) {
-          openModal("confirmSetupScript", {
-            workspaceId: result.workspace.id,
-            script,
-            source,
-          });
+          if (repo?.setup_script_auto_run) {
+            const wsId = result.workspace.id;
+            runWorkspaceSetup(wsId).then((sr) => {
+              if (sr) {
+                const lbl = sr.source === "repo" ? ".claudette.json" : "settings";
+                const status = sr.success ? "completed" : sr.timed_out ? "timed out" : "failed";
+                addChatMessage(wsId, {
+                  id: crypto.randomUUID(),
+                  workspace_id: wsId,
+                  role: "System",
+                  content: `Setup script (${lbl}) ${status}${sr.output ? `:\n${sr.output}` : ""}`,
+                  cost_usd: null, duration_ms: null,
+                  created_at: new Date().toISOString(),
+                  thinking: null,
+                });
+              }
+            }).catch(() => {});
+          } else {
+            openModal("confirmSetupScript", {
+              workspaceId: result.workspace.id,
+              repoId,
+              script,
+              source,
+            });
+          }
         }
       } catch {
         // No config or error reading it — no setup script to run.
