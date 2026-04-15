@@ -40,6 +40,36 @@
   font-weight: 800;
 }
 
+/* Progress bar (multi-question wizard) */
+.progressBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.progressText {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 3px;
+  background: var(--hover-bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
 .questionBlock {
   margin-bottom: 14px;
 }
@@ -193,4 +223,43 @@
 .submitBtn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+/* Navigation row (multi-question wizard) */
+.navRow {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.navBtn {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  color: var(--accent-primary);
+  background: rgba(var(--accent-primary-rgb), 0.08);
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.navBtn:hover:not(:disabled) {
+  background: rgba(var(--accent-primary-rgb), 0.18);
+}
+
+.navBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.backBtn {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--divider);
+}
+
+.backBtn:hover:not(:disabled) {
+  background: var(--hover-bg-subtle);
+  color: var(--text-primary);
 }
