@@ -139,12 +139,13 @@ describe("workspace removal cascades to terminal state", () => {
       workspaces: [],
       terminalTabs: {},
       activeTerminalTabId: {},
+      workspaceTerminalCommands: {},
       unreadCompletions: new Set<string>(),
       selectedWorkspaceId: null,
     });
   });
 
-  it("removeWorkspace drops terminalTabs and activeTerminalTabId entries", () => {
+  it("removeWorkspace drops terminalTabs, activeTerminalTabId, and workspaceTerminalCommands", () => {
     useAppStore.setState({
       workspaces: [
         {
@@ -161,12 +162,16 @@ describe("workspace removal cascades to terminal state", () => {
       ],
       terminalTabs: { [WS_A]: [makeTab(1, WS_A)] },
       activeTerminalTabId: { [WS_A]: 1 },
+      workspaceTerminalCommands: {
+        [WS_A]: { command: "cargo test", isRunning: true, exitCode: null },
+      },
     });
 
     useAppStore.getState().removeWorkspace(WS_A);
 
     expect(useAppStore.getState().terminalTabs[WS_A]).toBeUndefined();
     expect(useAppStore.getState().activeTerminalTabId[WS_A]).toBeUndefined();
+    expect(useAppStore.getState().workspaceTerminalCommands[WS_A]).toBeUndefined();
   });
 
   it("removeRepository cascades through its workspaces' terminal state", () => {
@@ -203,6 +208,10 @@ describe("workspace removal cascades to terminal state", () => {
         [WS_B]: [makeTab(2, WS_B)],
       },
       activeTerminalTabId: { [WS_A]: 1, [WS_B]: 2 },
+      workspaceTerminalCommands: {
+        [WS_A]: { command: null, isRunning: false, exitCode: null },
+        [WS_B]: { command: null, isRunning: false, exitCode: null },
+      },
     });
 
     useAppStore.getState().removeRepository("repo-1");
@@ -211,5 +220,75 @@ describe("workspace removal cascades to terminal state", () => {
     expect(useAppStore.getState().terminalTabs[WS_B]).toBeUndefined();
     expect(useAppStore.getState().activeTerminalTabId[WS_A]).toBeUndefined();
     expect(useAppStore.getState().activeTerminalTabId[WS_B]).toBeUndefined();
+    expect(useAppStore.getState().workspaceTerminalCommands[WS_A]).toBeUndefined();
+    expect(useAppStore.getState().workspaceTerminalCommands[WS_B]).toBeUndefined();
+  });
+
+  it("removeRepository deselects a workspace that belonged to the removed repo", () => {
+    useAppStore.setState({
+      repositories: [
+        { id: "repo-1", name: "r", root_path: "/r" } as never,
+      ],
+      workspaces: [
+        {
+          id: WS_A,
+          repository_id: "repo-1",
+          name: "a",
+          branch: "main",
+          worktree_path: "/tmp/a",
+          status: "Active",
+          created_at: "",
+          agent_status: "Idle",
+          remote_connection_id: null,
+        } as never,
+      ],
+      selectedWorkspaceId: WS_A,
+      unreadCompletions: new Set([WS_A]),
+    });
+
+    useAppStore.getState().removeRepository("repo-1");
+
+    expect(useAppStore.getState().selectedWorkspaceId).toBeNull();
+    // unreadCompletions entry for the removed workspace should also go.
+    expect(useAppStore.getState().unreadCompletions.has(WS_A)).toBe(false);
+  });
+
+  it("removeRepository preserves selectedWorkspaceId when it belongs to another repo", () => {
+    useAppStore.setState({
+      repositories: [
+        { id: "repo-1", name: "r1", root_path: "/r1" } as never,
+        { id: "repo-2", name: "r2", root_path: "/r2" } as never,
+      ],
+      workspaces: [
+        {
+          id: WS_A,
+          repository_id: "repo-1",
+          name: "a",
+          branch: "main",
+          worktree_path: "/tmp/a",
+          status: "Active",
+          created_at: "",
+          agent_status: "Idle",
+          remote_connection_id: null,
+        } as never,
+        {
+          id: WS_B,
+          repository_id: "repo-2",
+          name: "b",
+          branch: "main",
+          worktree_path: "/tmp/b",
+          status: "Active",
+          created_at: "",
+          agent_status: "Idle",
+          remote_connection_id: null,
+        } as never,
+      ],
+      selectedWorkspaceId: WS_B,
+    });
+
+    useAppStore.getState().removeRepository("repo-1");
+
+    // repo-2's workspace is still selected — removing repo-1 shouldn't affect it.
+    expect(useAppStore.getState().selectedWorkspaceId).toBe(WS_B);
   });
 });

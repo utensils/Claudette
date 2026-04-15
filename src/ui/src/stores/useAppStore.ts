@@ -337,17 +337,30 @@ export const useAppStore = create<AppState>((set) => ({
       const removedWsIds = s.workspaces
         .filter((w) => w.repository_id === id)
         .map((w) => w.id);
+      const removedWsIdSet = new Set(removedWsIds);
       const newTerminalTabs = { ...s.terminalTabs };
       const newActiveTerminalTabId = { ...s.activeTerminalTabId };
+      const newWorkspaceTerminalCommands = { ...s.workspaceTerminalCommands };
+      const newUnreadCompletions = new Set(s.unreadCompletions);
       for (const wsId of removedWsIds) {
         delete newTerminalTabs[wsId];
         delete newActiveTerminalTabId[wsId];
+        delete newWorkspaceTerminalCommands[wsId];
+        newUnreadCompletions.delete(wsId);
       }
       return {
         repositories: s.repositories.filter((r) => r.id !== id),
         workspaces: s.workspaces.filter((w) => w.repository_id !== id),
+        // If the selected workspace belonged to the removed repo, deselect
+        // it so the rest of the app doesn't point at a vanished id.
+        selectedWorkspaceId:
+          s.selectedWorkspaceId && removedWsIdSet.has(s.selectedWorkspaceId)
+            ? null
+            : s.selectedWorkspaceId,
         terminalTabs: newTerminalTabs,
         activeTerminalTabId: newActiveTerminalTabId,
+        workspaceTerminalCommands: newWorkspaceTerminalCommands,
+        unreadCompletions: newUnreadCompletions,
       };
     }),
 
@@ -366,13 +379,16 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const newUnreadCompletions = new Set(s.unreadCompletions);
       newUnreadCompletions.delete(id);
-      // Drop terminal state for the removed workspace. The cleanup effect in
-      // TerminalPanel watches `terminalTabs` and tears down xterm instances
-      // and PTYs whose tab ids no longer exist in any workspace.
+      // Drop all per-workspace terminal state for the removed workspace.
+      // The cleanup effect in TerminalPanel watches `terminalTabs` and tears
+      // down xterm instances and PTYs whose tab ids no longer exist in any
+      // workspace; the other maps are value-keyed by workspace id.
       const newTerminalTabs = { ...s.terminalTabs };
       delete newTerminalTabs[id];
       const newActiveTerminalTabId = { ...s.activeTerminalTabId };
       delete newActiveTerminalTabId[id];
+      const newWorkspaceTerminalCommands = { ...s.workspaceTerminalCommands };
+      delete newWorkspaceTerminalCommands[id];
       return {
         workspaces: s.workspaces.filter((w) => w.id !== id),
         selectedWorkspaceId:
@@ -380,6 +396,7 @@ export const useAppStore = create<AppState>((set) => ({
         unreadCompletions: newUnreadCompletions,
         terminalTabs: newTerminalTabs,
         activeTerminalTabId: newActiveTerminalTabId,
+        workspaceTerminalCommands: newWorkspaceTerminalCommands,
       };
     }),
   selectWorkspace: (id) =>

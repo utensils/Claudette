@@ -52,6 +52,19 @@ function safeFitRaw(container: HTMLElement, fit: FitAddon) {
   if (container.clientHeight > 0 && container.clientWidth > 0) fit.fit();
 }
 
+// `closePty` is a Tauri invoke that returns a Promise<void>. Teardown
+// paths don't await it (we don't want close to block tab-switching or
+// unmount), so we need a centralized error sink; otherwise a failed close
+// would surface as an unhandled promise rejection in the webview console.
+// Failures here are best-effort by design — if the backend has already
+// dropped the PTY (e.g. child exited, state race), there's nothing more
+// we can do from the frontend.
+function closePtyBestEffort(ptyId: number) {
+  void closePty(ptyId).catch((err) => {
+    console.error(`Failed to close PTY ${ptyId} during teardown:`, err);
+  });
+}
+
 export const TerminalPanel = memo(function TerminalPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
@@ -109,7 +122,7 @@ export const TerminalPanel = memo(function TerminalPanel() {
     inst.resizeObserver.disconnect();
     inst.term.dispose();
     if (inst.unlisten) inst.unlisten();
-    if (inst.ptyId >= 0) closePty(inst.ptyId);
+    if (inst.ptyId >= 0) closePtyBestEffort(inst.ptyId);
     inst.container.remove();
     instancesRef.current.delete(tabId);
   }, []);
@@ -152,9 +165,14 @@ export const TerminalPanel = memo(function TerminalPanel() {
     listTerminalTabs(wsId).then(async (t) => {
       if (t.length > 0) {
         setTerminalTabs(wsId, t);
-        // Only initialize this workspace's active tab if it has none.
+        // Initialize this workspace's active tab if it has none, OR if the
+        // stored active id is stale (the tab was deleted elsewhere — e.g.
+        // another app instance, or a DB cascade we weren't notified of).
+        // Otherwise the visibility effect would show no tab at all.
         const currentActive = useAppStore.getState().activeTerminalTabId[wsId];
-        if (currentActive == null) {
+        const activeStillValid =
+          currentActive != null && t.some((tab) => tab.id === currentActive);
+        if (!activeStillValid) {
           setActiveTerminalTab(wsId, t[0].id);
         }
       } else if (autoCreatedRef.current !== wsId) {
@@ -255,7 +273,7 @@ export const TerminalPanel = memo(function TerminalPanel() {
           const ptyId = await spawnPty(worktreePath);
           const inst = instancesRef.current.get(tabId);
           if (!inst) {
-            closePty(ptyId);
+            closePtyBestEffort(ptyId);
             return;
           }
           inst.ptyId = ptyId;
@@ -273,7 +291,7 @@ export const TerminalPanel = memo(function TerminalPanel() {
           const stillExists = instancesRef.current.get(tabId);
           if (!stillExists || stillExists !== inst) {
             unlistenFn();
-            closePty(ptyId);
+            closePtyBestEffort(ptyId);
             return;
           }
           inst.unlisten = unlistenFn;
