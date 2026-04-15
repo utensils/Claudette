@@ -48,6 +48,13 @@ pub async fn spawn_pty(
     let mut cmd = CommandBuilder::new_default_prog();
     cmd.cwd(&working_dir);
 
+    // xterm.js implements xterm-compatible escape sequences. Set TERM so
+    // the shell configures termios correctly (echo, line editing, etc.).
+    // Without this, release builds launched from Dock/Finder inherit a
+    // minimal launchd environment with no TERM, causing doubled input and
+    // broken `clear`/`tput`.
+    cmd.env("TERM", "xterm-256color");
+
     // Set CLAUDETTE_PTY environment variable to enable shell integration
     cmd.env("CLAUDETTE_PTY", "1");
 
@@ -273,6 +280,7 @@ mod tests {
         // file or waiting for a prompt.
         let mut cmd = CommandBuilder::new("/bin/sh");
         cmd.args(["-c", "printf claudette-pty-ok"]);
+        cmd.env("TERM", "xterm-256color");
         cmd.env("CLAUDETTE_PTY", "1");
 
         let child = pair
@@ -364,5 +372,45 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
         let alive_after = unsafe { libc::kill(pid as i32, 0) == 0 };
         assert!(!alive_after, "child should be dead after kill");
+    }
+
+    #[test]
+    fn pty_sets_term_env_variable() {
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty should succeed");
+
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", "printf \"TERM=%s\" \"$TERM\""]);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("CLAUDETTE_PTY", "1");
+
+        let child = pair
+            .slave
+            .spawn_command(cmd)
+            .expect("spawn_command should succeed");
+        drop(pair.slave);
+
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .expect("try_clone_reader should succeed");
+
+        let bytes = read_with_deadline(reader, Duration::from_secs(5));
+        let mut child = child;
+        let _ = child.wait();
+        drop(pair.master);
+
+        let s = String::from_utf8_lossy(&bytes);
+        assert!(
+            s.contains("TERM=xterm-256color"),
+            "expected TERM=xterm-256color in PTY output, got: {s:?}"
+        );
     }
 }
