@@ -201,9 +201,9 @@ export function GeneralSettings() {
           <div className={styles.settingLabel}>Tray icon style</div>
           <div className={styles.settingDescription}>
             Auto uses macOS template tinting (black or white depending on the
-            menu bar) and plain black on Linux. Pick Light for a white icon on
-            dark panels, Dark for a black icon on light panels, or Color for
-            the logo's orange.
+            menu bar) and the logo's orange on Linux. Pick Light for a white
+            icon on dark panels, Dark for a black icon on light panels, or
+            Color to use the orange on every platform.
           </div>
         </div>
         <div className={styles.settingControl}>

@@ -38,8 +38,12 @@ enum TrayState {
 /// and whether `is_template` is set for macOS tinting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TrayIconStyle {
-    /// Baseline behavior: template icon (macOS tints to menu-bar color),
-    /// plain black shapes on Linux/Windows. The default.
+    /// Platform-sensible default. macOS uses the template icon (the OS
+    /// tints it black/white to match the menu bar). Linux defaults to
+    /// the color variant because the baseline black shape is nearly
+    /// invisible on dark GNOME/KDE panels. Windows uses the baseline
+    /// black shape. Users can always override this with Light, Dark, or
+    /// Color below.
     Auto,
     /// Always render as a white shape; macOS does not tint it.
     Light,
@@ -66,6 +70,13 @@ impl TrayIconStyle {
     fn icon_for(self, state: TrayState) -> (&'static [u8], bool) {
         match self {
             Self::Auto => {
+                // Linux's baseline black shape is unreadable on dark panels,
+                // so Auto on Linux delegates to the color variant. macOS
+                // and Windows keep the original black-on-transparent shape;
+                // macOS additionally flags it as a template for OS tinting.
+                if cfg!(target_os = "linux") {
+                    return Self::Color.icon_for(state);
+                }
                 let bytes = match state {
                     TrayState::Idle => ICON_IDLE,
                     TrayState::Running(_) => ICON_ACTIVE,
@@ -707,11 +718,49 @@ mod tests {
     #[test]
     fn auto_uses_template_on_macos_only() {
         // The (bytes, is_template) contract: Auto style is the only one that
-        // sets is_template=true, and only when compiled for macOS. On every
-        // other platform Auto falls back to plain rendering of the same
-        // black-on-transparent shape.
+        // sets is_template=true, and only when compiled for macOS. Linux and
+        // Windows are never template — Linux because Auto delegates to Color
+        // there, Windows because it keeps the plain black shape with no
+        // tinting.
         let (_, tpl) = TrayIconStyle::Auto.icon_for(TrayState::Idle);
         assert_eq!(tpl, cfg!(target_os = "macos"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn auto_delegates_to_color_on_linux() {
+        // On Linux, the baseline black shape is invisible on dark panels.
+        // Auto must route to the Color variant so unconfigured users get a
+        // visible icon out of the box.
+        for state in [
+            TrayState::Idle,
+            TrayState::Running(1),
+            TrayState::NeedsAttention(1),
+        ] {
+            let (auto_bytes, auto_tpl) = TrayIconStyle::Auto.icon_for(state);
+            let (color_bytes, color_tpl) = TrayIconStyle::Color.icon_for(state);
+            assert_eq!(
+                auto_bytes.as_ptr(),
+                color_bytes.as_ptr(),
+                "Auto on Linux must use the same PNG payload as Color for {state:?}"
+            );
+            assert_eq!(auto_tpl, color_tpl);
+            assert!(!auto_tpl, "Auto on Linux must not be a template");
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn auto_uses_baseline_shape_off_linux() {
+        // On macOS and Windows, Auto uses the baseline black-on-transparent
+        // shape (the ones loaded from the unsuffixed filenames). macOS
+        // additionally sets is_template=true; Windows does not.
+        let (auto_bytes, _) = TrayIconStyle::Auto.icon_for(TrayState::Idle);
+        assert_eq!(
+            auto_bytes.as_ptr(),
+            ICON_IDLE.as_ptr(),
+            "Auto off-Linux must point at the baseline ICON_IDLE payload"
+        );
     }
 
     #[test]
