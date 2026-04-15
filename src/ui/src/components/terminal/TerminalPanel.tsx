@@ -137,11 +137,17 @@ export const TerminalPanel = memo(function TerminalPanel() {
     [setActiveTerminalTab],
   );
 
-  // Load terminal tabs on workspace change. Only auto-create when the
-  // workspace has zero tabs, and only set an active tab when the workspace
-  // doesn't already have one — respect prior selection within each workspace.
+  // Load terminal tabs on workspace change — but ONLY while the panel is
+  // visible. Skipping this while hidden preserves two important properties:
+  //   1. Selecting a workspace the user explicitly collapsed the panel on
+  //      doesn't auto-create a tab, which would flip terminalPanelVisible
+  //      back to true via addTerminalTab and reopen the panel uninvited.
+  //   2. DB-backed tab creation (and future remote-workspace failures) is
+  //      deferred until the user actually wants a terminal.
+  // When the user later opens the panel, this effect re-runs (terminalPanel-
+  // Visible is in its deps) and bootstraps the workspace's tabs on demand.
   useEffect(() => {
-    if (!selectedWorkspaceId) return;
+    if (!selectedWorkspaceId || !terminalPanelVisible) return;
     const wsId = selectedWorkspaceId;
     listTerminalTabs(wsId).then(async (t) => {
       if (t.length > 0) {
@@ -161,7 +167,13 @@ export const TerminalPanel = memo(function TerminalPanel() {
         }
       }
     });
-  }, [selectedWorkspaceId, setTerminalTabs, setActiveTerminalTab, addTerminalTab]);
+  }, [
+    selectedWorkspaceId,
+    terminalPanelVisible,
+    setTerminalTabs,
+    setActiveTerminalTab,
+    addTerminalTab,
+  ]);
 
   // Create the xterm instance for the active tab, spawn the PTY, wire I/O.
   // Extracted as a function so we can re-run it from the spawn-error Retry

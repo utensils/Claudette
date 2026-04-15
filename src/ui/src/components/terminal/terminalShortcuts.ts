@@ -72,9 +72,16 @@ export function terminalKeyAction(ev: KeyboardEvent): TerminalKeyAction {
     if (next) return { kind: "cycle", direction: "next" };
   }
 
-  // Cmd+T — new terminal tab. Require no Shift so Cmd+Shift+T stays available
-  // for anything we might want it to mean later.
-  if (!ev.shiftKey && (ev.key === "t" || ev.key === "T")) {
+  // New-tab: Cmd+T on macOS, Ctrl+Shift+T on Linux/Windows (browser
+  // convention). We specifically do NOT intercept bare Ctrl+T because that
+  // is readline's `transpose-chars` binding — hijacking it would break a
+  // standard shell shortcut inside the terminal. Meta+T (macOS) is safe
+  // because Cmd-keys never reach the shell.
+  const isT = ev.key === "t" || ev.key === "T";
+  if (isT && ev.metaKey && !ev.ctrlKey && !ev.shiftKey) {
+    return { kind: "new-tab" };
+  }
+  if (isT && ev.ctrlKey && ev.shiftKey && !ev.metaKey) {
     return { kind: "new-tab" };
   }
 

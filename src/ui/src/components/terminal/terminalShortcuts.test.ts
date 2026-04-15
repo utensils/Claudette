@@ -102,16 +102,30 @@ describe("terminalKeyAction", () => {
       .toEqual({ kind: "cycle", direction: "next" });
   });
 
-  it("recognizes Cmd+T as new-tab (upper and lower case)", () => {
+  it("recognizes Cmd+T (macOS) as new-tab (upper and lower case)", () => {
     expect(terminalKeyAction(mk({ key: "t", metaKey: true })))
       .toEqual({ kind: "new-tab" });
     expect(terminalKeyAction(mk({ key: "T", metaKey: true })))
       .toEqual({ kind: "new-tab" });
   });
 
-  it("does NOT treat Cmd+Shift+T as new-tab (Shift must be absent)", () => {
-    // Leaves Cmd+Shift+T available for other future bindings and avoids
-    // double-firing with the cycle handler.
+  it("recognizes Ctrl+Shift+T (Linux/Windows) as new-tab", () => {
+    expect(terminalKeyAction(mk({ key: "t", ctrlKey: true, shiftKey: true })))
+      .toEqual({ kind: "new-tab" });
+    expect(terminalKeyAction(mk({ key: "T", ctrlKey: true, shiftKey: true })))
+      .toEqual({ kind: "new-tab" });
+  });
+
+  it("does NOT intercept bare Ctrl+T — readline uses it for transpose-chars", () => {
+    // This is the regression Codex caught. Hijacking Ctrl+T would break a
+    // standard shell shortcut inside the terminal.
+    expect(terminalKeyAction(mk({ key: "t", ctrlKey: true }))).toBeNull();
+    expect(terminalKeyAction(mk({ key: "T", ctrlKey: true }))).toBeNull();
+  });
+
+  it("does NOT treat Cmd+Shift+T as new-tab on macOS (that's a Linux combo)", () => {
+    // On macOS users type Cmd+T; Cmd+Shift+T would leak the "reopen closed tab"
+    // muscle memory from browsers — keep it available for future use.
     expect(terminalKeyAction(mk({ key: "T", metaKey: true, shiftKey: true })))
       .toBeNull();
   });
