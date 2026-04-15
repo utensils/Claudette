@@ -641,8 +641,6 @@ export function ChatPanel() {
 
       <ScrollContext.Provider value={scrollContextValue}>
         <div className={styles.messages} ref={messagesContainerRef}>
-          {error && <div className={styles.errorBanner}>{error}</div>}
-
           {messages.length === 0 && !hasStreaming ? (
             <div className={styles.empty}>
               Send a message to start a conversation
@@ -722,6 +720,8 @@ export function ChatPanel() {
                   </button>
                 </div>
               )}
+
+              {error && <div className={styles.errorBanner}>{error}</div>}
             </>
           )}
         </div>
