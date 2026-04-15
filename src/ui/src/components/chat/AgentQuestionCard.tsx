@@ -11,84 +11,64 @@ export function AgentQuestionCard({
   question,
   onRespond,
 }: AgentQuestionCardProps) {
-  const isSingleQuestion = question.questions.length === 1;
+  const total = question.questions.length;
+  const isSingleQuestion = total === 1;
 
+  // All hooks declared unconditionally (React rules of hooks)
   const [selections, setSelections] = useState<Record<number, Set<number>>>(
     () => Object.fromEntries(question.questions.map((_, i) => [i, new Set()]))
   );
   const [freeform, setFreeform] = useState("");
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [freeformTexts, setFreeformTexts] = useState<Record<number, string>>(
+    {}
+  );
 
-  const toggleSelection = (qIdx: number, optIdx: number, multi: boolean) => {
-    if (isSingleQuestion && !multi) {
-      // Single question, single select — respond immediately
-      const opt = question.questions[qIdx].options[optIdx];
-      if (opt) onRespond(opt.label);
-      return;
-    }
+  // ── Single question: original behavior unchanged ──
+  if (isSingleQuestion) {
+    const q = question.questions[0];
+    const isMulti = q.multiSelect ?? false;
+    const currentSelections = selections[0] ?? new Set<number>();
 
-    setSelections((prev) => {
-      const current = prev[qIdx] ?? new Set();
-      const next = new Set(multi ? current : []);
-      if (next.has(optIdx)) {
-        next.delete(optIdx);
-      } else {
-        next.add(optIdx);
+    const toggleSingle = (optIdx: number) => {
+      if (!isMulti) {
+        const opt = q.options[optIdx];
+        if (opt) onRespond(opt.label);
+        return;
       }
-      return { ...prev, [qIdx]: next };
-    });
-  };
+      setSelections((prev) => {
+        const current = prev[0] ?? new Set();
+        const next = new Set(current);
+        if (next.has(optIdx)) next.delete(optIdx);
+        else next.add(optIdx);
+        return { ...prev, 0: next };
+      });
+    };
 
-  const handleSubmitSelections = () => {
-    const parts: string[] = [];
-    for (let i = 0; i < question.questions.length; i++) {
-      const q = question.questions[i];
-      const selected = selections[i] ?? new Set();
-      const chosen = [...selected].map((idx) => q.options[idx]?.label).filter(Boolean);
-      if (chosen.length > 0) {
-        if (question.questions.length > 1) {
-          parts.push(`${q.question}: ${chosen.join(", ")}`);
-        } else {
-          parts.push(chosen.join(", "));
-        }
-      }
-    }
-    if (parts.length > 0) {
-      onRespond(parts.join("\n"));
-    }
-  };
+    const hasSelections = currentSelections.size > 0;
 
-  const handleSubmitFreeform = () => {
-    const text = freeform.trim();
-    if (text) {
-      onRespond(text);
-    }
-  };
-
-  const hasSelections = Object.values(selections).some((s) => s.size > 0);
-
-  return (
-    <div className={styles.card}>
-      <div className={styles.label}>Agent Question</div>
-
-      {question.questions.map((q, qIdx) => (
-        <div key={qIdx} className={styles.questionBlock}>
+    return (
+      <div className={styles.card}>
+        <div className={styles.label}>Agent Question</div>
+        <div className={styles.questionBlock}>
           {q.header && <div className={styles.header}>{q.header}</div>}
           <div className={styles.question}>{q.question}</div>
           {q.options.length > 0 && (
             <div className={styles.options}>
               {q.options.map((opt, optIdx) => {
-                const isSelected = selections[qIdx]?.has(optIdx) ?? false;
+                const isSelected = currentSelections.has(optIdx);
                 return (
                   <button
                     key={optIdx}
                     className={`${styles.option} ${isSelected ? styles.optionSelected : ""}`}
-                    onClick={() =>
-                      toggleSelection(qIdx, optIdx, q.multiSelect ?? false)
-                    }
+                    onClick={() => toggleSingle(optIdx)}
                   >
                     <span className={styles.optionLabel}>{opt.label}</span>
                     {opt.description && (
-                      <span className={styles.optionDesc}>{opt.description}</span>
+                      <span className={styles.optionDesc}>
+                        {opt.description}
+                      </span>
                     )}
                   </button>
                 );
@@ -96,36 +76,222 @@ export function AgentQuestionCard({
             </div>
           )}
         </div>
-      ))}
+        {isMulti && hasSelections && (
+          <button
+            className={styles.confirmBtn}
+            onClick={() => {
+              const chosen = [...currentSelections]
+                .map((idx) => q.options[idx]?.label)
+                .filter(Boolean);
+              if (chosen.length > 0) onRespond(chosen.join(", "));
+            }}
+          >
+            Submit answer
+          </button>
+        )}
+        <div className={styles.divider}>Or type your response below</div>
+        <div className={styles.freeformRow}>
+          <textarea
+            className={styles.freeformInput}
+            value={freeform}
+            onChange={(e) => setFreeform(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                const text = freeform.trim();
+                if (text) onRespond(text);
+              }
+            }}
+            placeholder="Type a response..."
+            rows={1}
+          />
+          <button
+            className={styles.submitBtn}
+            onClick={() => {
+              const text = freeform.trim();
+              if (text) onRespond(text);
+            }}
+            disabled={!freeform.trim()}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-      {!isSingleQuestion && hasSelections && (
-        <button className={styles.confirmBtn} onClick={handleSubmitSelections}>
-          Submit answers
-        </button>
-      )}
+  // ── Multi-question wizard ──
+  const q = question.questions[currentIndex];
+  const isLast = currentIndex === total - 1;
+  const isFirst = currentIndex === 0;
+  const currentFreeform = freeformTexts[currentIndex] ?? "";
+  const currentSelections = selections[currentIndex] ?? new Set<number>();
+  const isMultiSelect = q.multiSelect ?? false;
+
+  const getCurrentAnswer = (): string | null => {
+    const text = currentFreeform.trim();
+    if (text) return text;
+    if (currentSelections.size > 0) {
+      return [...currentSelections]
+        .map((idx) => q.options[idx]?.label)
+        .filter(Boolean)
+        .join(", ");
+    }
+    return null;
+  };
+
+  const submitAll = (finalAnswers: Record<number, string>) => {
+    const parts: string[] = [];
+    for (let i = 0; i < total; i++) {
+      const qItem = question.questions[i];
+      const answer = finalAnswers[i];
+      if (answer) {
+        parts.push(`${qItem.question}: ${answer}`);
+      }
+    }
+    if (parts.length > 0) {
+      onRespond(parts.join("\n"));
+    }
+  };
+
+  const handleOptionClick = (optIdx: number) => {
+    // Clear freeform when selecting an option
+    setFreeformTexts((prev) => ({ ...prev, [currentIndex]: "" }));
+
+    if (!isMultiSelect) {
+      // Single-select: set selection, save answer, auto-advance
+      const opt = q.options[optIdx];
+      if (!opt) return;
+      setSelections((prev) => ({
+        ...prev,
+        [currentIndex]: new Set([optIdx]),
+      }));
+      const newAnswers = { ...answers, [currentIndex]: opt.label };
+      setAnswers(newAnswers);
+      if (isLast) {
+        submitAll(newAnswers);
+      } else {
+        setCurrentIndex((i) => i + 1);
+      }
+      return;
+    }
+
+    // Multi-select: toggle
+    setSelections((prev) => {
+      const current = prev[currentIndex] ?? new Set();
+      const next = new Set(current);
+      if (next.has(optIdx)) next.delete(optIdx);
+      else next.add(optIdx);
+      return { ...prev, [currentIndex]: next };
+    });
+  };
+
+  const handleNext = () => {
+    const answer = getCurrentAnswer();
+    if (!answer) return;
+    const newAnswers = { ...answers, [currentIndex]: answer };
+    setAnswers(newAnswers);
+    if (isLast) {
+      submitAll(newAnswers);
+    } else {
+      setCurrentIndex((i) => i + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (isFirst) return;
+    // Save current answer before going back
+    const answer = getCurrentAnswer();
+    if (answer) {
+      setAnswers((prev) => ({ ...prev, [currentIndex]: answer }));
+    }
+    setCurrentIndex((i) => i - 1);
+  };
+
+  const handleFreeformChange = (text: string) => {
+    setFreeformTexts((prev) => ({ ...prev, [currentIndex]: text }));
+    // Clear option selections when typing freeform
+    if (text) {
+      setSelections((prev) => ({ ...prev, [currentIndex]: new Set() }));
+    }
+  };
+
+  const canAdvance = getCurrentAnswer() !== null;
+
+  return (
+    <div className={styles.card}>
+      <div className={styles.label}>Agent Question</div>
+
+      <div className={styles.progressBar}>
+        <span className={styles.progressText}>
+          {currentIndex + 1} of {total}
+        </span>
+        <div className={styles.progressTrack}>
+          <div
+            className={styles.progressFill}
+            style={{ width: `${((currentIndex + 1) / total) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      <div key={currentIndex} className={styles.questionBlock}>
+        {q.header && <div className={styles.header}>{q.header}</div>}
+        <div className={styles.question}>{q.question}</div>
+        {q.options.length > 0 && (
+          <div className={styles.options}>
+            {q.options.map((opt, optIdx) => {
+              const isSelected = currentSelections.has(optIdx);
+              return (
+                <button
+                  key={optIdx}
+                  className={`${styles.option} ${isSelected ? styles.optionSelected : ""}`}
+                  onClick={() => handleOptionClick(optIdx)}
+                >
+                  <span className={styles.optionLabel}>{opt.label}</span>
+                  {opt.description && (
+                    <span className={styles.optionDesc}>
+                      {opt.description}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div className={styles.divider}>Or type your response below</div>
 
       <div className={styles.freeformRow}>
         <textarea
           className={styles.freeformInput}
-          value={freeform}
-          onChange={(e) => setFreeform(e.target.value)}
+          value={currentFreeform}
+          onChange={(e) => handleFreeformChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              handleSubmitFreeform();
+              handleNext();
             }
           }}
           placeholder="Type a response..."
           rows={1}
         />
+      </div>
+
+      <div className={styles.navRow}>
         <button
-          className={styles.submitBtn}
-          onClick={handleSubmitFreeform}
-          disabled={!freeform.trim()}
+          className={`${styles.navBtn} ${styles.backBtn}`}
+          onClick={handleBack}
+          disabled={isFirst}
         >
-          Send
+          Back
+        </button>
+        <button
+          className={styles.navBtn}
+          onClick={handleNext}
+          disabled={!canAdvance}
+        >
+          {isLast ? "Submit" : "Next"}
         </button>
       </div>
     </div>
