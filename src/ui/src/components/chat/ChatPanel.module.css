@@ -717,7 +717,7 @@
 }
 
 .taskProgressDone {
-  background: var(--diff-added-text);
+  background: var(--badge-done);
 }
 
 .taskProgressLabel {
