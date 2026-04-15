@@ -9,22 +9,24 @@ const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 // share the same Update handle.
 let pendingUpdate: Update | null = null;
 
-/** Check the updater endpoint and update Zustand state. Returns true if an update is available. */
-export async function checkForUpdate(): Promise<boolean> {
+export type UpdateCheckResult = "available" | "up-to-date" | "error";
+
+/** Check the updater endpoint and update Zustand state. */
+export async function checkForUpdate(): Promise<UpdateCheckResult> {
   try {
     const update = await check();
     if (update) {
       pendingUpdate = update;
       useAppStore.getState().setUpdateAvailable(true, update.version);
-      return true;
+      return "available";
     } else {
       pendingUpdate = null;
       useAppStore.getState().setUpdateAvailable(false, null);
-      return false;
+      return "up-to-date";
     }
   } catch (e) {
     console.error("[updater] Check failed:", e);
-    return false;
+    return "error";
   }
 }
 

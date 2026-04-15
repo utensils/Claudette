@@ -45,10 +45,14 @@ export function GeneralSettings() {
   }, [updateAvailable]);
 
   const handleCheckForUpdates = async () => {
+    setError(null);
     setCheckState("checking");
-    const found = await checkForUpdate();
-    if (!found) {
+    const result = await checkForUpdate();
+    if (result === "up-to-date") {
       setCheckState("up-to-date");
+    } else if (result === "error") {
+      setCheckState("idle");
+      setError("Update check failed. Please try again later.");
     }
   };
 
