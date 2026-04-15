@@ -115,6 +115,16 @@ fn read_icon_style(db_path: &std::path::Path) -> TrayIconStyle {
     )
 }
 
+/// Mint a fresh tray id. Each invocation yields a distinct string so
+/// re-registration after a disable/enable cycle doesn't collide with the
+/// previous tray's DBus path on Linux (see the setup_tray comment).
+fn mint_tray_id(state: &AppState) -> String {
+    let seq = state
+        .next_tray_seq
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("claudette-tray-{seq}")
+}
+
 /// Create and register the system tray icon.
 /// Returns early (no-op) if the `tray_enabled` setting is `"false"`.
 pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
@@ -143,7 +153,15 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
     let (icon_bytes, is_template) = style.icon_for(TrayState::Idle);
     let icon = Image::from_bytes(icon_bytes).map_err(|e| e.to_string())?;
 
-    let tray = TrayIconBuilder::with_id("claudette-tray")
+    // Each tray instance gets a unique id. On Linux, libayatana-appindicator
+    // exports DBus objects derived from the id, and the previous tray's
+    // DBus path releases asynchronously on the GLib main loop. Reusing a
+    // fixed id like "claudette-tray" collides on toggle off->on so the
+    // new tray fails to register and silently vanishes. A monotonic
+    // suffix sidesteps the collision entirely.
+    let tray_id = mint_tray_id(&state);
+
+    let tray = TrayIconBuilder::with_id(&tray_id)
         .icon(icon)
         .icon_as_template(is_template)
         .tooltip("Claudette")
@@ -305,14 +323,21 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
 /// removal on the main run loop.
 pub fn destroy_tray(app: &AppHandle) {
     let state = app.state::<AppState>();
-    if let Ok(mut guard) = state.tray_handle.lock() {
-        guard.take(); // clear our handle
+    // Read the id off the current handle before dropping it so the
+    // subsequent remove_tray_by_id call matches the actual registered
+    // tray. IDs are now unique per creation (see setup_tray).
+    let tray_id: Option<String> = state
+        .tray_handle
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take().map(|t| t.id().as_ref().to_string()));
+
+    if let Some(id) = tray_id {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = handle.remove_tray_by_id(&id);
+        });
     }
-    // Dispatch removal to the main thread to satisfy macOS requirements.
-    let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let _ = handle.remove_tray_by_id("claudette-tray");
-    });
 }
 
 /// Determine the overall tray state from all agent sessions.
@@ -710,6 +735,62 @@ mod tests {
                 );
             }
         }
+    }
+
+    // --- Tray ID minting ---
+    // These guard the fix for the Linux DBus re-registration bug: each
+    // setup_tray must produce a fresh id so libayatana-appindicator's
+    // asynchronous DBus unregistration of the previous tray can't block
+    // the new tray from claiming its path.
+
+    fn fresh_state() -> AppState {
+        // Lightweight AppState for unit tests — the db path and worktree
+        // dir aren't exercised here, only next_tray_seq.
+        AppState::new(
+            std::path::PathBuf::from(":memory:"),
+            std::path::PathBuf::from("/tmp"),
+        )
+    }
+
+    #[test]
+    fn mint_tray_id_produces_unique_sequential_ids() {
+        let state = fresh_state();
+        let a = mint_tray_id(&state);
+        let b = mint_tray_id(&state);
+        let c = mint_tray_id(&state);
+        assert_ne!(
+            a, b,
+            "successive ids must differ (Linux DBus path collision)"
+        );
+        assert_ne!(b, c);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn mint_tray_id_uses_claudette_tray_prefix() {
+        // The id appears in DBus paths and user-facing logs. Keeping the
+        // recognizable `claudette-tray` prefix makes it easy to grep for
+        // while still varying the suffix.
+        let state = fresh_state();
+        let id = mint_tray_id(&state);
+        assert!(
+            id.starts_with("claudette-tray-"),
+            "expected claudette-tray-* prefix, got {id:?}"
+        );
+        // The suffix must be parseable as a u64 so it can't accidentally
+        // become something that breaks DBus name rules.
+        let suffix = id.trim_start_matches("claudette-tray-");
+        suffix
+            .parse::<u64>()
+            .unwrap_or_else(|_| panic!("tray id suffix must be numeric: {id:?}"));
+    }
+
+    #[test]
+    fn mint_tray_id_starts_from_one_on_fresh_state() {
+        // Matches the AppState::new initialization. A zero starting value
+        // would be surprising in logs; keep the baseline at 1.
+        let state = fresh_state();
+        assert_eq!(mint_tray_id(&state), "claudette-tray-1");
     }
 
     #[test]
