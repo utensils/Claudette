@@ -210,8 +210,8 @@ export function AgentQuestionCard({
 
   const handleFreeformChange = (text: string) => {
     setFreeformTexts((prev) => ({ ...prev, [currentIndex]: text }));
-    if (text.trim()) {
-      // Clear option selections when typing freeform
+    // Clear option selections when typing freeform
+    if (text) {
       setSelections((prev) => ({ ...prev, [currentIndex]: new Set() }));
     }
   };
