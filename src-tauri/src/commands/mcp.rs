@@ -135,7 +135,12 @@ pub async fn ensure_and_validate_mcps(
 
     // Merge with existing DB state: preserve enabled flags for known servers,
     // add new ones respecting ~/.claude.json disabledMcpServers.
-    let existing = db.list_repository_mcp_servers(&repo_id).unwrap_or_default();
+    let existing = db
+        .list_repository_mcp_servers(&repo_id)
+        .unwrap_or_else(|e| {
+            eprintln!("[mcp] Failed to load existing MCP servers for {repo_id}: {e}");
+            Vec::new()
+        });
     let existing_by_name: std::collections::HashMap<String, &RepositoryMcpServer> =
         existing.iter().map(|s| (s.name.clone(), s)).collect();
     let disabled_list = mcp::get_disabled_servers(repo_path);

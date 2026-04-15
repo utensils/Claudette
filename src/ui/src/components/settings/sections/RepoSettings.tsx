@@ -331,8 +331,8 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
       <div className={styles.fieldGroup}>
         <div className={styles.fieldLabel}>MCP servers</div>
         <div className={styles.fieldHint} style={{ marginBottom: 12 }}>
-          Servers injected into agent sessions. Toggle to enable or disable per
-          workspace.
+          Servers injected into agent sessions. Toggle to enable or disable for
+          this repository.
         </div>
         {mcpServers.length === 0 ? (
           <div className={styles.fieldHint}>

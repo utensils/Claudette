@@ -228,7 +228,12 @@ pub fn set_server_disabled_in_config(
 
     let json_str =
         serde_json::to_string_pretty(&root).map_err(|e| format!("Serialize error: {e}"))?;
-    std::fs::write(&config_path, json_str).map_err(|e| format!("Write error: {e}"))?;
+
+    // Atomic write: write to temp file then rename, so a crash mid-write
+    // cannot truncate/corrupt the user's ~/.claude.json.
+    let tmp_path = config_path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, &json_str).map_err(|e| format!("Write error: {e}"))?;
+    std::fs::rename(&tmp_path, &config_path).map_err(|e| format!("Rename error: {e}"))?;
 
     Ok(())
 }

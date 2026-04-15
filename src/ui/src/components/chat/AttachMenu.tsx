@@ -57,10 +57,11 @@ export function AttachMenu({
     ensureAndValidateMcps(id)
       .then((snapshot) => {
         setMcpStatus(id, snapshot);
-        return loadRepositoryMcps(id);
       })
-      .then(setServers)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        loadRepositoryMcps(id).then(setServers).catch(() => {});
+      });
   }, [repoId, setMcpStatus]);
 
   // Close on Escape.
@@ -162,32 +163,37 @@ export function AttachMenu({
 
                     return (
                       <div key={server.id} className={styles.serverRow}>
-                        <button
-                          className={styles.serverInfo}
-                          onClick={() => {
-                            if (isFailed) {
-                              handleReconnect(server.name);
-                            }
-                          }}
-                          title={
-                            isFailed
-                              ? `Failed: ${status?.last_error ?? "unknown"} — click to reconnect`
-                              : undefined
-                          }
-                        >
-                          <span
-                            className={styles.serverDot}
-                            style={{ background: stateColor }}
-                          />
-                          <span
-                            className={`${styles.serverName} ${!server.enabled ? styles.serverNameDisabled : ""}`}
+                        {isFailed ? (
+                          <button
+                            type="button"
+                            className={styles.serverInfo}
+                            onClick={() => handleReconnect(server.name)}
+                            title={`Failed: ${status?.last_error ?? "unknown"} — click to reconnect`}
                           >
-                            {server.name}
-                          </span>
-                          {isFailed && (
+                            <span
+                              className={styles.serverDot}
+                              style={{ background: stateColor }}
+                            />
+                            <span
+                              className={`${styles.serverName} ${!server.enabled ? styles.serverNameDisabled : ""}`}
+                            >
+                              {server.name}
+                            </span>
                             <span className={styles.reconnectHint}>retry</span>
-                          )}
-                        </button>
+                          </button>
+                        ) : (
+                          <div className={styles.serverInfo}>
+                            <span
+                              className={styles.serverDot}
+                              style={{ background: stateColor }}
+                            />
+                            <span
+                              className={`${styles.serverName} ${!server.enabled ? styles.serverNameDisabled : ""}`}
+                            >
+                              {server.name}
+                            </span>
+                          </div>
+                        )}
                         <button
                           className={`${styles.toggle} ${server.enabled ? styles.toggleOn : ""}`}
                           onClick={() => handleToggle(server, !server.enabled)}
