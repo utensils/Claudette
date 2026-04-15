@@ -231,8 +231,14 @@ pub fn set_server_disabled_in_config(
 
     // Atomic write: write to temp file then rename, so a crash mid-write
     // cannot truncate/corrupt the user's ~/.claude.json.
+    // On Windows, std::fs::rename does not overwrite an existing file,
+    // so we remove it first.
     let tmp_path = config_path.with_extension("json.tmp");
     std::fs::write(&tmp_path, &json_str).map_err(|e| format!("Write error: {e}"))?;
+    #[cfg(windows)]
+    if config_path.exists() {
+        std::fs::remove_file(&config_path).map_err(|e| format!("Remove error: {e}"))?;
+    }
     std::fs::rename(&tmp_path, &config_path).map_err(|e| format!("Rename error: {e}"))?;
 
     Ok(())

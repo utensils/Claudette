@@ -989,7 +989,8 @@ fn build_persistent_args(
     }
     args.push(session_id.to_string());
 
-    if let Some(ref model) = settings.model {
+    // Model is session-level — only set on fresh sessions, not resumes.
+    if !is_resume && let Some(ref model) = settings.model {
         args.push("--model".to_string());
         args.push(model.clone());
     }
@@ -1032,13 +1033,13 @@ fn build_persistent_args(
     }
 
     if !bypass_permissions && !allowed_tools.is_empty() {
-        for tool in allowed_tools {
-            args.push("--allowedTools".to_string());
-            args.push(tool.clone());
-        }
+        args.push("--allowedTools".to_string());
+        args.push(allowed_tools.join(","));
     }
 
-    if let Some(instructions) = custom_instructions
+    // System prompt is session-level — only set on fresh sessions, not resumes.
+    if !is_resume
+        && let Some(instructions) = custom_instructions
         && !instructions.trim().is_empty()
     {
         args.push("--append-system-prompt".to_string());
@@ -2378,15 +2379,8 @@ mod tests {
         let settings = AgentSettings::default();
         let tools = vec!["Read".to_string(), "Bash".to_string()];
         let args = build_persistent_args("sess-1", false, &tools, None, &settings);
-        let tool_indices: Vec<usize> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| a.as_str() == "--allowedTools")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(tool_indices.len(), 2);
-        assert_eq!(args[tool_indices[0] + 1], "Read");
-        assert_eq!(args[tool_indices[1] + 1], "Bash");
+        let idx = args.iter().position(|a| a == "--allowedTools").unwrap();
+        assert_eq!(args[idx + 1], "Read,Bash");
     }
 
     #[test]
@@ -2423,15 +2417,8 @@ mod tests {
         let mcp_idx = args.iter().position(|a| a == "--mcp-config").unwrap();
         assert!(args[mcp_idx + 1].contains("mcpServers"));
 
-        let tool_positions: Vec<usize> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| a.as_str() == "--allowedTools")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(tool_positions.len(), 2);
-        assert_eq!(args[tool_positions[0] + 1], "Bash");
-        assert_eq!(args[tool_positions[1] + 1], "Read");
+        let idx = args.iter().position(|a| a == "--allowedTools").unwrap();
+        assert_eq!(args[idx + 1], "Bash,Read");
     }
 
     #[test]
