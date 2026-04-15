@@ -64,20 +64,118 @@ pub struct PtyHandle {
 pub struct LocalServerState {
     /// Handle to the running server process.
     pub child: tokio::process::Child,
+    /// The PID captured at spawn time for reliable synchronous cleanup.
+    /// `tokio::process::Child::id()` returns `None` after the child is reaped,
+    /// so we store the PID eagerly.
+    pub pid: u32,
     /// The connection string printed by the server on startup.
     pub connection_string: String,
 }
 
 impl Drop for LocalServerState {
     fn drop(&mut self) {
-        // Kill the server process when this state is dropped.
-        // Use start_kill() instead of kill() since we're in a sync context.
-        if let Err(e) = self.child.start_kill() {
-            eprintln!("[cleanup] Failed to kill local server: {e}");
-        } else {
-            eprintln!("[cleanup] Stopped local claudette-server");
+        // If tokio can still reach the child, check whether it already exited
+        // (e.g. crash, external kill). If so, skip the PID-based cleanup to
+        // avoid signaling a recycled PID that now belongs to another process.
+        if let Ok(Some(_status)) = self.child.try_wait() {
+            eprintln!("[cleanup] Server process already exited");
+            return;
         }
+        // Best-effort tokio-level kill (may fail if runtime is gone).
+        let _ = self.child.start_kill();
+        // Synchronous POSIX kill — works even during process teardown when the
+        // tokio runtime is no longer available.
+        kill_process_sync(self.pid);
     }
+}
+
+/// Synchronously try to terminate a process and wait for it to exit.
+///
+/// On Unix, this first sends `SIGTERM` and allows a short grace period for
+/// graceful shutdown. If the process does not exit in time, it escalates to
+/// `SIGKILL` and reaps the process. This is safe to call from `Drop` impls
+/// and the `RunEvent::Exit` handler where async code cannot run. Uses raw
+/// libc calls so it does not depend on the tokio runtime.
+pub fn kill_process_sync(pid: u32) {
+    use std::time::{Duration, Instant};
+    let pid = pid as i32;
+    // A pid of 0 would signal our own process group — guard against it.
+    if pid <= 0 {
+        return;
+    }
+
+    // First try SIGTERM for a graceful shutdown.
+    // SAFETY: pid is a valid positive i32.
+    let ret = unsafe { libc::kill(pid, libc::SIGTERM) };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() == Some(libc::ESRCH) {
+            eprintln!("[cleanup] Server process {pid} already exited");
+        } else {
+            eprintln!("[cleanup] Failed to send SIGTERM to server process {pid}: {err}");
+        }
+        return;
+    }
+
+    // Give the server up to 500ms to exit gracefully.
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < deadline {
+        // SAFETY: waitpid with WNOHANG is a standard POSIX call.
+        let mut status: libc::c_int = 0;
+        let ret = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+        if ret == pid {
+            eprintln!("[cleanup] Stopped local claudette-server (pid {pid})");
+            return;
+        }
+        if ret == -1 {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::ECHILD) {
+                // No such child — already reaped.
+                eprintln!("[cleanup] Stopped local claudette-server (pid {pid})");
+                return;
+            }
+            // EINTR or other transient error — retry.
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // Graceful shutdown timed out — force kill.
+    // SAFETY: pid is a valid positive i32.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+
+    // Try to reap the process without blocking indefinitely. If it does not
+    // become waitable in time (e.g. stuck in uninterruptible sleep), give up
+    // so app shutdown cannot hang forever.
+    let reap_deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < reap_deadline {
+        let mut status: libc::c_int = 0;
+        // SAFETY: waitpid with WNOHANG is a standard POSIX call.
+        let ret = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+        if ret == pid {
+            eprintln!("[cleanup] Force-killed local claudette-server (pid {pid})");
+            return;
+        }
+        if ret == -1 {
+            let err = std::io::Error::last_os_error();
+            match err.raw_os_error() {
+                Some(libc::ECHILD) => {
+                    eprintln!("[cleanup] Force-killed local claudette-server (pid {pid})");
+                    return;
+                }
+                Some(libc::EINTR) => {} // Retry.
+                _ => {
+                    eprintln!(
+                        "[cleanup] Sent SIGKILL to claudette-server (pid {pid}) but could not reap: {err}"
+                    );
+                    return;
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    eprintln!(
+        "[cleanup] Sent SIGKILL to claudette-server (pid {pid}) but timed out waiting to reap"
+    );
 }
 
 /// Application-wide managed state, shared across all Tauri commands.
@@ -120,5 +218,98 @@ impl AppState {
 
     pub fn next_pty_id(&self) -> u64 {
         self.next_pty_id.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod tests {
+    use super::*;
+
+    /// Helper: spawn a long-running `sleep` process and return its PID.
+    fn spawn_sleep() -> (tokio::process::Child, u32) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let child = tokio::process::Command::new("sleep")
+                .arg("3600")
+                .kill_on_drop(true)
+                .spawn()
+                .expect("failed to spawn sleep");
+            let pid = child.id().expect("missing pid");
+            (child, pid)
+        })
+    }
+
+    /// Returns true if the given PID is still alive.
+    fn is_alive(pid: u32) -> bool {
+        // kill(pid, 0) checks existence without sending a signal.
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+
+    #[test]
+    fn kill_process_sync_terminates_running_process() {
+        let (child, pid) = spawn_sleep();
+        assert!(is_alive(pid), "process should be alive after spawn");
+
+        // Forget the tokio child so kill_on_drop doesn't interfere.
+        std::mem::forget(child);
+
+        kill_process_sync(pid);
+
+        // Give the OS a moment to update process table.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(
+            !is_alive(pid),
+            "process should be dead after kill_process_sync"
+        );
+    }
+
+    #[test]
+    fn kill_process_sync_noop_for_dead_process() {
+        let (child, pid) = spawn_sleep();
+        std::mem::forget(child);
+
+        // Kill it once.
+        kill_process_sync(pid);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!is_alive(pid));
+
+        // Calling again on a dead PID should not panic.
+        kill_process_sync(pid);
+    }
+
+    #[test]
+    fn kill_process_sync_noop_for_zero_pid() {
+        // pid 0 would signal our own process group — must be a no-op.
+        kill_process_sync(0);
+    }
+
+    #[test]
+    fn local_server_state_drop_kills_child() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let (child, pid) = rt.block_on(async {
+            let child = tokio::process::Command::new("sleep")
+                .arg("3600")
+                .kill_on_drop(true)
+                .spawn()
+                .expect("failed to spawn sleep");
+            let pid = child.id().expect("missing pid");
+            (child, pid)
+        });
+        assert!(is_alive(pid));
+
+        let state = LocalServerState {
+            child,
+            pid,
+            connection_string: String::new(),
+        };
+        // Dropping the state should kill the process.
+        drop(state);
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(
+            !is_alive(pid),
+            "child should be dead after LocalServerState is dropped"
+        );
     }
 }
