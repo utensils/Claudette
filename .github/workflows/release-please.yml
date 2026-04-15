@@ -68,11 +68,11 @@ jobs:
         include:
           - platform: macos-latest
             rust-target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             label: macos-aarch64
           - platform: macos-15-intel
             rust-target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             label: macos-x86_64
           - platform: ubuntu-22.04
             rust-target: x86_64-unknown-linux-gnu

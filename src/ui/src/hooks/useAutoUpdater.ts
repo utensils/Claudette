@@ -1,37 +1,43 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useAppStore } from "../stores/useAppStore";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
-export function useAutoUpdater() {
-  const updateRef = useRef<Update | null>(null);
+// Module-level storage so both the hook and external callers (e.g. Settings)
+// share the same Update handle.
+let pendingUpdate: Update | null = null;
 
-  const setUpdateAvailable = useAppStore((s) => s.setUpdateAvailable);
+export type UpdateCheckResult = "available" | "up-to-date" | "error";
+
+/** Check the updater endpoint and update Zustand state. */
+export async function checkForUpdate(): Promise<UpdateCheckResult> {
+  try {
+    const update = await check();
+    if (update) {
+      pendingUpdate = update;
+      useAppStore.getState().setUpdateAvailable(true, update.version);
+      return "available";
+    } else {
+      pendingUpdate = null;
+      useAppStore.getState().setUpdateAvailable(false, null);
+      return "up-to-date";
+    }
+  } catch (e) {
+    console.error("[updater] Check failed:", e);
+    return "error";
+  }
+}
+
+export function useAutoUpdater() {
   const setUpdateDismissed = useAppStore((s) => s.setUpdateDismissed);
   const setUpdateInstallWhenIdle = useAppStore((s) => s.setUpdateInstallWhenIdle);
   const setUpdateDownloading = useAppStore((s) => s.setUpdateDownloading);
   const setUpdateProgress = useAppStore((s) => s.setUpdateProgress);
 
-  const checkForUpdate = useCallback(async () => {
-    try {
-      const update = await check();
-      if (update) {
-        updateRef.current = update;
-        setUpdateAvailable(true, update.version);
-      } else {
-        // No update available — clear any stale state (e.g. release withdrawn).
-        updateRef.current = null;
-        setUpdateAvailable(false, null);
-      }
-    } catch (e) {
-      console.error("[updater] Check failed:", e);
-    }
-  }, [setUpdateAvailable]);
-
   const installNow = useCallback(async () => {
-    const update = updateRef.current;
+    const update = pendingUpdate;
     if (!update) return;
     if (useAppStore.getState().updateDownloading) return;
 
@@ -62,7 +68,7 @@ export function useAutoUpdater() {
       // Re-check to get a fresh Update instance after failure
       checkForUpdate();
     }
-  }, [setUpdateDownloading, setUpdateProgress, checkForUpdate]);
+  }, [setUpdateDownloading, setUpdateProgress]);
 
   const installWhenIdle = useCallback(() => {
     const hasRunning = useAppStore.getState().workspaces.some(
@@ -88,7 +94,7 @@ export function useAutoUpdater() {
     checkForUpdate();
     const intervalId = window.setInterval(checkForUpdate, CHECK_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [checkForUpdate]);
+  }, []);
 
   // Install when idle: watch for all agents to stop running.
   const updateInstallWhenIdle = useAppStore((s) => s.updateInstallWhenIdle);
