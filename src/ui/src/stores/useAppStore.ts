@@ -194,13 +194,15 @@ interface AppState {
 
   // -- Terminal --
   terminalTabs: Record<string, TerminalTab[]>;
-  activeTerminalTabId: number | null;
+  // Active tab id is workspace-scoped: switching workspaces preserves each
+  // workspace's last-active tab independently.
+  activeTerminalTabId: Record<string, number | null>;
   terminalPanelVisible: boolean;
   workspaceTerminalCommands: Record<string, WorkspaceCommandState>;
   setTerminalTabs: (wsId: string, tabs: TerminalTab[]) => void;
   addTerminalTab: (wsId: string, tab: TerminalTab) => void;
   removeTerminalTab: (wsId: string, tabId: number) => void;
-  setActiveTerminalTab: (id: number | null) => void;
+  setActiveTerminalTab: (wsId: string, id: number | null) => void;
   toggleTerminalPanel: () => void;
   setWorkspaceTerminalCommand: (
     wsId: string,
@@ -331,10 +333,23 @@ export const useAppStore = create<AppState>((set) => ({
       ),
     })),
   removeRepository: (id) =>
-    set((s) => ({
-      repositories: s.repositories.filter((r) => r.id !== id),
-      workspaces: s.workspaces.filter((w) => w.repository_id !== id),
-    })),
+    set((s) => {
+      const removedWsIds = s.workspaces
+        .filter((w) => w.repository_id === id)
+        .map((w) => w.id);
+      const newTerminalTabs = { ...s.terminalTabs };
+      const newActiveTerminalTabId = { ...s.activeTerminalTabId };
+      for (const wsId of removedWsIds) {
+        delete newTerminalTabs[wsId];
+        delete newActiveTerminalTabId[wsId];
+      }
+      return {
+        repositories: s.repositories.filter((r) => r.id !== id),
+        workspaces: s.workspaces.filter((w) => w.repository_id !== id),
+        terminalTabs: newTerminalTabs,
+        activeTerminalTabId: newActiveTerminalTabId,
+      };
+    }),
 
   // -- Workspaces --
   workspaces: [],
@@ -351,11 +366,20 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const newUnreadCompletions = new Set(s.unreadCompletions);
       newUnreadCompletions.delete(id);
+      // Drop terminal state for the removed workspace. The cleanup effect in
+      // TerminalPanel watches `terminalTabs` and tears down xterm instances
+      // and PTYs whose tab ids no longer exist in any workspace.
+      const newTerminalTabs = { ...s.terminalTabs };
+      delete newTerminalTabs[id];
+      const newActiveTerminalTabId = { ...s.activeTerminalTabId };
+      delete newActiveTerminalTabId[id];
       return {
         workspaces: s.workspaces.filter((w) => w.id !== id),
         selectedWorkspaceId:
           s.selectedWorkspaceId === id ? null : s.selectedWorkspaceId,
         unreadCompletions: newUnreadCompletions,
+        terminalTabs: newTerminalTabs,
+        activeTerminalTabId: newActiveTerminalTabId,
       };
     }),
   selectWorkspace: (id) =>
@@ -742,7 +766,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // -- Terminal --
   terminalTabs: {},
-  activeTerminalTabId: null,
+  activeTerminalTabId: {},
   terminalPanelVisible: false,
   workspaceTerminalCommands: {},
   setTerminalTabs: (wsId, tabs) =>
@@ -755,21 +779,24 @@ export const useAppStore = create<AppState>((set) => ({
         ...s.terminalTabs,
         [wsId]: [...(s.terminalTabs[wsId] || []), tab],
       },
-      activeTerminalTabId: tab.id,
+      activeTerminalTabId: { ...s.activeTerminalTabId, [wsId]: tab.id },
       terminalPanelVisible: true,
     })),
   removeTerminalTab: (wsId, tabId) =>
     set((s) => {
       const tabs = (s.terminalTabs[wsId] || []).filter((t) => t.id !== tabId);
+      const wasActive = s.activeTerminalTabId[wsId] === tabId;
       return {
         terminalTabs: { ...s.terminalTabs, [wsId]: tabs },
-        activeTerminalTabId:
-          s.activeTerminalTabId === tabId
-            ? (tabs[0]?.id ?? null)
-            : s.activeTerminalTabId,
+        activeTerminalTabId: wasActive
+          ? { ...s.activeTerminalTabId, [wsId]: tabs[0]?.id ?? null }
+          : s.activeTerminalTabId,
       };
     }),
-  setActiveTerminalTab: (id) => set({ activeTerminalTabId: id }),
+  setActiveTerminalTab: (wsId, id) =>
+    set((s) => ({
+      activeTerminalTabId: { ...s.activeTerminalTabId, [wsId]: id },
+    })),
   toggleTerminalPanel: () =>
     set((s) => ({ terminalPanelVisible: !s.terminalPanelVisible })),
   setWorkspaceTerminalCommand: (wsId, state) =>
