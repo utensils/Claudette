@@ -212,11 +212,21 @@ export function GeneralSettings() {
             value={trayIconStyle}
             aria-label="Tray icon style"
             disabled={!trayEnabled}
-            onChange={(e) =>
-              handleTrayIconStyleChange(
-                e.target.value as "auto" | "light" | "dark" | "color",
-              )
-            }
+            onChange={(e) => {
+              // The <select> options below only emit these four values,
+              // but validate at runtime anyway — avoids persisting a
+              // surprise value if the DOM gets manipulated by an
+              // extension or the options list ever changes shape.
+              const value = e.target.value;
+              if (
+                value === "auto" ||
+                value === "light" ||
+                value === "dark" ||
+                value === "color"
+              ) {
+                handleTrayIconStyleChange(value);
+              }
+            }}
           >
             <option value="auto">Auto</option>
             <option value="light">Light</option>

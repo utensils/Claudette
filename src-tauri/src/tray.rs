@@ -8,8 +8,19 @@ use claudette::model::WorkspaceStatus;
 
 use crate::state::AppState;
 
-// Baseline (auto) icons — monochrome black-on-transparent shapes that macOS
-// renders as template images and Linux/Windows render as-is.
+// Baseline tray icons (the ones shipped for the Auto style).
+//
+// - `idle` is a black-on-transparent critter silhouette.
+// - `active` layers a green accent badge over a subtle translucent-white
+//   glow of the critter shape.
+// - `attention` uses the same layout with an orange accent and an
+//   alpha-distinct alert dot below the badge; the alpha difference is
+//   what lets macOS template rendering distinguish Running from
+//   NeedsAttention (template mode collapses color to white but honors
+//   alpha).
+//
+// On macOS the builder passes these with `is_template=true` so the OS
+// tints to the menu-bar color. Linux and Windows render them as-is.
 static ICON_IDLE: &[u8] = include_bytes!("../../assets/tray-idle.png");
 static ICON_ACTIVE: &[u8] = include_bytes!("../../assets/tray-active.png");
 static ICON_ATTENTION: &[u8] = include_bytes!("../../assets/tray-attention.png");
@@ -112,12 +123,11 @@ impl TrayIconStyle {
     }
 }
 
-/// Read the current user-selected tray icon style from the app_settings DB.
-/// Returns `Auto` if the DB can't be opened or the key is unset.
-fn read_icon_style(db_path: &std::path::Path) -> TrayIconStyle {
-    let Ok(db) = Database::open(db_path) else {
-        return TrayIconStyle::Auto;
-    };
+/// Read the current user-selected tray icon style from an already-open DB.
+/// `rebuild_tray` runs on every agent state change, so threading the DB
+/// handle through (instead of re-opening the SQLite file per call) matters
+/// in aggregate.
+fn icon_style_from_db(db: &Database) -> TrayIconStyle {
     TrayIconStyle::from_setting(
         db.get_app_setting("tray_icon_style")
             .ok()
@@ -141,8 +151,14 @@ fn mint_tray_id(state: &AppState) -> String {
 pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
 
-    // Check setting — default to enabled.
-    if let Ok(db) = Database::open(&state.db_path)
+    // Open the app_settings DB once and reuse it for every read below.
+    // On a fresh install the file might not exist yet, in which case the
+    // default behavior (tray enabled, Auto style) applies — just like
+    // before this refactor.
+    let db = Database::open(&state.db_path).ok();
+
+    // Check tray_enabled setting — default to enabled.
+    if let Some(ref db) = db
         && let Ok(Some(val)) = db.get_app_setting("tray_enabled")
         && val == "false"
     {
@@ -156,11 +172,17 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let menu = build_tray_menu(app)?;
+    let menu = match &db {
+        Some(db) => build_tray_menu_with_db(app, db)?,
+        None => build_tray_menu(app)?,
+    };
     // Use the user's selected style for the initial icon. rebuild_tray will
     // re-read it on every state change so runtime preference changes take
     // effect without a restart.
-    let style = read_icon_style(&state.db_path);
+    let style = match &db {
+        Some(db) => icon_style_from_db(db),
+        None => TrayIconStyle::Auto,
+    };
     let (icon_bytes, is_template) = style.icon_for(TrayState::Idle);
     let icon = Image::from_bytes(icon_bytes).map_err(|e| e.to_string())?;
 
@@ -242,7 +264,18 @@ pub fn rebuild_tray(app: &AppHandle) {
         }
     };
 
-    let Ok(menu) = build_tray_menu(app) else {
+    // Open the settings DB once per rebuild and pass it through to the
+    // menu builder and the style lookup. `rebuild_tray` is called on every
+    // agent state change, so an extra DB open per call adds up. If the
+    // open fails, fall back to the DB-less path (menu won't reflect
+    // current repos/workspaces, but the rest continues to work).
+    let db = Database::open(&state.db_path).ok();
+
+    let menu = match &db {
+        Some(db) => build_tray_menu_with_db(app, db),
+        None => build_tray_menu(app),
+    };
+    let Ok(menu) = menu else {
         return;
     };
     let _ = tray.set_menu(Some(menu));
@@ -250,7 +283,10 @@ pub fn rebuild_tray(app: &AppHandle) {
     let tray_state = compute_tray_state(state.inner());
     // Re-read the user's icon-style preference each rebuild so runtime
     // changes (via the settings panel) propagate without an app restart.
-    let style = read_icon_style(&state.db_path);
+    let style = match &db {
+        Some(db) => icon_style_from_db(db),
+        None => TrayIconStyle::Auto,
+    };
     let (icon_bytes, is_template) = style.icon_for(tray_state);
     if let Ok(icon) = Image::from_bytes(icon_bytes) {
         let _ = tray.set_icon(Some(icon));
@@ -388,10 +424,20 @@ fn compute_tray_state_from_agents(
     TrayState::Idle
 }
 
-/// Build a menu listing workspaces grouped by repository.
+/// Build a menu listing workspaces grouped by repository. Opens its own
+/// DB connection — prefer `build_tray_menu_with_db` when the caller
+/// already has a `Database` open so we don't pay the file-open twice.
 fn build_tray_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
     let state = app.state::<AppState>();
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    build_tray_menu_with_db(app, &db)
+}
+
+/// Build the tray menu using an already-open DB. This is the hot path —
+/// `rebuild_tray` runs on every agent state change, so avoid re-opening
+/// the SQLite file per call.
+fn build_tray_menu_with_db(app: &AppHandle, db: &Database) -> Result<Menu<tauri::Wry>, String> {
+    let state = app.state::<AppState>();
     let repos = db.list_repositories().map_err(|e| e.to_string())?;
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
 
@@ -893,10 +939,11 @@ mod tests {
 
     #[test]
     fn each_style_state_combo_returns_distinct_bytes() {
-        // Ping that the include_bytes! asset map isn't collapsed — each
-        // combination should resolve to its own PNG payload. The "dark"
-        // variant intentionally shares bytes with Auto (both are the
-        // original black-on-transparent shape), so we exclude that pair.
+        // Ping that the include_bytes! asset map isn't collapsed — every
+        // style+state combination should resolve to a non-empty payload,
+        // and the Light vs Color variants at the same state should be
+        // visibly distinct PNGs. (Dark is also distinct from Auto/Color
+        // per the dedicated `dark_variant_is_actually_dark` test.)
         let mut seen: Vec<(TrayIconStyle, TrayState, &'static [u8])> = Vec::new();
         for style in [
             TrayIconStyle::Auto,
