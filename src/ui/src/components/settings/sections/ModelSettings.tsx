@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { getAppSetting, setAppSetting } from "../../../services/tauri";
 import { MODELS } from "../../chat/ModelSelector";
-import { EFFORT_LEVELS, isEffortSupported, isMaxEffortAllowed } from "../../chat/EffortSelector";
+import { EFFORT_LEVELS } from "../../chat/EffortSelector";
+import { isEffortSupported, isMaxEffortAllowed } from "../../chat/modelCapabilities";
 import styles from "../Settings.module.css";
 
 export function ModelSettings() {
