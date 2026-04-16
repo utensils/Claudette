@@ -70,6 +70,8 @@ export const Sidebar = memo(function Sidebar() {
   const planApprovals = useAppStore((s) => s.planApprovals);
   const setRepositories = useAppStore((s) => s.setRepositories);
   const metaKeyHeld = useAppStore((s) => s.metaKeyHeld);
+  const remoteConnections = useAppStore((s) => s.remoteConnections);
+  const discoveredServers = useAppStore((s) => s.discoveredServers);
   const isMac = navigator.platform.startsWith("Mac");
 
   // Filter dropdown state
@@ -190,19 +192,24 @@ export const Sidebar = memo(function Sidebar() {
         <div className={styles.filterDropdown} ref={filterDropdownRef}>
           <button
             className={styles.filterToggle}
-            onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+            onClick={() => setFilterMenuOpen((open) => !open)}
             title="Filter workspaces"
+            aria-label="Filter workspaces"
+            aria-haspopup="menu"
+            aria-expanded={filterMenuOpen}
+            aria-controls="workspace-filter-menu"
           >
             <Filter size={12} />
           </button>
           {filterMenuOpen && (
-            <div className={styles.filterMenu}>
+            <div className={styles.filterMenu} id="workspace-filter-menu" role="menu">
               <button
                 className={styles.filterMenuItem}
                 onClick={() => {
                   setSidebarFilter("all");
                   setFilterMenuOpen(false);
                 }}
+                role="menuitem"
               >
                 <span>All</span>
                 {sidebarFilter === "all" && <Check size={14} />}
@@ -213,6 +220,7 @@ export const Sidebar = memo(function Sidebar() {
                   setSidebarFilter("active");
                   setFilterMenuOpen(false);
                 }}
+                role="menuitem"
               >
                 <span>Active</span>
                 {sidebarFilter === "active" && <Check size={14} />}
@@ -223,20 +231,24 @@ export const Sidebar = memo(function Sidebar() {
                   setSidebarFilter("archived");
                   setFilterMenuOpen(false);
                 }}
+                role="menuitem"
               >
                 <span>Archived</span>
                 {sidebarFilter === "archived" && <Check size={14} />}
               </button>
-              <button
-                className={styles.filterMenuItem}
-                onClick={() => {
-                  setSidebarFilter("remote");
-                  setFilterMenuOpen(false);
-                }}
-              >
-                <span>Remote</span>
-                {sidebarFilter === "remote" && <Check size={14} />}
-              </button>
+              {(remoteConnections.length > 0 || discoveredServers.length > 0) && (
+                <button
+                  className={styles.filterMenuItem}
+                  onClick={() => {
+                    setSidebarFilter("remote");
+                    setFilterMenuOpen(false);
+                  }}
+                  role="menuitem"
+                >
+                  <span>Remote</span>
+                  {sidebarFilter === "remote" && <Check size={14} />}
+                </button>
+              )}
             </div>
           )}
         </div>
