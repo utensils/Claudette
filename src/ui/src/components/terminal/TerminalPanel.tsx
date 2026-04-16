@@ -68,8 +68,6 @@ function closePtyBestEffort(ptyId: number) {
 export const TerminalPanel = memo(function TerminalPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
-  const repositories = useAppStore((s) => s.repositories);
-  const defaultBranches = useAppStore((s) => s.defaultBranches);
   const terminalTabs = useAppStore((s) => s.terminalTabs);
   // Workspace-scoped active tab. Read through the selector so each workspace
   // preserves its own active tab independently.

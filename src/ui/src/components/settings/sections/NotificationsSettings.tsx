@@ -63,10 +63,12 @@ export function NotificationsSettings() {
       setError(null);
       await setAppSetting("notification_command", notificationCommand);
       await runNotificationCommand(
-        "Test Notification",
-        "This is a test notification",
+        "test-workspace",
         "test",
-        "test-workspace"
+        "/tmp/test",
+        "/tmp/test",
+        "main",
+        "claudette/test-workspace"
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Command failed");
