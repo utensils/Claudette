@@ -3,7 +3,7 @@ import { Sparkles, Zap, Brain, BookOpen, Gauge, Eye, EyeOff, Globe } from "lucid
 import { useAppStore } from "../../stores/useAppStore";
 import { resetAgentSession, setAppSetting, getAppSetting } from "../../services/tauri";
 import { ModelSelector, MODELS } from "./ModelSelector";
-import { EffortSelector, EFFORT_LEVELS, isMaxEffortAllowed, isEffortSupported } from "./EffortSelector";
+import { EffortSelector, EFFORT_LEVELS, isMaxEffortAllowed, isXhighEffortAllowed, isEffortSupported } from "./EffortSelector";
 import styles from "./ChatToolbar.module.css";
 
 interface ChatToolbarProps {
@@ -73,9 +73,11 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
       if (effectiveEffort) {
         const normalized = !isEffortSupported(loadedModel)
           ? "auto"
-          : effectiveEffort === "max" && !isMaxEffortAllowed(loadedModel)
+          : effectiveEffort === "xhigh" && !isXhighEffortAllowed(loadedModel)
             ? "high"
-            : effectiveEffort;
+            : effectiveEffort === "max" && !isMaxEffortAllowed(loadedModel)
+              ? "high"
+              : effectiveEffort;
         setEffortLevel(workspaceId, normalized);
       }
       setShowThinkingBlocks(workspaceId, showThinking === "true" || (!showThinking && defShowThinking === "true"));
@@ -100,6 +102,10 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
           // Model doesn't support effort at all — clear to auto (won't be sent).
           setEffortLevel(workspaceId, "auto");
           await setAppSetting(`effort_level:${workspaceId}`, "auto");
+        } else if (effortLevel === "xhigh" && !isXhighEffortAllowed(model)) {
+          // Model supports effort but not "xhigh" — fall back to high.
+          setEffortLevel(workspaceId, "high");
+          await setAppSetting(`effort_level:${workspaceId}`, "high");
         } else if (effortLevel === "max" && !isMaxEffortAllowed(model)) {
           // Model supports effort but not "max" — fall back to high.
           setEffortLevel(workspaceId, "high");

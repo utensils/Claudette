@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isEffortSupported, isMaxEffortAllowed, EFFORT_LEVELS } from "./EffortSelector";
+import { isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed, EFFORT_LEVELS } from "./EffortSelector";
 
 describe("isEffortSupported", () => {
   it("returns true for opus", () => {
@@ -27,6 +27,28 @@ describe("isEffortSupported", () => {
   });
 });
 
+describe("isXhighEffortAllowed", () => {
+  it("returns true for opus", () => {
+    expect(isXhighEffortAllowed("opus")).toBe(true);
+  });
+
+  it("returns true for claude-opus-4-7", () => {
+    expect(isXhighEffortAllowed("claude-opus-4-7")).toBe(true);
+  });
+
+  it("returns false for claude-opus-4-6", () => {
+    expect(isXhighEffortAllowed("claude-opus-4-6")).toBe(false);
+  });
+
+  it("returns false for sonnet", () => {
+    expect(isXhighEffortAllowed("sonnet")).toBe(false);
+  });
+
+  it("returns false for haiku", () => {
+    expect(isXhighEffortAllowed("haiku")).toBe(false);
+  });
+});
+
 describe("isMaxEffortAllowed", () => {
   it("returns true for opus", () => {
     expect(isMaxEffortAllowed("opus")).toBe(true);
@@ -50,8 +72,8 @@ describe("isMaxEffortAllowed", () => {
 });
 
 describe("EFFORT_LEVELS", () => {
-  it("contains auto, low, medium, high, max in order", () => {
+  it("contains auto, low, medium, high, xhigh, max in order", () => {
     const ids = EFFORT_LEVELS.map((l) => l.id);
-    expect(ids).toEqual(["auto", "low", "medium", "high", "max"]);
+    expect(ids).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
   });
 });

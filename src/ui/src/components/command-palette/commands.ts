@@ -21,7 +21,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import type { ThemeDefinition } from "../../types/theme";
-import { isEffortSupported, isMaxEffortAllowed } from "../chat/EffortSelector";
+import { isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed } from "../chat/EffortSelector";
 
 export type CommandCategory =
   | "general"
@@ -158,13 +158,16 @@ export function buildEffortCommands(
     { id: "low", label: "Low", description: "Fast, minimal reasoning" },
     { id: "medium", label: "Medium", description: "Balanced" },
     { id: "high", label: "High", description: "Deep reasoning" },
+    { id: "xhigh", label: "Extra High", description: "Extended reasoning (Opus 4.7+)" },
     { id: "max", label: "Max", description: "Full budget (Opus only)" },
   ];
   const levels = !isEffortSupported(selectedModel)
     ? all.filter((l) => l.id === "auto")
-    : isMaxEffortAllowed(selectedModel)
+    : isXhighEffortAllowed(selectedModel)
       ? all
-      : all.filter((l) => l.id !== "max");
+      : isMaxEffortAllowed(selectedModel)
+        ? all.filter((l) => l.id !== "xhigh")
+        : all.filter((l) => l.id !== "xhigh" && l.id !== "max");
   return levels.map((l) => ({
     id: `effort:${l.id}`,
     name: `${l.label}${l.id === currentEffort ? " ✓" : ""}`,
