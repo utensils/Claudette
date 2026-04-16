@@ -4,6 +4,21 @@ import { parsePluginSlashCommand } from "./pluginSlashCommand";
 
 export type { NativeSlashKind };
 
+/** Valid section ids accepted by `/config <section>`. Mirrors the sections
+ *  handled by `SettingsPage.tsx`. Unknown/empty sections fall back to `general`. */
+export const CONFIG_SECTIONS = [
+  "general",
+  "models",
+  "usage",
+  "appearance",
+  "notifications",
+  "git",
+  "plugins",
+  "experimental",
+] as const;
+
+export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
+
 export interface NativeCommandContext {
   repoId: string | null;
   pluginManagementEnabled: boolean;
@@ -20,6 +35,11 @@ export interface NativeCommandContext {
    * the real review base via git/gh.
    */
   repoDefaultBranch: string | null;
+  openSettings: (section?: string) => void;
+  appVersion: string | null;
+  addLocalMessage: (text: string) => void;
+  openUsageSettingsExternal: () => void;
+  openReleaseNotes: () => void;
 }
 
 export type NativeCommandResult =
@@ -226,12 +246,81 @@ function reviewHandler(
   };
 }
 
+const configHandler: NativeHandler = {
+  name: "config",
+  aliases: ["configure"],
+  kind: "settings_route",
+  execute: (ctx, args) => {
+    const first = args.trim().split(/\s+/, 1)[0] ?? "";
+    const lowered = first.toLowerCase();
+    const section = (CONFIG_SECTIONS as readonly string[]).includes(lowered)
+      ? (lowered as ConfigSection)
+      : "general";
+    ctx.openSettings(section);
+    return { kind: "handled", canonicalName: "config" };
+  },
+};
+
+const usageHandler: NativeHandler = {
+  name: "usage",
+  aliases: [],
+  kind: "settings_route",
+  execute: (ctx) => {
+    ctx.openSettings("usage");
+    return { kind: "handled", canonicalName: "usage" };
+  },
+};
+
+const extraUsageHandler: NativeHandler = {
+  name: "extra-usage",
+  aliases: [],
+  kind: "settings_route",
+  execute: (ctx) => {
+    // Reuse the existing in-app usage panel (which shows extra-usage status
+    // and a Manage/Enable link) and also deep-link to claude.ai settings so
+    // the user can toggle extra usage immediately in either state.
+    ctx.openSettings("usage");
+    ctx.openUsageSettingsExternal();
+    return { kind: "handled", canonicalName: "extra-usage" };
+  },
+};
+
+const releaseNotesHandler: NativeHandler = {
+  name: "release-notes",
+  aliases: ["changelog"],
+  kind: "local_action",
+  execute: (ctx) => {
+    ctx.openReleaseNotes();
+    return { kind: "handled", canonicalName: "release-notes" };
+  },
+};
+
+/** Format the text shown by `/version`. Exported for testing. */
+export function formatVersionMessage(version: string | null): string {
+  return `Claudette v${version ?? "unknown"}`;
+}
+
+const versionHandler: NativeHandler = {
+  name: "version",
+  aliases: ["about"],
+  kind: "local_action",
+  execute: (ctx) => {
+    ctx.addLocalMessage(formatVersionMessage(ctx.appVersion));
+    return { kind: "handled", canonicalName: "version" };
+  },
+};
+
 export const NATIVE_HANDLERS: NativeHandler[] = [
   pluginHandler("plugin"),
   pluginHandler("marketplace"),
   reviewHandler("review", REVIEW_PROMPT),
   reviewHandler("security-review", SECURITY_REVIEW_PROMPT),
   reviewHandler("pr-comments", PR_COMMENTS_PROMPT),
+  configHandler,
+  usageHandler,
+  extraUsageHandler,
+  releaseNotesHandler,
+  versionHandler,
 ];
 
 /** Resolve a slash command token (no leading `/`) against the native handler table. */
@@ -249,4 +338,3 @@ export function resolveNativeHandler(
     ) ?? null
   );
 }
-

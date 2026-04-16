@@ -11,6 +11,8 @@ import {
   listCheckpoints,
   loadCompletedTurns,
   listSlashCommands,
+  openReleaseNotes,
+  openUsageSettings,
   recordSlashCommandUsage,
   sendChatMessage,
   sendRemoteCommand,
@@ -143,6 +145,8 @@ export function ChatPanel() {
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const openPluginSettings = useAppStore((s) => s.openPluginSettings);
   const pluginManagementEnabled = useAppStore((s) => s.pluginManagementEnabled);
+  const openSettings = useAppStore((s) => s.openSettings);
+  const appVersion = useAppStore((s) => s.appVersion);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -440,6 +444,7 @@ export function ChatPanel() {
     if (parsedSlash) {
       const nativeHandler = resolveNativeHandler(parsedSlash.token);
       if (nativeHandler) {
+        const workspaceId = selectedWorkspaceId;
         const result = nativeHandler.execute(
           {
             repoId: repo?.remote_connection_id ? null : repo?.id ?? null,
@@ -450,6 +455,30 @@ export function ChatPanel() {
               ? { branch: ws.branch_name, worktreePath: ws.worktree_path }
               : null,
             repoDefaultBranch: defaultBranch ?? null,
+            openSettings,
+            appVersion,
+            addLocalMessage: (text: string) => {
+              addChatMessage(workspaceId, {
+                id: crypto.randomUUID(),
+                workspace_id: workspaceId,
+                role: "System",
+                content: text,
+                cost_usd: null,
+                duration_ms: null,
+                created_at: new Date().toISOString(),
+                thinking: null,
+              });
+            },
+            openUsageSettingsExternal: () => {
+              void openUsageSettings().catch((err) =>
+                console.error("Failed to open usage settings:", err),
+              );
+            },
+            openReleaseNotes: () => {
+              void openReleaseNotes().catch((err) =>
+                console.error("Failed to open release notes:", err),
+              );
+            },
           },
           parsedSlash.args,
         );

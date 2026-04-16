@@ -341,6 +341,10 @@ interface AppState {
   setUpdateInstallWhenIdle: (enabled: boolean) => void;
   setUpdateDownloading: (downloading: boolean) => void;
   setUpdateProgress: (progress: number) => void;
+
+  // -- App info --
+  appVersion: string | null;
+  setAppVersion: (version: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1144,6 +1148,10 @@ export const useAppStore = create<AppState>((set) => ({
   setUpdateDownloading: (downloading) =>
     set({ updateDownloading: downloading }),
   setUpdateProgress: (progress) => set({ updateProgress: progress }),
+
+  // -- App info --
+  appVersion: null,
+  setAppVersion: (version) => set({ appVersion: version }),
 }));
 
 // Expose store on window in dev builds for debug_eval_js access.
