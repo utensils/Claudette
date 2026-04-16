@@ -15,7 +15,7 @@ import {
   pairWithServer,
   startLocalServer,
 } from "../../services/tauri";
-import { Settings, Link, X, Share2, Plus, Globe, Archive, Trash2, BadgeCheck, BadgeInfo, BadgeQuestionMark, Cog, Filter, Check, LayoutDashboard, GitBranch, GitPullRequestArrow, GitPullRequestDraft, GitMerge, GitPullRequestClosed } from "lucide-react";
+import { Settings, Link, X, Share2, Plus, Globe, Archive, Trash2, BadgeCheck, BadgeInfo, BadgeQuestionMark, Cog, Filter, Check, LayoutDashboard, CircleDashed, GitPullRequestArrow, GitPullRequestDraft, GitMerge, GitPullRequestClosed } from "lucide-react";
 import { RepoIcon } from "../shared/RepoIcon";
 import { useSpinnerFrame } from "../../hooks/useSpinnerFrame";
 import styles from "./Sidebar.module.css";
@@ -523,7 +523,7 @@ export const Sidebar = memo(function Sidebar() {
                       }
                       return (
                         <span className={styles.statusIcon} title={ws.agent_status === "Stopped" ? "Stopped" : "Idle"}>
-                          <GitBranch size={14} style={{ color: ws.agent_status === "Stopped" ? "var(--status-stopped)" : "var(--text-dim)" }} />
+                          <CircleDashed size={14} style={{ color: ws.agent_status === "Stopped" ? "var(--status-stopped)" : "var(--text-dim)" }} />
                         </span>
                       );
                     })()}
