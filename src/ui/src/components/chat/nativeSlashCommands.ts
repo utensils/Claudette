@@ -128,10 +128,10 @@ function buildUserGuidanceBlock(args: string): string {
  */
 const RESOLVE_REVIEW_BASE_BLOCK = [
   "Resolve the review base ref before diffing. Prefer in this order:",
-  "1. `gh pr view --json baseRefName -q .baseRefName` — use it (prefixed with `origin/`) if a PR exists.",
-  "2. `git rev-parse --abbrev-ref @{upstream}` — use it if the branch tracks an explicit upstream.",
-  "3. Otherwise, fall back to the repo default branch listed in the context above.",
-  "4. If none of those yield a ref, stop and ask the user which branch to review against.",
+  "1. `gh pr view --json baseRefName -q .baseRefName` — if a PR exists, take that branch name and resolve it against the primary remote. Do NOT hardcode `origin/`; use `git remote` to find the actual remote name (may be `upstream` in fork workflows), then build `<remote>/<baseRefName>`.",
+  "2. `git rev-parse --abbrev-ref @{upstream}` — only use this when the upstream clearly names the review target branch (for example, the branch's PR base). Do NOT use it when `@{upstream}` is just this branch's own remote-tracking ref (e.g. `origin/feat/x` while you are on `feat/x`) — that yields an empty diff.",
+  "3. Otherwise, use the repo default branch listed in the context above as a fallback hint.",
+  "4. If none of those yield a confident base ref, stop and ask the user which branch to review against.",
   "Call the resolved ref `<base>` in the rest of this task.",
 ].join("\n");
 

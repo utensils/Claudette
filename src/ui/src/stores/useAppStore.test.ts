@@ -720,6 +720,60 @@ describe("mergeRemoteData / clearRemoteData default branches", () => {
     expect(useAppStore.getState().defaultBranches["remote-repo-1"]).toBe("origin/new");
   });
 
+  it("prunes defaultBranches for repos removed from a new remote payload (prev-repo-id based pruning)", () => {
+    // Seed connection with two remote repos.
+    useAppStore.getState().mergeRemoteData("conn-1", {
+      repositories: [
+        {
+          id: "remote-repo-1",
+          path: "/srv/a",
+          name: "a",
+          path_slug: "a",
+          icon: null,
+          created_at: "",
+          setup_script: null,
+          custom_instructions: null,
+          sort_order: 0,
+          branch_rename_preferences: null,
+          setup_script_auto_run: false,
+          path_valid: true,
+          remote_connection_id: null,
+        },
+        {
+          id: "remote-repo-2",
+          path: "/srv/b",
+          name: "b",
+          path_slug: "b",
+          icon: null,
+          created_at: "",
+          setup_script: null,
+          custom_instructions: null,
+          sort_order: 0,
+          branch_rename_preferences: null,
+          setup_script_auto_run: false,
+          path_valid: true,
+          remote_connection_id: null,
+        },
+      ],
+      workspaces: [],
+      worktree_base_dir: "/srv",
+      default_branches: {
+        "remote-repo-1": "origin/main",
+        "remote-repo-2": "origin/main",
+      },
+      last_messages: [],
+    });
+    expect(useAppStore.getState().defaultBranches["remote-repo-2"]).toBe("origin/main");
+
+    // Re-merge with only remote-repo-1. remote-repo-2 must disappear from both
+    // repositories and defaultBranches — otherwise stale defaults linger.
+    useAppStore.getState().mergeRemoteData("conn-1", makeRemotePayload({ repoId: "remote-repo-1" }));
+    const state = useAppStore.getState();
+    expect(state.repositories.find((r) => r.id === "remote-repo-2")).toBeUndefined();
+    expect(state.defaultBranches["remote-repo-2"]).toBeUndefined();
+    expect(state.defaultBranches["remote-repo-1"]).toBe("origin/main");
+  });
+
   it("clearRemoteData drops defaultBranches for the disconnected connection's repos", () => {
     useAppStore.getState().mergeRemoteData("conn-1", makeRemotePayload());
     useAppStore.setState((s) => ({ defaultBranches: { ...s.defaultBranches, "local-repo": "origin/main" } }));

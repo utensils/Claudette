@@ -347,6 +347,25 @@ describe("review workflow native handlers", () => {
       expect(result.prompt).toContain("gh pr view");
     });
 
+    it("does not hardcode the `origin/` remote prefix in the base-resolution block", () => {
+      // Non-`origin` remotes (e.g. `upstream` in fork workflows) exist — the
+      // Rust backend already handles this in `src/git.rs`. The prompt must not
+      // instruct the agent to assume `origin/`.
+      const prompt = resolveNativeHandler("review")!.execute(makeCtx(), "");
+      if (prompt.kind !== "expand") throw new Error("expected expand");
+      expect(prompt.prompt).toMatch(/git remote/);
+      expect(prompt.prompt).not.toMatch(/prefixed with ['"`]origin\//);
+    });
+
+    it("warns against treating `@{upstream}` as the review base when it just names the branch's own tracking ref", () => {
+      // The most common case of `@{upstream}` is the feature branch's remote
+      // copy — diffing HEAD against that yields an empty diff. The prompt
+      // must spell this out rather than treating upstream as authoritative.
+      const prompt = resolveNativeHandler("review")!.execute(makeCtx(), "");
+      if (prompt.kind !== "expand") throw new Error("expected expand");
+      expect(prompt.prompt).toMatch(/only use this when the upstream clearly names the review target/i);
+    });
+
     it("prompt still instructs base-resolution when repoDefaultBranch is missing (remote-workspace case)", () => {
       // On paired remote workspaces today, defaultBranch may not be in the
       // store. The prompt must still tell the agent to determine a base ref

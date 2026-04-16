@@ -1026,9 +1026,17 @@ export const useAppStore = create<AppState>((set) => ({
       }));
       // Merge remote repo default branches so review-workflow prompts and any
       // other UI keyed off `defaultBranches[repo.id]` work for paired servers.
-      const remoteRepoIds = new Set(taggedRepos.map((r) => r.id));
+      // Prune using the repos *previously* stored for this connection so
+      // entries for repos removed from the latest payload don't linger.
+      const previousRemoteRepoIds = new Set(
+        s.repositories
+          .filter((r) => r.remote_connection_id === connectionId)
+          .map((r) => r.id),
+      );
       const prunedDefaults = Object.fromEntries(
-        Object.entries(s.defaultBranches).filter(([id]) => !remoteRepoIds.has(id)),
+        Object.entries(s.defaultBranches).filter(
+          ([id]) => !previousRemoteRepoIds.has(id),
+        ),
       );
       return {
         repositories: [
