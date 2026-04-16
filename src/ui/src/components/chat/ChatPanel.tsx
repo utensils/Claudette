@@ -469,15 +469,21 @@ export function ChatPanel() {
       }
       const tokenLower = parsedSlash.token.toLowerCase();
       const candidateHandler = resolveNativeHandler(parsedSlash.token);
-      // Also guard against a user-defined command shadowing the native's
-      // canonical name or any of its aliases — e.g. `config.md` should
-      // disable `/configure` just as it disables `/config`, so the picker and
-      // the dispatcher stay consistent.
+      // Only same-name collisions shadow native dispatch. If the typed token
+      // is a native alias, also honor a file-based command for the canonical
+      // name — the user has replaced the whole native, so the alias should
+      // route through the replacement too. If the typed token is the
+      // canonical name, do NOT expand to aliases: a user `configure.md`
+      // should not hijack `/config` when the canonical slot is still the
+      // built-in.
       const shadowNames = new Set<string>([tokenLower]);
       if (candidateHandler) {
-        shadowNames.add(candidateHandler.name.toLowerCase());
-        for (const alias of candidateHandler.aliases) {
-          shadowNames.add(alias.toLowerCase());
+        const canonicalLower = candidateHandler.name.toLowerCase();
+        const typedIsAlias = candidateHandler.aliases.some(
+          (alias) => alias.toLowerCase() === tokenLower,
+        );
+        if (typedIsAlias) {
+          shadowNames.add(canonicalLower);
         }
       }
       const shadowed = cmds.some(
