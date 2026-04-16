@@ -2,7 +2,7 @@
 
 **Scope:** Implementation plan for GitHub issues [#245](https://github.com/utensils/claudette/issues/245) and [#246](https://github.com/utensils/claudette/issues/246) on top of the native slash command framework that landed in PR #248 (issue #241).
 
-**Status:** planning — not yet implemented.
+**Status:** partially implemented — #245 (`/help`, `/init`) shipped in this branch; #246 (`/compact`, `/context`, `/files`, `/cost`) remains planned.
 
 **Related:** #247 (tracker). #241-#244 merged. This doc finishes the slash command parity cluster.
 
@@ -22,7 +22,7 @@ Each handler returns `NativeCommandResult` (`{ kind: "handled" | "expand" | "ski
 
 ### What's currently registered
 
-`/plugin`, `/marketplace`, `/review`, `/security-review`, `/pr-comments`, `/config`, `/usage`, `/extra-usage`, `/release-notes`, `/version`, `/clear`, `/plan`, `/model`, `/permissions`, `/status` — all from `nativeSlashCommands.ts:557-573` and `slash_commands.rs:57-186`.
+`/plugin`, `/marketplace`, `/review`, `/security-review`, `/pr-comments`, `/config`, `/usage`, `/extra-usage`, `/release-notes`, `/version`, `/clear`, `/plan`, `/model`, `/permissions`, `/status`, `/help`, `/init` — all from `nativeSlashCommands.ts` `NATIVE_HANDLERS` array and `slash_commands.rs` `native_command_registry`. The last two (`/help`, `/init`) ship in this branch.
 
 ### Frontend dependencies that need **no new infrastructure**
 
@@ -78,7 +78,7 @@ Each handler returns `NativeCommandResult` (`{ kind: "handled" | "expand" | "ski
 
 **Arguments:** none. Optional future: `/help <name>` to deep-dive a single command. Out of scope for first pass.
 
-**No Rust changes** — pure UI command. Registry entry goes in both `nativeSlashCommands.ts` (handler) and `slash_commands.rs` (registry entry, so the picker lists it).
+**No new backend handlers/Tauri commands** — behavior is UI-driven, but a registry entry is still added in `slash_commands.rs` so `list_slash_commands` and the picker include it alongside the UI-side handler in `nativeSlashCommands.ts`.
 
 ### 2.2 `/init`
 
@@ -99,7 +99,7 @@ Each handler returns `NativeCommandResult` (`{ kind: "handled" | "expand" | "ski
 
 **`CLAUDE.md` vs `.claudette.json`:** Claudette currently reads custom instructions from `.claudette.json` (`src/config.rs:28-41`, `src-tauri/src/commands/chat.rs:204-213`). `CLAUDE.md` is the Claude Code convention. The seeded prompt targets `CLAUDE.md` (matches CLI parity + existing repo pattern — the Claudette repo itself has one), and notes `.claudette.json` as the place the app actually reads at runtime.
 
-**No Rust changes** — prompt-expansion only.
+**No new backend handlers/Tauri commands** — the prompt flows through the existing `sendChatMessage` pipeline. A registry entry is still added in `slash_commands.rs` so the picker lists `/init`.
 
 ### 2.3 Registry entries (`src/slash_commands.rs:57-186`)
 
