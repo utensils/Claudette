@@ -399,6 +399,13 @@ async fn handle_send_chat_message(
     )
     .await;
 
+    // Build workspace env vars for the agent subprocess.
+    let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
+    let default_branch = claudette::git::default_branch(repo_path)
+        .await
+        .unwrap_or_else(|_| "main".to_string());
+    let ws_env = claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
+
     let turn_handle = agent::run_turn(
         std::path::Path::new(&worktree_path),
         &session_id,
@@ -408,6 +415,7 @@ async fn handle_send_chat_message(
         custom_instructions.as_deref(),
         &agent_settings,
         &[], // Attachments not yet supported over remote transport
+        Some(&ws_env),
     )
     .await?;
 
@@ -679,7 +687,7 @@ async fn handle_load_file_diff(
 async fn handle_spawn_pty(
     state: &Arc<ServerState>,
     writer: &Arc<Writer>,
-    _workspace_id: &str,
+    workspace_id: &str,
     cwd: &str,
     rows: u16,
     cols: u16,
@@ -697,6 +705,26 @@ async fn handle_spawn_pty(
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
     let mut cmd = CommandBuilder::new(&shell);
     cmd.cwd(cwd);
+
+    // Inject workspace context env vars (best-effort — DB lookup may fail).
+    if let Ok(db) = open_db(state)
+        && let Ok(wss) = db.list_workspaces()
+        && let Some(ws) = wss.iter().find(|w| w.id == workspace_id)
+    {
+        let repo_path = db
+            .get_repository(&ws.repository_id)
+            .ok()
+            .flatten()
+            .map(|r| r.path)
+            .unwrap_or_default();
+        let default_branch = claudette::git::default_branch(&repo_path)
+            .await
+            .unwrap_or_else(|_| "main".into());
+        let ws_env = claudette::env::WorkspaceEnv::from_workspace(ws, &repo_path, default_branch);
+        for (k, v) in ws_env.vars() {
+            cmd.env(k, v);
+        }
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     let pty_reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;

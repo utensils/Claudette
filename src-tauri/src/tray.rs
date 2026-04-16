@@ -319,15 +319,14 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
         Err(_) => return,
     };
 
-    // Look up workspace name for the notification body.
-    let ws_name = db
+    // Look up workspace for notification body and env vars.
+    let ws = db
         .list_workspaces()
         .ok()
-        .and_then(|wss| {
-            wss.into_iter()
-                .find(|w| w.id == workspace_id)
-                .map(|w| w.name)
-        })
+        .and_then(|wss| wss.into_iter().find(|w| w.id == workspace_id));
+    let ws_name = ws
+        .as_ref()
+        .map(|w| w.name.clone())
         .unwrap_or_else(|| "An agent".to_string());
 
     // Read notification sound preference (default: "Default").
@@ -350,18 +349,35 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
     send_notification(app, workspace_id, title, &body, &sound);
 
     // Run user-configured notification command (if set).
+    // Build a best-effort WorkspaceEnv even when the workspace lookup fails
+    // so notification commands still fire (with partial context).
     if let Ok(Some(cmd)) = db.get_app_setting("notification_command")
         && !cmd.is_empty()
-        && let Some(mut command) = crate::commands::settings::build_notification_command(
-            &cmd,
-            title,
-            &body,
-            workspace_id,
-            &ws_name,
-        )
-        && let Ok(child) = command.spawn()
     {
-        crate::commands::settings::spawn_and_reap(child);
+        let ws_env = if let Some(ref ws) = ws {
+            let repo = db
+                .list_repositories()
+                .ok()
+                .and_then(|rs| rs.into_iter().find(|r| r.id == ws.repository_id));
+            let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
+            // notify_attention is sync — can't call async git::default_branch().
+            claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, "main".into())
+        } else {
+            claudette::env::WorkspaceEnv {
+                workspace_name: ws_name.clone(),
+                workspace_id: workspace_id.to_string(),
+                workspace_path: String::new(),
+                root_path: String::new(),
+                default_branch: "main".into(),
+                branch_name: String::new(),
+            }
+        };
+        if let Some(mut command) =
+            crate::commands::settings::build_notification_command(&cmd, &ws_env)
+            && let Ok(child) = command.spawn()
+        {
+            crate::commands::settings::spawn_and_reap(child);
+        }
     }
 }
 

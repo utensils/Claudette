@@ -26,7 +26,7 @@ python -m venv .venv && source .venv/bin/activate && pip install -r requirements
 mix deps.get && mix ecto.setup
 ```
 
-The script runs in the workspace's worktree directory using your default shell.
+The script runs in the workspace's worktree directory using your default shell. [Workspace environment variables](/Claudette/features/settings/#environment-variables) like `$CLAUDETTE_WORKSPACE_NAME` and `$CLAUDETTE_ROOT_PATH` are available in setup scripts.
 
 ## Custom Instructions
 

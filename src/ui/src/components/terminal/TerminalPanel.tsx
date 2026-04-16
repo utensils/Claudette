@@ -278,7 +278,19 @@ export const TerminalPanel = memo(function TerminalPanel() {
 
       (async () => {
         try {
-          const ptyId = await spawnPty(worktreePath);
+          const currentWs = useAppStore.getState().workspaces.find((w) => w.id === workspaceId);
+          const currentRepo = currentWs
+            ? useAppStore.getState().repositories.find((r) => r.id === currentWs.repository_id)
+            : undefined;
+          const currentDefaultBranches = useAppStore.getState().defaultBranches;
+          const ptyId = await spawnPty(
+            worktreePath,
+            currentWs?.name ?? "",
+            workspaceId,
+            currentRepo?.path ?? "",
+            currentWs ? (currentDefaultBranches[currentWs.repository_id] ?? "main") : "main",
+            currentWs?.branch_name ?? "",
+          );
           const inst = instancesRef.current.get(tabId);
           if (!inst) {
             closePtyBestEffort(ptyId);

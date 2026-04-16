@@ -63,10 +63,12 @@ export function NotificationsSettings() {
       setError(null);
       await setAppSetting("notification_command", notificationCommand);
       await runNotificationCommand(
-        "Test Notification",
-        "This is a test notification",
+        "test-workspace",
         "test",
-        "test-workspace"
+        "",
+        "",
+        "main",
+        "claudette/test-workspace"
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Command failed");
@@ -113,9 +115,9 @@ export function NotificationsSettings() {
         <div className={styles.settingInfo}>
           <div className={styles.settingLabel}>Notification command</div>
           <div className={styles.settingDescription}>
-            Run a shell command when a notification arrives.
-            $CLAUDETTE_NOTIFICATION_TITLE, $CLAUDETTE_NOTIFICATION_BODY,
-            $CLAUDETTE_WORKSPACE_ID, $CLAUDETTE_WORKSPACE_NAME are set.
+            Run a shell command when a notification arrives. Workspace
+            environment variables ($CLAUDETTE_WORKSPACE_NAME,
+            $CLAUDETTE_WORKSPACE_PATH, etc.) are set.
           </div>
           {error && <div className={styles.error}>{error}</div>}
         </div>
