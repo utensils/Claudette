@@ -191,7 +191,7 @@ interface AppState {
   diffViewMode: DiffViewMode;
   diffLoading: boolean;
   diffError: string | null;
-  setDiffFiles: (files: DiffFile[], mergeBase: string, stagedFiles?: import("../types/diff").StagedDiffFiles) => void;
+  setDiffFiles: (files: DiffFile[], mergeBase: string, stagedFiles?: import("../types/diff").StagedDiffFiles | null) => void;
   setDiffSelectedFile: (path: string | null, layer?: import("../types/diff").DiffLayer | null) => void;
   setDiffContent: (content: FileDiff | null) => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
