@@ -41,7 +41,7 @@ import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
 import { AttachMenu } from "./AttachMenu";
 import { FileMentionPicker, matchFiles } from "./FileMentionPicker";
 import {
-  isNativeCanonicalName,
+  describeSlashQuery,
   parseSlashInput,
   resolveNativeHandler,
 } from "./nativeSlashCommands";
@@ -1395,17 +1395,22 @@ function ChatInputArea({
     };
   }, [projectPath, selectedWorkspaceId]);
 
-  const slashQuery = chatInput.startsWith("/") ? chatInput.slice(1) : null;
+  // Filter by the command-name token (text before the first whitespace) so the
+  // picker stays open while the user types arguments. This keeps the argument
+  // hint visible for native commands like `/plugin install …`.
+  const slashQuery = describeSlashQuery(chatInput);
+  const slashQueryToken = slashQuery?.token ?? null;
+  const slashHasArgs = slashQuery?.hasArgs ?? false;
   const slashResults = useMemo(
-    () => (slashQuery === null ? [] : filterSlashCommands(slashCommands, slashQuery)),
-    [slashCommands, slashQuery],
+    () => (slashQueryToken === null ? [] : filterSlashCommands(slashCommands, slashQueryToken)),
+    [slashCommands, slashQueryToken],
   );
-  const showSlashPicker = slashQuery !== null && slashResults.length > 0 && !slashPickerDismissed;
+  const showSlashPicker = slashQueryToken !== null && slashResults.length > 0 && !slashPickerDismissed;
 
   useEffect(() => {
     setSlashPickerIndex(0);
     setSlashPickerDismissed(false);
-  }, [slashQuery]);
+  }, [slashQueryToken]);
 
   // --- File mention picker ---
 
@@ -1758,12 +1763,15 @@ function ChatInputArea({
         e.preventDefault();
         const cmd = slashResults[slashPickerIndex];
         if (cmd) {
-          onSend("/" + cmd.name);
+          // If the user has already typed arguments after the command name,
+          // keep what they typed; otherwise substitute the canonical name.
+          const send = slashHasArgs ? chatInput : "/" + cmd.name;
+          onSend(send);
           setChatInput("");
           // Native commands record their canonical name from inside the
           // handleSend dispatcher; record here only for file-based commands
           // that go straight to the agent.
-          if (!isNativeCanonicalName(cmd.name)) {
+          if (!cmd.kind) {
             recordSlashCommandUsage(selectedWorkspaceId, cmd.name)
               .then(refreshSlashCommands)
               .catch((e) => console.error("Failed to record slash command usage:", e));
@@ -1836,9 +1844,10 @@ function ChatInputArea({
           commands={slashResults}
           selectedIndex={slashPickerIndex}
           onSelect={(cmd) => {
-            onSend("/" + cmd.name);
+            const send = slashHasArgs ? chatInput : "/" + cmd.name;
+            onSend(send);
             setChatInput("");
-            if (!isNativeCanonicalName(cmd.name)) {
+            if (!cmd.kind) {
               recordSlashCommandUsage(selectedWorkspaceId, cmd.name)
                 .then(refreshSlashCommands)
                 .catch((e) => console.error("Failed to record slash command usage:", e));

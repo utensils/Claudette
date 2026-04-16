@@ -36,6 +36,27 @@ export function parseSlashInput(
   return { token, args };
 }
 
+/**
+ * Describe the slash picker query derived from the current chat input.
+ *
+ * - `token` is the text between the leading `/` and the first whitespace.
+ *   Use it for picker filtering so the picker stays open while the user
+ *   types arguments after the command name.
+ * - `hasArgs` is true if any whitespace follows the token — used by the
+ *   picker to decide whether Enter should replace the input with the
+ *   canonical name or preserve the user's typed arguments.
+ * - Returns `null` if the input is not a slash command.
+ */
+export function describeSlashQuery(
+  input: string,
+): { token: string; hasArgs: boolean } | null {
+  if (!input.startsWith("/")) return null;
+  const rest = input.slice(1);
+  const match = rest.match(/^(\S*)(\s([\s\S]*))?$/);
+  if (!match) return null;
+  return { token: match[1] ?? "", hasArgs: match[2] !== undefined };
+}
+
 function pluginHandler(root: "plugin" | "marketplace"): NativeHandler {
   return {
     name: root,
@@ -83,10 +104,3 @@ export function resolveNativeHandler(
   );
 }
 
-/** Returns true if `name` is the canonical name of a native handler. */
-export function isNativeCanonicalName(
-  name: string,
-  handlers: NativeHandler[] = NATIVE_HANDLERS,
-): boolean {
-  return handlers.some((h) => h.name.toLowerCase() === name.toLowerCase());
-}

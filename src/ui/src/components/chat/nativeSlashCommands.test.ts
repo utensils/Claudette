@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PluginSettingsIntent } from "../../types/plugins";
 import {
   NATIVE_HANDLERS,
-  isNativeCanonicalName,
+  describeSlashQuery,
   parseSlashInput,
   resolveNativeHandler,
   type NativeCommandContext,
@@ -170,16 +170,35 @@ describe("dispatcher across native kinds", () => {
   });
 });
 
-describe("isNativeCanonicalName", () => {
-  it("identifies canonical names from the built-in table", () => {
-    expect(isNativeCanonicalName("plugin")).toBe(true);
-    expect(isNativeCanonicalName("marketplace")).toBe(true);
-    expect(isNativeCanonicalName("Plugin")).toBe(true);
+describe("describeSlashQuery", () => {
+  it("returns null for non-slash input", () => {
+    expect(describeSlashQuery("hello")).toBeNull();
+    expect(describeSlashQuery("")).toBeNull();
   });
 
-  it("does not match aliases or unrelated names", () => {
-    expect(isNativeCanonicalName("plugins")).toBe(false);
-    expect(isNativeCanonicalName("commit")).toBe(false);
+  it("returns an empty token for a bare slash so the picker shows every command", () => {
+    expect(describeSlashQuery("/")).toEqual({ token: "", hasArgs: false });
+  });
+
+  it("returns just the token when no whitespace follows", () => {
+    expect(describeSlashQuery("/plug")).toEqual({ token: "plug", hasArgs: false });
+    expect(describeSlashQuery("/plugin")).toEqual({ token: "plugin", hasArgs: false });
+  });
+
+  it("flags hasArgs once whitespace appears so the picker can preserve typed args", () => {
+    expect(describeSlashQuery("/plugin ")).toEqual({
+      token: "plugin",
+      hasArgs: true,
+    });
+    expect(describeSlashQuery("/plugin install demo")).toEqual({
+      token: "plugin",
+      hasArgs: true,
+    });
+  });
+
+  it("does not consume a leading slash inside a longer prefix", () => {
+    expect(describeSlashQuery("  /plugin")).toBeNull();
+    expect(describeSlashQuery("not/a/command")).toBeNull();
   });
 });
 

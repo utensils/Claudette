@@ -153,7 +153,20 @@ struct PluginCommandSpec {
 }
 
 fn collect_native_commands(commands: &mut Vec<SlashCommand>, plugin_management_enabled: bool) {
-    for native in native_command_registry(plugin_management_enabled) {
+    let natives = native_command_registry(plugin_management_enabled);
+    // Drop any file-based command whose name collides with a native's canonical
+    // name or alias. The native registry owns these slots; otherwise the alias
+    // would resolve to the native handler while the file-based entry still
+    // rendered in the picker, creating an unreachable duplicate.
+    if !natives.is_empty() {
+        let reserved: std::collections::HashSet<String> = natives
+            .iter()
+            .flat_map(|cmd| std::iter::once(&cmd.name).chain(cmd.aliases.iter()))
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
+        commands.retain(|cmd| !reserved.contains(&cmd.name.to_ascii_lowercase()));
+    }
+    for native in natives {
         upsert_command(commands, native);
     }
 }
@@ -618,6 +631,46 @@ mod tests {
         let mut commands = Vec::new();
         collect_native_commands(&mut commands, false);
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn test_collect_native_commands_drops_file_based_alias_collisions() {
+        // Simulate the state of `commands` after file-based discovery has run:
+        // three file-based entries, one of which shadows a native alias ("plugins")
+        // and one that shadows a native canonical name ("plugin"). Both should be
+        // removed so the native registry owns those slots exclusively.
+        let mut commands = vec![
+            SlashCommand::file_based("plugin".into(), "User plugin override".into(), "user"),
+            SlashCommand::file_based("plugins".into(), "Project plugins cmd".into(), "project"),
+            SlashCommand::file_based("commit".into(), "Commit changes".into(), "user"),
+        ];
+        collect_native_commands(&mut commands, true);
+
+        // "commit" stays, file-based "plugin"/"plugins" are replaced by the
+        // native entries, and no duplicate rows remain.
+        let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"commit"));
+        assert!(names.contains(&"plugin"));
+        assert!(names.contains(&"marketplace"));
+        // No file-based row survives under a reserved name.
+        assert!(
+            !commands
+                .iter()
+                .any(|c| c.source != "builtin" && (c.name == "plugin" || c.name == "plugins"))
+        );
+        let plugin = commands.iter().find(|c| c.name == "plugin").unwrap();
+        assert_eq!(plugin.source, "builtin");
+    }
+
+    #[test]
+    fn test_collect_native_commands_case_insensitive_collision() {
+        let mut commands = vec![SlashCommand::file_based(
+            "PLUGINS".into(),
+            "Uppercase override".into(),
+            "user",
+        )];
+        collect_native_commands(&mut commands, true);
+        assert!(commands.iter().all(|c| c.name != "PLUGINS"));
     }
 
     #[test]
