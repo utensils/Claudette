@@ -115,9 +115,9 @@ export function NotificationsSettings() {
         <div className={styles.settingInfo}>
           <div className={styles.settingLabel}>Notification command</div>
           <div className={styles.settingDescription}>
-            Run a shell command when a notification arrives.
-            $CLAUDETTE_NOTIFICATION_TITLE, $CLAUDETTE_NOTIFICATION_BODY,
-            $CLAUDETTE_WORKSPACE_ID, $CLAUDETTE_WORKSPACE_NAME are set.
+            Run a shell command when a notification arrives. Workspace
+            environment variables ($CLAUDETTE_WORKSPACE_NAME,
+            $CLAUDETTE_WORKSPACE_PATH, etc.) are set.
           </div>
           {error && <div className={styles.error}>{error}</div>}
         </div>
