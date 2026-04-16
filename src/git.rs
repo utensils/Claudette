@@ -136,11 +136,57 @@ pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
     ))
 }
 
+/// Fetch from the primary remote (best-effort).
+///
+/// Resolves the first configured remote and runs `git fetch` with a 15-second
+/// timeout. Failures are logged but never propagated — callers can proceed with
+/// potentially stale refs when the network is unavailable.
+pub async fn fetch_remote(repo_path: &str) -> Result<(), GitError> {
+    let remote = run_git(repo_path, &["remote"])
+        .await
+        .ok()
+        .and_then(|out| out.lines().next().map(|l| l.to_string()))
+        .unwrap_or_else(|| "origin".to_string());
+
+    // Spawn with kill_on_drop so the child is terminated if the timeout fires.
+    let mut child = match Command::new("git")
+        .args(["-C", repo_path, "fetch", &remote])
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[git] failed to spawn fetch {remote}: {e}");
+            return Ok(());
+        }
+    };
+
+    match tokio::time::timeout(std::time::Duration::from_secs(15), child.wait()).await {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        Ok(Ok(status)) => {
+            eprintln!("[git] fetch {remote} exited with {status} (continuing with local refs)");
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            eprintln!("[git] fetch {remote} failed (continuing with local refs): {e}");
+            Ok(())
+        }
+        Err(_) => {
+            eprintln!("[git] fetch {remote} timed out after 15s (continuing with local refs)");
+            Ok(())
+        }
+    }
+}
+
 pub async fn create_worktree(
     repo_path: &str,
     branch_name: &str,
     worktree_path: &str,
 ) -> Result<String, GitError> {
+    // Fetch latest remote state before branching (best-effort).
+    let _ = fetch_remote(repo_path).await;
     let base = default_branch(repo_path).await?;
     run_git(
         repo_path,
@@ -466,5 +512,95 @@ mod tests {
         // Renaming branch-a to branch-b should fail (already exists).
         let result = rename_branch(path, "branch-a", "branch-b").await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_remote_no_remote() {
+        // fetch_remote should succeed (best-effort) even with no remote.
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        fetch_remote(path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_create_worktree_with_remote() {
+        // Set up a bare "remote" and a clone that tracks it.
+        let remote_dir = tempfile::tempdir().unwrap();
+        let remote_path = remote_dir.path().to_str().unwrap();
+        run_git(remote_path, &["init", "--bare", "-b", "main"])
+            .await
+            .unwrap();
+
+        // Clone from bare remote.
+        let clone_dir = tempfile::tempdir().unwrap();
+        let clone_path = clone_dir.path().to_str().unwrap();
+        let output = tokio::process::Command::new("git")
+            .args(["clone", remote_path, clone_path])
+            .output()
+            .await
+            .unwrap();
+        assert!(output.status.success(), "clone failed");
+
+        // Configure user for clone.
+        run_git(clone_path, &["config", "user.email", "test@test.com"])
+            .await
+            .unwrap();
+        run_git(clone_path, &["config", "user.name", "Test"])
+            .await
+            .unwrap();
+
+        // Push an initial commit.
+        let file = clone_dir.path().join("a.txt");
+        std::fs::write(&file, "v1").unwrap();
+        run_git(clone_path, &["add", "-A"]).await.unwrap();
+        run_git(clone_path, &["commit", "-m", "v1"]).await.unwrap();
+        run_git(clone_path, &["push", "origin", "main"])
+            .await
+            .unwrap();
+
+        // Record the clone's current HEAD.
+        let clone_head = run_git(clone_path, &["rev-parse", "origin/main"])
+            .await
+            .unwrap();
+
+        // Push a new commit directly to the bare remote via a temp worktree.
+        let pusher = tempfile::tempdir().unwrap();
+        let pusher_path = pusher.path().to_str().unwrap();
+        let out = tokio::process::Command::new("git")
+            .args(["clone", remote_path, pusher_path])
+            .output()
+            .await
+            .unwrap();
+        assert!(out.status.success());
+        run_git(pusher_path, &["config", "user.email", "test@test.com"])
+            .await
+            .unwrap();
+        run_git(pusher_path, &["config", "user.name", "Test"])
+            .await
+            .unwrap();
+        std::fs::write(pusher.path().join("b.txt"), "v2").unwrap();
+        run_git(pusher_path, &["add", "-A"]).await.unwrap();
+        run_git(pusher_path, &["commit", "-m", "v2"]).await.unwrap();
+        run_git(pusher_path, &["push", "origin", "main"])
+            .await
+            .unwrap();
+
+        // At this point the clone's origin/main is stale (v1), remote has v2.
+        // create_worktree should fetch and branch from the latest commit.
+        let wt_dir = tempfile::tempdir().unwrap();
+        let wt_path = wt_dir.path().to_str().unwrap();
+        create_worktree(clone_path, "test/fresh-branch", wt_path)
+            .await
+            .unwrap();
+
+        // The worktree's HEAD should be the new v2 commit, not the stale v1.
+        let wt_head = run_git(wt_path, &["rev-parse", "HEAD"]).await.unwrap();
+        assert_ne!(
+            wt_head, clone_head,
+            "worktree should be based on the latest remote commit, not the stale one"
+        );
+
+        // Clean up.
+        remove_worktree(clone_path, wt_path, true).await.unwrap();
     }
 }

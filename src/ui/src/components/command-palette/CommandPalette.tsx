@@ -10,6 +10,7 @@ import {
   generateWorkspaceName,
   createWorkspace as createWorkspaceService,
   getRepoConfig,
+  runWorkspaceSetup,
 } from "../../services/tauri";
 import type { ThemeDefinition } from "../../types/theme";
 import { scoreCommand } from "./searchScore";
@@ -129,11 +130,41 @@ export function CommandPalette() {
         const script = config.setup_script ?? repo?.setup_script;
         const source = config.setup_script ? "repo" : "settings";
         if (script) {
-          openModal("confirmSetupScript", {
-            workspaceId: result.workspace.id,
-            script,
-            source,
-          });
+          if (repo?.setup_script_auto_run) {
+            const wsId = result.workspace.id;
+            runWorkspaceSetup(wsId).then((sr) => {
+              if (sr) {
+                const lbl = sr.source === "repo" ? ".claudette.json" : "settings";
+                const status = sr.success ? "completed" : sr.timed_out ? "timed out" : "failed";
+                addChatMessage(wsId, {
+                  id: crypto.randomUUID(),
+                  workspace_id: wsId,
+                  role: "System",
+                  content: `Setup script (${lbl}) ${status}${sr.output ? `:\n${sr.output}` : ""}`,
+                  cost_usd: null, duration_ms: null,
+                  created_at: new Date().toISOString(),
+                  thinking: null,
+                });
+              }
+            }).catch((err) => {
+              addChatMessage(wsId, {
+                id: crypto.randomUUID(),
+                workspace_id: wsId,
+                role: "System",
+                content: `Setup script failed: ${err}`,
+                cost_usd: null, duration_ms: null,
+                created_at: new Date().toISOString(),
+                thinking: null,
+              });
+            });
+          } else {
+            openModal("confirmSetupScript", {
+              workspaceId: result.workspace.id,
+              repoId,
+              script,
+              source,
+            });
+          }
         }
       } catch {
         // No config — no setup script to run.

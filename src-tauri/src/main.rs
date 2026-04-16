@@ -302,6 +302,7 @@ fn main() {
             commands::repository::get_repo_config,
             commands::repository::get_default_branch,
             commands::repository::reorder_repositories,
+            commands::repository::set_setup_script_auto_run,
             // Workspace
             commands::workspace::create_workspace,
             commands::workspace::run_workspace_setup,

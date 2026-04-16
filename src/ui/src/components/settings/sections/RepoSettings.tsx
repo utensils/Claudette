@@ -40,6 +40,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
   const [branchRenamePreferences, setBranchRenamePreferences] = useState(
     repo?.branch_rename_preferences ?? ""
   );
+  const [autoRunSetup, setAutoRunSetup] = useState(repo?.setup_script_auto_run ?? false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repoConfig, setRepoConfig] = useState<RepoConfigInfo | null>(null);
@@ -54,6 +55,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
       setSetupScript(repo.setup_script ?? "");
       setCustomInstructions(repo.custom_instructions ?? "");
       setBranchRenamePreferences(repo.branch_rename_preferences ?? "");
+      setAutoRunSetup(repo.setup_script_auto_run ?? false);
       setError(null);
     }
   }, [repoId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -123,11 +125,13 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
   const setupScriptRef = useRef(setupScript);
   const customInstructionsRef = useRef(customInstructions);
   const branchRenamePreferencesRef = useRef(branchRenamePreferences);
+  const autoRunSetupRef = useRef(autoRunSetup);
   nameRef.current = name;
   iconRef.current = icon;
   setupScriptRef.current = setupScript;
   customInstructionsRef.current = customInstructions;
   branchRenamePreferencesRef.current = branchRenamePreferences;
+  autoRunSetupRef.current = autoRunSetup;
 
   const save = useCallback(
     async (updates: {
@@ -136,6 +140,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
       setup_script?: string | null;
       custom_instructions?: string | null;
       branch_rename_preferences?: string | null;
+      setup_script_auto_run?: boolean;
     }) => {
       const finalName = (updates.name ?? nameRef.current).trim();
       if (!finalName) return;
@@ -155,6 +160,10 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
         updates.branch_rename_preferences !== undefined
           ? updates.branch_rename_preferences
           : branchRenamePreferencesRef.current.trim() || null;
+      const finalAutoRun =
+        updates.setup_script_auto_run !== undefined
+          ? updates.setup_script_auto_run
+          : autoRunSetupRef.current;
 
       try {
         setError(null);
@@ -164,7 +173,8 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           finalIcon,
           finalScript,
           finalInstructions,
-          finalBranchPrefs
+          finalBranchPrefs,
+          finalAutoRun
         );
         updateRepo(repoId, {
           name: finalName,
@@ -172,6 +182,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           setup_script: finalScript,
           custom_instructions: finalInstructions,
           branch_rename_preferences: finalBranchPrefs,
+          setup_script_auto_run: finalAutoRun,
         });
       } catch (e) {
         setError(String(e));
@@ -266,6 +277,27 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
         <div className={styles.fieldHint}>
           Runs automatically when a new workspace is created.
         </div>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 8,
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={autoRunSetup}
+            onChange={(e) => {
+              setAutoRunSetup(e.target.checked);
+              save({ setup_script_auto_run: e.target.checked });
+            }}
+          />
+          Skip confirmation when running setup scripts
+        </label>
       </div>
 
       <div className={styles.fieldGroup}>

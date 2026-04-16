@@ -47,6 +47,7 @@ pub async fn add_repository(
         custom_instructions: None,
         sort_order: 0,
         branch_rename_preferences: None,
+        setup_script_auto_run: false,
         path_valid: true,
     };
 
@@ -67,6 +68,7 @@ pub async fn update_repository_settings(
     setup_script: Option<String>,
     custom_instructions: Option<String>,
     branch_rename_preferences: Option<String>,
+    setup_script_auto_run: bool,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -81,9 +83,23 @@ pub async fn update_repository_settings(
         .map_err(|e| e.to_string())?;
     db.update_repository_branch_rename_preferences(&id, branch_rename_preferences.as_deref())
         .map_err(|e| e.to_string())?;
+    db.update_repository_setup_script_auto_run(&id, setup_script_auto_run)
+        .map_err(|e| e.to_string())?;
 
     crate::tray::rebuild_tray(&app);
 
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_setup_script_auto_run(
+    repo_id: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.update_repository_setup_script_auto_run(&repo_id, enabled)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

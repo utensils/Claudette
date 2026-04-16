@@ -340,6 +340,14 @@ impl Database {
             )?;
         }
 
+        if version < 19 {
+            self.conn.execute_batch(
+                "ALTER TABLE repositories ADD COLUMN setup_script_auto_run INTEGER NOT NULL DEFAULT 0;
+
+                PRAGMA user_version = 19;",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -375,13 +383,14 @@ impl Database {
             custom_instructions: row.get(7)?,
             sort_order: row.get(8)?,
             branch_rename_preferences: row.get(9)?,
+            setup_script_auto_run: row.get::<_, i32>(10).unwrap_or(0) != 0,
             path_valid: true, // validated after load
         })
     }
 
     pub fn list_repositories(&self) -> Result<Vec<Repository>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order, branch_rename_preferences
+            "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order, branch_rename_preferences, setup_script_auto_run
              FROM repositories ORDER BY sort_order, name",
         )?;
         let rows = stmt.query_map([], Self::parse_repo_row)?;
@@ -391,7 +400,7 @@ impl Database {
     pub fn get_repository(&self, id: &str) -> Result<Option<Repository>, rusqlite::Error> {
         self.conn
             .query_row(
-                "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order, branch_rename_preferences
+                "SELECT id, path, name, icon, path_slug, created_at, setup_script, custom_instructions, sort_order, branch_rename_preferences, setup_script_auto_run
                  FROM repositories WHERE id = ?1",
                 params![id],
                 Self::parse_repo_row,
@@ -456,6 +465,18 @@ impl Database {
         self.conn.execute(
             "UPDATE repositories SET setup_script = ?1 WHERE id = ?2",
             params![script, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_repository_setup_script_auto_run(
+        &self,
+        id: &str,
+        enabled: bool,
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE repositories SET setup_script_auto_run = ?1 WHERE id = ?2",
+            params![enabled as i32, id],
         )?;
         Ok(())
     }
@@ -1439,6 +1460,7 @@ mod tests {
             custom_instructions: None,
             sort_order: 0,
             branch_rename_preferences: None,
+            setup_script_auto_run: false,
             path_valid: true,
         }
     }
@@ -1916,6 +1938,7 @@ mod tests {
             custom_instructions: None,
             sort_order: 0,
             branch_rename_preferences: None,
+            setup_script_auto_run: false,
             path_valid: true,
         };
         db.insert_repository(&repo).unwrap();

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
-import { runWorkspaceSetup } from "../../services/tauri";
+import { runWorkspaceSetup, setSetupScriptAutoRun } from "../../services/tauri";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
 
@@ -8,15 +8,22 @@ export function ConfirmSetupScriptModal() {
   const closeModal = useAppStore((s) => s.closeModal);
   const modalData = useAppStore((s) => s.modalData);
   const addChatMessage = useAppStore((s) => s.addChatMessage);
+  const updateRepository = useAppStore((s) => s.updateRepository);
   const [loading, setLoading] = useState(false);
+  const [alwaysRun, setAlwaysRun] = useState(false);
 
   const workspaceId = modalData.workspaceId as string;
   const script = modalData.script as string;
   const source = modalData.source as string;
+  const repoId = modalData.repoId as string;
 
   const handleRun = async () => {
     setLoading(true);
     try {
+      if (alwaysRun && repoId) {
+        await setSetupScriptAutoRun(repoId, true);
+        updateRepository(repoId, { setup_script_auto_run: true });
+      }
       const sr = await runWorkspaceSetup(workspaceId);
       if (sr) {
         const label = sr.source === "repo" ? ".claudette.json" : "settings";
@@ -79,6 +86,25 @@ export function ConfirmSetupScriptModal() {
         >
           {script}
         </pre>
+      </div>
+      <div className={shared.field}>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={alwaysRun}
+            onChange={(e) => setAlwaysRun(e.target.checked)}
+          />
+          Always run setup scripts for this repo
+        </label>
       </div>
       <div className={shared.actions}>
         <button className={shared.btn} onClick={closeModal}>
