@@ -11,6 +11,7 @@ end
 function M.list_pull_requests(args)
     local data = glab({
         "mr", "list",
+        "--state", "all",
         "--output-format", "json",
     })
     local prs = {}

@@ -11,6 +11,7 @@ end
 function M.list_pull_requests(args)
     local data = gh({
         "pr", "list",
+        "--state", "all",
         "--json", "number,title,state,url,author,headRefName,baseRefName,isDraft,statusCheckRollup",
         "--limit", "30",
     })
