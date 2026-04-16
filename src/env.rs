@@ -3,7 +3,7 @@
 //! macOS apps launched from Finder inherit a minimal PATH
 //! (`/usr/bin:/bin:/usr/sbin:/sbin`). Tools like `npx`, `node`, `python`,
 //! and `claude` typically live in directories added by the user's shell
-//! profile (`.zshrc`, `.bashrc`, etc.).
+//! login profile (`.zprofile`, `.bash_profile`, `.profile`, etc.).
 //!
 //! This module probes the user's login shell once, caches the result, and
 //! exposes it for subprocess spawning and PATH-based command lookup.
@@ -42,19 +42,19 @@ pub fn enriched_path() -> OsString {
         return process_path;
     };
 
-    // Start with shell PATH entries, then append any process-PATH entries
-    // that aren't already present.
-    let shell_dirs: Vec<std::path::PathBuf> = std::env::split_paths(shell).collect();
-    let mut merged = shell.clone();
+    // Start with shell PATH entries, then append any non-empty process-PATH
+    // entries that aren't already present.
+    let mut merged_dirs: Vec<std::path::PathBuf> = std::env::split_paths(shell)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .collect();
 
     for dir in std::env::split_paths(&process_path) {
-        if !shell_dirs.contains(&dir) {
-            merged.push(":");
-            merged.push(dir);
+        if !dir.as_os_str().is_empty() && !merged_dirs.contains(&dir) {
+            merged_dirs.push(dir);
         }
     }
 
-    merged
+    std::env::join_paths(&merged_dirs).unwrap_or(process_path)
 }
 
 /// Probe the login shell for its PATH.
