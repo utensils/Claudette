@@ -71,82 +71,88 @@ export function AppLayout() {
     <div className={styles.container} {...(isMac ? { "data-platform": "mac" } : {})}>
       <UpdateBanner installNow={installNow} installWhenIdle={installWhenIdle} dismiss={dismiss} />
       <div className={styles.main} ref={mainRef}>
-        {settingsOpen ? (
+        {/*
+          Settings and workspace content are BOTH always mounted.
+          We toggle visibility via CSS display:none so opening settings
+          never unmounts the workspace tree — unmounting would destroy
+          xterm instances and kill PTY children (same rationale as the
+          terminal panel toggle below).
+        */}
+        <div className={`${styles.settings} ${settingsOpen ? "" : styles.hidden}`}>
           <SettingsPage />
-        ) : (
-          <>
-            {sidebarVisible && (
-              <>
-                <div className={styles.sidebar}>
-                  <Sidebar />
-                </div>
-                <ResizeHandle
-                  direction="horizontal"
-                  targetRef={mainRef}
-                  cssVar="--sidebar-w"
-                  min={150}
-                  max={600}
-                  onResizeEnd={handleLeftResizeEnd}
-                />
-              </>
-            )}
-            <div className={styles.center}>
-              <div className={styles.content}>
-                {selectedWorkspaceId ? (
-                  showDiff ? (
-                    <DiffViewer />
-                  ) : (
-                    <ChatPanel />
-                  )
-                ) : (
-                  <Dashboard />
-                )}
+        </div>
+        <div className={`${styles.workspace} ${settingsOpen ? styles.hidden : ""}`}>
+          {sidebarVisible && (
+            <>
+              <div className={styles.sidebar}>
+                <Sidebar />
               </div>
-              {/*
-                Always mount the terminal panel when a workspace is selected;
-                drive visibility via a CSS class. Unmounting on collapse would
-                dispose every xterm instance and kill every PTY child —
-                toggling the panel must NOT destroy running shells.
-                The ResizeHandle has no state worth preserving and is only
-                useful when the panel is visible, so we conditionally render it.
-              */}
-              {selectedWorkspaceId && terminalPanelVisible && (
-                <ResizeHandle
-                  direction="vertical"
-                  targetRef={mainRef}
-                  cssVar="--terminal-h"
-                  min={100}
-                  max={800}
-                  invert
-                  onResizeEnd={handleTerminalResizeEnd}
-                />
-              )}
-              {selectedWorkspaceId && (
-                <div
-                  className={`${styles.terminal} ${terminalPanelVisible ? "" : styles.hidden}`}
-                >
-                  <TerminalPanel />
-                </div>
+              <ResizeHandle
+                direction="horizontal"
+                targetRef={mainRef}
+                cssVar="--sidebar-w"
+                min={150}
+                max={600}
+                onResizeEnd={handleLeftResizeEnd}
+              />
+            </>
+          )}
+          <div className={styles.center}>
+            <div className={styles.content}>
+              {selectedWorkspaceId ? (
+                showDiff ? (
+                  <DiffViewer />
+                ) : (
+                  <ChatPanel />
+                )
+              ) : (
+                <Dashboard />
               )}
             </div>
-            {rightSidebarVisible && selectedWorkspaceId && (
-              <>
-                <ResizeHandle
-                  direction="horizontal"
-                  targetRef={mainRef}
-                  cssVar="--right-sidebar-w"
-                  min={150}
-                  max={600}
-                  invert
-                  onResizeEnd={handleRightResizeEnd}
-                />
-                <div className={styles.rightSidebar}>
-                  <RightSidebar />
-                </div>
-              </>
+            {/*
+              Always mount the terminal panel when a workspace is selected;
+              drive visibility via a CSS class. Unmounting on collapse would
+              dispose every xterm instance and kill every PTY child —
+              toggling the panel must NOT destroy running shells.
+              The ResizeHandle has no state worth preserving and is only
+              useful when the panel is visible, so we conditionally render it.
+            */}
+            {selectedWorkspaceId && terminalPanelVisible && (
+              <ResizeHandle
+                direction="vertical"
+                targetRef={mainRef}
+                cssVar="--terminal-h"
+                min={100}
+                max={800}
+                invert
+                onResizeEnd={handleTerminalResizeEnd}
+              />
             )}
-          </>
-        )}
+            {selectedWorkspaceId && (
+              <div
+                className={`${styles.terminal} ${terminalPanelVisible ? "" : styles.hidden}`}
+              >
+                <TerminalPanel />
+              </div>
+            )}
+          </div>
+          {rightSidebarVisible && selectedWorkspaceId && (
+            <>
+              <ResizeHandle
+                direction="horizontal"
+                targetRef={mainRef}
+                cssVar="--right-sidebar-w"
+                min={150}
+                max={600}
+                invert
+                onResizeEnd={handleRightResizeEnd}
+              />
+              <div className={styles.rightSidebar}>
+                <RightSidebar />
+              </div>
+            </>
+          )}
+        </div>
       </div>
       <ModalRouter />
       {fuzzyFinderOpen && <FuzzyFinder />}

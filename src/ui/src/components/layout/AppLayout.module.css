@@ -14,6 +14,18 @@
   --terminal-h: 300px;
 }
 
+.settings {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
 .sidebar {
   flex-shrink: 0;
   width: var(--sidebar-w);
@@ -66,9 +78,9 @@
 }
 
 /*
-  Used to hide the terminal panel + its resize handle without unmounting them.
-  Unmounting would destroy xterm instances and kill PTY children; we want
-  the shells to keep running while the panel is collapsed.
+  Hide a subtree without unmounting it. Used for the terminal panel collapse
+  and the settings/workspace view swap — unmounting either would destroy
+  xterm instances and kill PTY children.
 */
 .hidden {
   display: none !important;
