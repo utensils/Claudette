@@ -55,7 +55,7 @@ export interface NativeCommandContext {
   thinkingEnabled: boolean;
   chromeEnabled: boolean;
   effortLevel: string;
-  pendingPlanFilePath: string | null;
+  planFilePath: string | null;
 
   // -- Pre-bound per-workspace write callbacks. Callers wire these to the
   // same store setters / backend commands the toolbar and shortcuts use. --
@@ -416,17 +416,15 @@ const planHandler: NativeHandler = {
       return handled;
     }
     if (arg === "open") {
-      if (!ctx.pendingPlanFilePath) {
+      if (!ctx.planFilePath) {
         ctx.addLocalMessage(
-          "/plan open: no active plan file. Enable plan mode and run a turn to produce one.",
+          "/plan open: no plan file found for this workspace. Enable plan mode and run a turn to produce one.",
         );
         return handled;
       }
       try {
-        const content = await ctx.readPlanFile(ctx.pendingPlanFilePath);
-        ctx.addLocalMessage(
-          `Plan file — ${ctx.pendingPlanFilePath}\n\n${content}`,
-        );
+        const content = await ctx.readPlanFile(ctx.planFilePath);
+        ctx.addLocalMessage(`Plan file — ${ctx.planFilePath}\n\n${content}`);
       } catch (error) {
         ctx.addLocalMessage(`/plan open failed: ${String(error)}`);
       }

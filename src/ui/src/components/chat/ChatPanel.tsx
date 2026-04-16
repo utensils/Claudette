@@ -25,6 +25,7 @@ import {
   loadDiffFiles,
 } from "../../services/tauri";
 import { applySelectedModel } from "./applySelectedModel";
+import { findLatestPlanFilePath } from "./planFilePath";
 import type { PermissionLevel } from "../../stores/useAppStore";
 import { open } from "@tauri-apps/plugin-dialog";
 import { reconstructCompletedTurns } from "../../utils/reconstructTurns";
@@ -508,8 +509,7 @@ export function ChatPanel() {
         const currentThinking = state.thinkingEnabled[workspaceId] ?? false;
         const currentChrome = state.chromeEnabled[workspaceId] ?? false;
         const currentEffort = state.effortLevel[workspaceId] ?? "auto";
-        const pendingPlanFilePath =
-          state.planApprovals[workspaceId]?.planFilePath ?? null;
+        const planFilePath = findLatestPlanFilePath(workspaceId);
         const agentStatusLabel =
           typeof ws.agent_status === "string"
             ? ws.agent_status
@@ -622,7 +622,7 @@ export function ChatPanel() {
             thinkingEnabled: currentThinking,
             chromeEnabled: currentChrome,
             effortLevel: currentEffort,
-            pendingPlanFilePath,
+            planFilePath,
             setSelectedModel: setSelectedModelBound,
             setPermissionLevel: setPermissionLevelBound,
             setPlanMode: setPlanModeBound,

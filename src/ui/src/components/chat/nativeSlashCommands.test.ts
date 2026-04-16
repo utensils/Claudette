@@ -36,7 +36,7 @@ function makeCtx(overrides: Partial<NativeCommandContext> = {}): NativeCommandCo
     thinkingEnabled: false,
     chromeEnabled: false,
     effortLevel: "auto",
-    pendingPlanFilePath: null,
+    planFilePath: null,
     setSelectedModel: vi.fn(async () => {}),
     setPermissionLevel: vi.fn(async () => {}),
     setPlanMode: vi.fn(),
@@ -672,26 +672,31 @@ describe("/plan handler", () => {
     expect(ctx.addLocalMessage).toHaveBeenCalledWith("Plan mode on.");
   });
 
-  it("opens the pending plan file when one exists", async () => {
+  it("opens the plan file resolved by ChatPanel regardless of pending-approval state", async () => {
+    // The handler treats planFilePath as opaque — it reads whatever ChatPanel
+    // resolved via findLatestPlanFilePath, which also scans chat history after
+    // the approval card has been dismissed.
     const ctx = makeCtx({
-      pendingPlanFilePath: "/tmp/.claude/plans/draft.md",
+      planFilePath: "/tmp/.claude/plans/draft.md",
       readPlanFile: vi.fn(async () => "# Draft plan"),
     });
     const handler = resolveNativeHandler("plan")!;
     await handler.execute(ctx, "open");
-    expect(ctx.readPlanFile).toHaveBeenCalledWith("/tmp/.claude/plans/draft.md");
+    expect(ctx.readPlanFile).toHaveBeenCalledWith(
+      "/tmp/.claude/plans/draft.md",
+    );
     expect(ctx.addLocalMessage).toHaveBeenCalledWith(
       expect.stringContaining("# Draft plan"),
     );
   });
 
-  it("reports when /plan open has no active plan file", async () => {
-    const ctx = makeCtx({ pendingPlanFilePath: null });
+  it("reports when /plan open has no plan file to open", async () => {
+    const ctx = makeCtx({ planFilePath: null });
     const handler = resolveNativeHandler("plan")!;
     await handler.execute(ctx, "open");
     expect(ctx.readPlanFile).not.toHaveBeenCalled();
     expect(ctx.addLocalMessage).toHaveBeenCalledWith(
-      expect.stringContaining("no active plan file"),
+      expect.stringContaining("no plan file found"),
     );
   });
 
