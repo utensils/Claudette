@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getAppSetting, setAppSetting } from "../../../services/tauri";
 import { MODELS } from "../../chat/ModelSelector";
 import { EFFORT_LEVELS } from "../../chat/EffortSelector";
-import { isEffortSupported, isMaxEffortAllowed } from "../../chat/modelCapabilities";
+import { isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed } from "../../chat/modelCapabilities";
 import styles from "../Settings.module.css";
 
 export function ModelSettings() {
@@ -55,6 +55,9 @@ export function ModelSettings() {
     if (!isEffortSupported(model)) {
       setDefaultEffort("auto");
       await saveSetting("default_effort", "auto");
+    } else if (defaultEffort === "xhigh" && !isXhighEffortAllowed(model)) {
+      setDefaultEffort("high");
+      await saveSetting("default_effort", "high");
     } else if (defaultEffort === "max" && !isMaxEffortAllowed(model)) {
       setDefaultEffort("high");
       await saveSetting("default_effort", "high");
@@ -89,9 +92,11 @@ export function ModelSettings() {
   };
 
   // Filter effort levels based on selected default model
-  const availableEffortLevels = isMaxEffortAllowed(defaultModel)
+  const availableEffortLevels = isXhighEffortAllowed(defaultModel)
     ? EFFORT_LEVELS
-    : EFFORT_LEVELS.filter((l) => l.id !== "max");
+    : isMaxEffortAllowed(defaultModel)
+      ? EFFORT_LEVELS.filter((l) => l.id !== "xhigh")
+      : EFFORT_LEVELS.filter((l) => l.id !== "xhigh" && l.id !== "max");
   const effortDisabled = !isEffortSupported(defaultModel);
 
   return (
