@@ -10,10 +10,10 @@ export const EFFORT_LEVELS = [
 ] as const;
 
 /** Models that support effort levels. */
-const EFFORT_SUPPORTED_MODELS = new Set(["opus", "claude-opus-4-6", "sonnet"]);
+const EFFORT_SUPPORTED_MODELS = new Set(["opus", "claude-opus-4-7", "claude-opus-4-6", "sonnet"]);
 
-/** Models that support the "max" effort level (Opus 4.6 only). */
-const MAX_EFFORT_MODELS = new Set(["opus", "claude-opus-4-6"]);
+/** Models that support the "max" effort level (Opus only). */
+const MAX_EFFORT_MODELS = new Set(["opus", "claude-opus-4-7", "claude-opus-4-6"]);
 
 export function isEffortSupported(model: string): boolean {
   return EFFORT_SUPPORTED_MODELS.has(model);

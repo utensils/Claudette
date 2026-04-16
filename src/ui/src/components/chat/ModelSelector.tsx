@@ -2,7 +2,8 @@ import { useEffect, useRef, type RefObject } from "react";
 import styles from "./ModelSelector.module.css";
 
 export const MODELS = [
-  { id: "opus", label: "Opus 4.6 1M", group: "Claude Code" },
+  { id: "opus", label: "Opus 4.7 1M", group: "Claude Code" },
+  { id: "claude-opus-4-7", label: "Opus 4.7", group: "Claude Code" },
   { id: "claude-opus-4-6", label: "Opus 4.6", group: "Claude Code" },
   { id: "sonnet", label: "Sonnet 4.6", group: "Claude Code" },
   { id: "haiku", label: "Haiku 4.5", group: "Claude Code" },

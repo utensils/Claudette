@@ -6,6 +6,10 @@ describe("isEffortSupported", () => {
     expect(isEffortSupported("opus")).toBe(true);
   });
 
+  it("returns true for claude-opus-4-7", () => {
+    expect(isEffortSupported("claude-opus-4-7")).toBe(true);
+  });
+
   it("returns true for claude-opus-4-6", () => {
     expect(isEffortSupported("claude-opus-4-6")).toBe(true);
   });
@@ -26,6 +30,10 @@ describe("isEffortSupported", () => {
 describe("isMaxEffortAllowed", () => {
   it("returns true for opus", () => {
     expect(isMaxEffortAllowed("opus")).toBe(true);
+  });
+
+  it("returns true for claude-opus-4-7", () => {
+    expect(isMaxEffortAllowed("claude-opus-4-7")).toBe(true);
   });
 
   it("returns true for claude-opus-4-6", () => {
