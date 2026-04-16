@@ -10,6 +10,9 @@ export const EFFORT_LEVELS = [
   { id: "max", label: "Max" },
 ] as const;
 
+/** Models that support fast mode (Opus 4.6 only). */
+const FAST_SUPPORTED_MODELS = new Set(["claude-opus-4-6"]);
+
 /** Models that support effort levels. */
 const EFFORT_SUPPORTED_MODELS = new Set(["opus", "claude-opus-4-7", "claude-opus-4-6", "sonnet", "claude-sonnet-4-6[1m]"]);
 
@@ -18,6 +21,10 @@ const XHIGH_EFFORT_MODELS = new Set(["opus", "claude-opus-4-7"]);
 
 /** Models that support the "max" effort level (Opus only). */
 const MAX_EFFORT_MODELS = new Set(["opus", "claude-opus-4-7", "claude-opus-4-6"]);
+
+export function isFastSupported(model: string): boolean {
+  return FAST_SUPPORTED_MODELS.has(model);
+}
 
 export function isEffortSupported(model: string): boolean {
   return EFFORT_SUPPORTED_MODELS.has(model);

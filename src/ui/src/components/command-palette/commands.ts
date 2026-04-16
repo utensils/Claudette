@@ -22,7 +22,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import type { ThemeDefinition } from "../../types/theme";
-import { isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed } from "../chat/EffortSelector";
+import { isFastSupported, isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed } from "../chat/EffortSelector";
 
 export type CommandCategory =
   | "general"
@@ -272,19 +272,21 @@ export function buildCommands(ctx: CommandContext): Command[] {
       keywords: ["planning", "architect"],
       execute: () => { ctx.setPlanMode(wsId, !ctx.planMode); ctx.close(); },
     });
-    cmds.push({
-      id: "toggle-fast",
-      name: `${ctx.fastMode ? "Disable" : "Enable"} Fast Mode`,
-      category: "agent",
-      icon: Zap,
-      keywords: ["speed", "quick"],
-      execute: () => {
-        const next = !ctx.fastMode;
-        ctx.setFastMode(wsId, next);
-        ctx.persistSetting(`fast_mode:${wsId}`, String(next));
-        ctx.close();
-      },
-    });
+    if (isFastSupported(ctx.selectedModel)) {
+      cmds.push({
+        id: "toggle-fast",
+        name: `${ctx.fastMode ? "Disable" : "Enable"} Fast Mode`,
+        category: "agent",
+        icon: Zap,
+        keywords: ["speed", "quick"],
+        execute: () => {
+          const next = !ctx.fastMode;
+          ctx.setFastMode(wsId, next);
+          ctx.persistSetting(`fast_mode:${wsId}`, String(next));
+          ctx.close();
+        },
+      });
+    }
     cmds.push({
       id: "change-model",
       name: "Change Model",

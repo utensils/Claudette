@@ -1,5 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed, EFFORT_LEVELS } from "./EffortSelector";
+import { isFastSupported, isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed, EFFORT_LEVELS } from "./EffortSelector";
+
+describe("isFastSupported", () => {
+  it("returns true for claude-opus-4-6", () => {
+    expect(isFastSupported("claude-opus-4-6")).toBe(true);
+  });
+
+  it("returns false for opus alias", () => {
+    expect(isFastSupported("opus")).toBe(false);
+  });
+
+  it("returns false for claude-opus-4-7", () => {
+    expect(isFastSupported("claude-opus-4-7")).toBe(false);
+  });
+
+  it("returns false for sonnet", () => {
+    expect(isFastSupported("sonnet")).toBe(false);
+  });
+
+  it("returns false for haiku", () => {
+    expect(isFastSupported("haiku")).toBe(false);
+  });
+});
 
 describe("isEffortSupported", () => {
   it("returns true for opus", () => {
