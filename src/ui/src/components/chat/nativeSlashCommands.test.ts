@@ -16,6 +16,9 @@ function makeCtx(overrides: Partial<NativeCommandContext> = {}): NativeCommandCo
     repoId: "repo-1",
     pluginManagementEnabled: true,
     openPluginSettings: vi.fn<(intent: Partial<PluginSettingsIntent>) => void>(),
+    repository: { name: "claudette", path: "/tmp/repos/claudette" },
+    workspace: { branch: "feat/review-cmds", worktreePath: "/tmp/wt/review-cmds" },
+    repoDefaultBranch: "origin/main",
     ...overrides,
   };
 }
@@ -207,5 +210,189 @@ describe("native handler table", () => {
     const names = NATIVE_HANDLERS.map((h) => h.name);
     expect(names).toContain("plugin");
     expect(names).toContain("marketplace");
+  });
+
+  it("exposes review, security-review, and pr-comments as prompt_expansion handlers", () => {
+    for (const name of ["review", "security-review", "pr-comments"] as const) {
+      const handler = NATIVE_HANDLERS.find((h) => h.name === name);
+      expect(handler, `missing NATIVE_HANDLERS entry for ${name}`).toBeDefined();
+      expect(handler!.kind).toBe("prompt_expansion");
+      expect(handler!.aliases).toEqual([]);
+    }
+  });
+});
+
+describe("review workflow native handlers", () => {
+  const REVIEW_NAMES = ["review", "security-review", "pr-comments"] as const;
+
+  for (const name of REVIEW_NAMES) {
+    describe(`/${name}`, () => {
+      it("resolves by canonical name (case-insensitive)", () => {
+        expect(resolveNativeHandler(name)?.name).toBe(name);
+        expect(resolveNativeHandler(name.toUpperCase())?.name).toBe(name);
+      });
+
+      it("expands with empty args into a seeded prompt grounded in workspace context", () => {
+        const ctx = makeCtx();
+        const handler = resolveNativeHandler(name)!;
+        const result = handler.execute(ctx, "");
+        expect(result.kind).toBe("expand");
+        if (result.kind !== "expand") throw new Error("expected expand");
+        expect(result.canonicalName).toBe(name);
+        expect(result.prompt).toContain("claudette");
+        expect(result.prompt).toContain("/tmp/repos/claudette");
+        expect(result.prompt).toContain("/tmp/wt/review-cmds");
+        expect(result.prompt).toContain("feat/review-cmds");
+        expect(result.prompt).toContain("origin/main");
+        // Must label the repo default as a hint, not as the guaranteed review base.
+        expect(result.prompt).toContain("Repo default branch");
+        expect(result.prompt).toContain("hint only");
+        expect(result.prompt).not.toContain("Additional guidance from user");
+        expect(result.prompt).not.toContain("undefined");
+        expect(result.prompt).not.toContain("null");
+      });
+
+      it("expands with whitespace-only args the same as empty args", () => {
+        const ctx = makeCtx();
+        const handler = resolveNativeHandler(name)!;
+        const result = handler.execute(ctx, "   \t\n  ");
+        if (result.kind !== "expand") throw new Error("expected expand");
+        expect(result.prompt).not.toContain("Additional guidance from user");
+      });
+
+      it("preserves user-supplied arguments verbatim in a guidance line", () => {
+        const ctx = makeCtx();
+        const handler = resolveNativeHandler(name)!;
+        const args = 'focus on "diff.rs" and the PTY bridge';
+        const result = handler.execute(ctx, args);
+        if (result.kind !== "expand") throw new Error("expected expand");
+        expect(result.prompt).toContain(`Additional guidance from user: ${args}`);
+      });
+
+      it("omits missing workspace/repo/repoDefaultBranch fields without leaking placeholders", () => {
+        const ctx = makeCtx({
+          repository: null,
+          workspace: null,
+          repoDefaultBranch: null,
+        });
+        const handler = resolveNativeHandler(name)!;
+        const result = handler.execute(ctx, "");
+        if (result.kind !== "expand") throw new Error("expected expand");
+        expect(result.prompt).not.toContain("undefined");
+        expect(result.prompt).not.toContain("null");
+        expect(result.prompt).not.toMatch(/Repository:\s*$/m);
+        expect(result.prompt).not.toMatch(/Repo default branch[^:]*:\s*$/m);
+        expect(result.prompt).not.toMatch(/Current branch:\s*$/m);
+        expect(result.prompt).not.toMatch(/Worktree:\s*$/m);
+      });
+
+      it("omits individual missing fields but keeps populated ones", () => {
+        const ctx = makeCtx({
+          repository: { name: "claudette", path: "/tmp/repos/claudette" },
+          workspace: { branch: "feat/x", worktreePath: null },
+          repoDefaultBranch: null,
+        });
+        const handler = resolveNativeHandler(name)!;
+        const result = handler.execute(ctx, "");
+        if (result.kind !== "expand") throw new Error("expected expand");
+        expect(result.prompt).toContain("claudette");
+        expect(result.prompt).toContain("feat/x");
+        expect(result.prompt).not.toContain("Worktree:");
+        expect(result.prompt).not.toContain("Repo default branch");
+      });
+
+      it("returns an expand result (not handled) so ChatPanel forwards the prompt to sendChatMessage", () => {
+        // The ChatPanel send path only falls through to sendChatMessage when
+        // the native dispatcher returns `kind: "expand"`. A "handled" result
+        // would short-circuit and swallow the command. These handlers must
+        // therefore always return "expand" — they seed the prompt and let the
+        // normal agent pipeline run it.
+        const ctx = makeCtx();
+        const handler = resolveNativeHandler(name)!;
+        const empty = handler.execute(ctx, "");
+        const withArgs = handler.execute(ctx, "hello");
+        expect(empty.kind).toBe("expand");
+        expect(withArgs.kind).toBe("expand");
+      });
+
+      it("does not pass the raw slash input through verbatim — the expansion differs from `/<name> …`", () => {
+        const ctx = makeCtx();
+        const handler = resolveNativeHandler(name)!;
+        const rawInput = `/${name} focus on perf`;
+        const result = handler.execute(ctx, "focus on perf");
+        if (result.kind !== "expand") throw new Error("expected expand");
+        expect(result.prompt).not.toBe(rawInput);
+        expect(result.prompt.length).toBeGreaterThan(rawInput.length);
+      });
+    });
+  }
+
+  describe("review base resolution (P1/P2 fixes)", () => {
+    it("/review instructs the agent to resolve the review base via gh/git, not to trust the repo default as the base", () => {
+      const handler = resolveNativeHandler("review")!;
+      const result = handler.execute(makeCtx(), "");
+      if (result.kind !== "expand") throw new Error("expected expand");
+      expect(result.prompt).toMatch(/Resolve the review base ref/);
+      expect(result.prompt).toContain("gh pr view");
+      expect(result.prompt).toContain("@{upstream}");
+      // The repo default is surfaced only as a labeled hint/fallback.
+      expect(result.prompt).toMatch(/hint only.*not guaranteed to be this branch's review base/);
+    });
+
+    it("/security-review uses the same resolve-base guidance", () => {
+      const handler = resolveNativeHandler("security-review")!;
+      const result = handler.execute(makeCtx(), "");
+      if (result.kind !== "expand") throw new Error("expected expand");
+      expect(result.prompt).toMatch(/Resolve the review base ref/);
+      expect(result.prompt).toContain("gh pr view");
+    });
+
+    it("does not hardcode the `origin/` remote prefix in the base-resolution block", () => {
+      // Non-`origin` remotes (e.g. `upstream` in fork workflows) exist — the
+      // Rust backend already handles this in `src/git.rs`. The prompt must not
+      // instruct the agent to assume `origin/`.
+      const prompt = resolveNativeHandler("review")!.execute(makeCtx(), "");
+      if (prompt.kind !== "expand") throw new Error("expected expand");
+      expect(prompt.prompt).toMatch(/git remote/);
+      expect(prompt.prompt).not.toMatch(/prefixed with ['"`]origin\//);
+    });
+
+    it("warns against treating `@{upstream}` as the review base when it just names the branch's own tracking ref", () => {
+      // The most common case of `@{upstream}` is the feature branch's remote
+      // copy — diffing HEAD against that yields an empty diff. The prompt
+      // must spell this out rather than treating upstream as authoritative.
+      const prompt = resolveNativeHandler("review")!.execute(makeCtx(), "");
+      if (prompt.kind !== "expand") throw new Error("expected expand");
+      expect(prompt.prompt).toMatch(/only use this when the upstream clearly names the review target/i);
+    });
+
+    it("prompt still instructs base-resolution when repoDefaultBranch is missing (remote-workspace case)", () => {
+      // On paired remote workspaces today, defaultBranch may not be in the
+      // store. The prompt must still tell the agent to determine a base ref
+      // itself rather than diffing against an unnamed / empty ref.
+      const ctx = makeCtx({ repoDefaultBranch: null });
+      for (const name of ["review", "security-review"] as const) {
+        const result = resolveNativeHandler(name)!.execute(ctx, "");
+        if (result.kind !== "expand") throw new Error("expected expand");
+        expect(result.prompt).toMatch(/Resolve the review base ref/);
+        expect(result.prompt).toContain("gh pr view");
+        expect(result.prompt).toContain("@{upstream}");
+        // And must include an explicit instruction to ask the user if no base
+        // can be resolved, so the agent never runs `git diff ...HEAD` with an
+        // empty base.
+        expect(result.prompt).toMatch(/stop and ask the user/);
+      }
+    });
+  });
+
+  it("each command produces a distinct seeded prompt", () => {
+    const ctx = makeCtx();
+    const prompts = REVIEW_NAMES.map((n) => {
+      const r = resolveNativeHandler(n)!.execute(ctx, "");
+      if (r.kind !== "expand") throw new Error("expected expand");
+      return r.prompt;
+    });
+    const unique = new Set(prompts);
+    expect(unique.size).toBe(REVIEW_NAMES.length);
   });
 });
