@@ -64,6 +64,8 @@
   display: inline-flex;
   color: var(--text-dim);
   cursor: help;
+  position: relative;
+  top: 1px;
 }
 
 .check {
