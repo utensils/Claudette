@@ -54,20 +54,13 @@ Select **None** to disable notification sounds.
 
 ### Notification Command
 
-Run a custom shell command when a notification fires. The following environment variables are available:
-
-| Variable | Description |
-|----------|-------------|
-| `$CLAUDETTE_NOTIFICATION_TITLE` | Notification title |
-| `$CLAUDETTE_NOTIFICATION_BODY` | Notification body text |
-| `$CLAUDETTE_WORKSPACE_ID` | Workspace ID that triggered the notification |
-| `$CLAUDETTE_WORKSPACE_NAME` | Workspace display name |
+Run a custom shell command when a notification fires. The standard [workspace environment variables](#environment-variables) are available, so your script can identify which workspace triggered the notification.
 
 **Example** — send a Slack message:
 
 ```bash
 curl -X POST "$SLACK_WEBHOOK_URL" \
-  -d "{\"text\": \"$CLAUDETTE_NOTIFICATION_TITLE: $CLAUDETTE_NOTIFICATION_BODY\"}"
+  -d "{\"text\": \"Claudette: $CLAUDETTE_WORKSPACE_NAME needs attention\"}"
 ```
 
 ## Git
@@ -91,3 +84,18 @@ When enabled, archiving a workspace deletes the local branch — but only if the
 ## Repository
 
 Per-repository settings are documented in [Per-Repo Settings](/Claudette/features/per-repo-settings/).
+
+## Environment Variables
+
+Claudette sets the following `CLAUDETTE_*` environment variables in every subprocess it spawns — terminals, setup scripts, the agent CLI, and notification commands.
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `CLAUDETTE_WORKSPACE_NAME` | Workspace name | `fix-auth-bug` |
+| `CLAUDETTE_WORKSPACE_ID` | Workspace UUID | `a1b2c3d4-...` |
+| `CLAUDETTE_WORKSPACE_PATH` | Worktree absolute path | `~/.claudette/workspaces/myrepo/fix-auth-bug` |
+| `CLAUDETTE_ROOT_PATH` | Repository root path | `/Users/me/code/myrepo` |
+| `CLAUDETTE_DEFAULT_BRANCH` | Default branch name | `main` |
+| `CLAUDETTE_BRANCH_NAME` | Workspace branch name | `sean/fix-auth-bug` |
+
+These are useful in [setup scripts](/Claudette/features/per-repo-settings/#setup-script), [notification commands](#notification-command), and any tools you run in the [integrated terminal](/Claudette/features/integrated-terminal/).
