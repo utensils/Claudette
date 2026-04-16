@@ -17,6 +17,7 @@ function makeCtx(overrides: Partial<NativeCommandContext> = {}): NativeCommandCo
   return {
     repoId: "repo-1",
     pluginManagementEnabled: true,
+    usageInsightsEnabled: true,
     openPluginSettings: vi.fn<(intent: Partial<PluginSettingsIntent>) => void>(),
     repository: { name: "claudette", path: "/tmp/repos/claudette" },
     workspace: { branch: "feat/review-cmds", worktreePath: "/tmp/wt/review-cmds" },
@@ -448,6 +449,13 @@ describe("config native handler", () => {
     }
   });
 
+  it("redirects /config usage to experimental when Usage Insights is disabled", () => {
+    const ctx = makeCtx({ usageInsightsEnabled: false });
+    const handler = resolveNativeHandler("config")!;
+    handler.execute(ctx, "usage");
+    expect(ctx.openSettings).toHaveBeenCalledWith("experimental");
+  });
+
   it("is case-insensitive for section names", () => {
     const ctx = makeCtx();
     const handler = resolveNativeHandler("config")!;
@@ -472,7 +480,7 @@ describe("config native handler", () => {
 });
 
 describe("usage native handler", () => {
-  it("resolves /usage and opens the usage settings section", () => {
+  it("resolves /usage and opens the usage settings section when the gate is on", () => {
     const ctx = makeCtx();
     const handler = resolveNativeHandler("usage")!;
     const result = handler.execute(ctx, "");
@@ -480,16 +488,31 @@ describe("usage native handler", () => {
     expect(ctx.openSettings).toHaveBeenCalledWith("usage");
     expect(ctx.openUsageSettingsExternal).not.toHaveBeenCalled();
   });
+
+  it("routes /usage to Experimental when Usage Insights is disabled", () => {
+    const ctx = makeCtx({ usageInsightsEnabled: false });
+    const handler = resolveNativeHandler("usage")!;
+    handler.execute(ctx, "");
+    expect(ctx.openSettings).toHaveBeenCalledWith("experimental");
+  });
 });
 
 describe("extra-usage native handler", () => {
-  it("resolves /extra-usage and reuses both the in-app and external usage paths", () => {
+  it("reuses both the in-app and external usage paths when the gate is on", () => {
     const ctx = makeCtx();
     const handler = resolveNativeHandler("extra-usage")!;
     const result = handler.execute(ctx, "");
     expect(result).toEqual({ kind: "handled", canonicalName: "extra-usage" });
     expect(ctx.openSettings).toHaveBeenCalledWith("usage");
     expect(ctx.openUsageSettingsExternal).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes /extra-usage to Experimental and does NOT launch claude.ai when gated off", () => {
+    const ctx = makeCtx({ usageInsightsEnabled: false });
+    const handler = resolveNativeHandler("extra-usage")!;
+    handler.execute(ctx, "");
+    expect(ctx.openSettings).toHaveBeenCalledWith("experimental");
+    expect(ctx.openUsageSettingsExternal).not.toHaveBeenCalled();
   });
 });
 

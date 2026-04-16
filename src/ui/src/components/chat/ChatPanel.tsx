@@ -145,8 +145,10 @@ export function ChatPanel() {
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const openPluginSettings = useAppStore((s) => s.openPluginSettings);
   const pluginManagementEnabled = useAppStore((s) => s.pluginManagementEnabled);
+  const usageInsightsEnabled = useAppStore((s) => s.usageInsightsEnabled);
   const openSettings = useAppStore((s) => s.openSettings);
   const appVersion = useAppStore((s) => s.appVersion);
+  const slashCommandsByWorkspace = useAppStore((s) => s.slashCommandsByWorkspace);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -442,13 +444,25 @@ export function ChatPanel() {
     // prompt_expansion commands can rewrite the prompt before it is sent.
     const parsedSlash = parseSlashInput(trimmed);
     if (parsedSlash) {
-      const nativeHandler = resolveNativeHandler(parsedSlash.token);
+      // A user- or project-defined file-based command with the same name takes
+      // priority over non-reserved natives (plugin/marketplace remain reserved
+      // upstream in the backend registry). Skip native dispatch entirely when a
+      // file-based shadow exists so the custom markdown prompt reaches Claude.
+      const cmds = slashCommandsByWorkspace[selectedWorkspaceId] ?? [];
+      const tokenLower = parsedSlash.token.toLowerCase();
+      const shadowed = cmds.some(
+        (c) => c.source !== "builtin" && c.name.toLowerCase() === tokenLower,
+      );
+      const nativeHandler = shadowed
+        ? null
+        : resolveNativeHandler(parsedSlash.token);
       if (nativeHandler) {
         const workspaceId = selectedWorkspaceId;
         const result = nativeHandler.execute(
           {
             repoId: repo?.remote_connection_id ? null : repo?.id ?? null,
             pluginManagementEnabled,
+            usageInsightsEnabled,
             openPluginSettings,
             repository: repo ? { name: repo.name, path: repo.path } : null,
             workspace: ws
@@ -1338,7 +1352,15 @@ function ChatInputArea({
   const [cursorPos, setCursorPos] = useState(0);
   const [slashPickerIndex, setSlashPickerIndex] = useState(0);
   const [slashPickerDismissed, setSlashPickerDismissed] = useState(false);
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [slashCommands, setSlashCommandsLocal] = useState<SlashCommand[]>([]);
+  const setSlashCommandsStore = useAppStore((s) => s.setSlashCommands);
+  const setSlashCommands = useCallback(
+    (cmds: SlashCommand[]) => {
+      setSlashCommandsLocal(cmds);
+      setSlashCommandsStore(selectedWorkspaceId, cmds);
+    },
+    [selectedWorkspaceId, setSlashCommandsStore],
+  );
   const [filePickerIndex, setFilePickerIndex] = useState(0);
   const [filePickerDismissed, setFilePickerDismissed] = useState(false);
   const [workspaceFiles, setWorkspaceFiles] = useState<FileEntry[]>([]);

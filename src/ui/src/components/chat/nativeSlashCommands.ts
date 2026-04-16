@@ -22,6 +22,7 @@ export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 export interface NativeCommandContext {
   repoId: string | null;
   pluginManagementEnabled: boolean;
+  usageInsightsEnabled: boolean;
   openPluginSettings: (intent: Partial<PluginSettingsIntent>) => void;
   /** Repository metadata for the current workspace — used by review-workflow handlers. */
   repository: { name: string; path: string } | null;
@@ -253,9 +254,17 @@ const configHandler: NativeHandler = {
   execute: (ctx, args) => {
     const first = args.trim().split(/\s+/, 1)[0] ?? "";
     const lowered = first.toLowerCase();
-    const section = (CONFIG_SECTIONS as readonly string[]).includes(lowered)
+    const validSection = (CONFIG_SECTIONS as readonly string[]).includes(lowered)
       ? (lowered as ConfigSection)
       : "general";
+    // Respect the Usage Insights experimental gate: when the user hasn't
+    // opted in, the settings sidebar hides the Usage row, so `/config usage`
+    // should land on Experimental where the toggle lives instead of silently
+    // opening the hidden page.
+    const section =
+      validSection === "usage" && !ctx.usageInsightsEnabled
+        ? "experimental"
+        : validSection;
     ctx.openSettings(section);
     return { kind: "handled", canonicalName: "config" };
   },
@@ -266,7 +275,8 @@ const usageHandler: NativeHandler = {
   aliases: [],
   kind: "settings_route",
   execute: (ctx) => {
-    ctx.openSettings("usage");
+    // Mirror `/config usage` — route to Experimental when the gate is off.
+    ctx.openSettings(ctx.usageInsightsEnabled ? "usage" : "experimental");
     return { kind: "handled", canonicalName: "usage" };
   },
 };
@@ -276,9 +286,15 @@ const extraUsageHandler: NativeHandler = {
   aliases: [],
   kind: "settings_route",
   execute: (ctx) => {
-    // Reuse the existing in-app usage panel (which shows extra-usage status
-    // and a Manage/Enable link) and also deep-link to claude.ai settings so
-    // the user can toggle extra usage immediately in either state.
+    if (!ctx.usageInsightsEnabled) {
+      // Gate off: do not surface the hidden panel and do not launch claude.ai.
+      // Send the user to Experimental where they can opt in first.
+      ctx.openSettings("experimental");
+      return { kind: "handled", canonicalName: "extra-usage" };
+    }
+    // Reuse the in-app usage panel (which shows extra-usage status and a
+    // Manage/Enable link) and deep-link to claude.ai settings so the user can
+    // toggle extra usage immediately in either state.
     ctx.openSettings("usage");
     ctx.openUsageSettingsExternal();
     return { kind: "handled", canonicalName: "extra-usage" };
