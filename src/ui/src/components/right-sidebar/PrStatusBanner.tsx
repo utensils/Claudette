@@ -73,20 +73,15 @@ export const PrStatusBanner = memo(function PrStatusBanner() {
 
   return (
     <div className={styles.banner} style={{ background: config.bg }}>
-      <Icon size={14} style={{ color: config.fg }} />
       <button
-        className={styles.prLink}
+        className={styles.prPill}
+        style={{ borderColor: config.fg, color: config.fg }}
         onClick={() => openUrl(pr.url)}
         title={`Open PR #${pr.number} in browser`}
       >
-        <span className={styles.prNumber} style={{ color: config.fg }}>
-          #{pr.number}
-        </span>
-        <ExternalLink
-          size={10}
-          style={{ color: config.fg }}
-          className={styles.externalIcon}
-        />
+        <Icon size={14} />
+        <span className={styles.prNumber}>#{pr.number}</span>
+        <ExternalLink size={10} className={styles.externalIcon} />
       </button>
       <span className={styles.statusText} style={{ color: config.fg }}>
         {config.text}

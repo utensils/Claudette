@@ -17,19 +17,22 @@
   to { opacity: 1; }
 }
 
-.prLink {
+.prPill {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   background: none;
-  border: none;
+  border: 1px solid;
+  border-radius: 6px;
   cursor: pointer;
-  padding: 0;
+  padding: 3px 8px;
   font-family: inherit;
+  color: inherit;
+  transition: background 0.15s ease;
 }
 
-.prLink:hover {
-  text-decoration: underline;
+.prPill:hover {
+  background: rgba(128, 128, 128, 0.1);
 }
 
 .prNumber {
