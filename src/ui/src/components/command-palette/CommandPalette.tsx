@@ -24,7 +24,7 @@ import {
   type Command,
   type CommandCategory,
 } from "./commands";
-import { isEffortSupported, isMaxEffortAllowed } from "../chat/EffortSelector";
+import { isFastSupported, isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed } from "../chat/modelCapabilities";
 import styles from "./CommandPalette.module.css";
 
 interface GroupedCommands {
@@ -261,13 +261,22 @@ export function CommandPalette() {
         await resetAgentSession(selectedWorkspaceId);
         clearAgentQuestion(selectedWorkspaceId);
         clearPlanApproval(selectedWorkspaceId);
+        // Turn off fast mode if the new model doesn't support it.
+        const store = useAppStore.getState();
+        if (store.fastMode[selectedWorkspaceId] && !isFastSupported(model)) {
+          store.setFastMode(selectedWorkspaceId, false);
+          await setAppSetting(`fast_mode:${selectedWorkspaceId}`, "false");
+        }
         // Downgrade effort when switching to a model with less support.
-        const currentEffort = useAppStore.getState().effortLevel[selectedWorkspaceId];
+        const currentEffort = store.effortLevel[selectedWorkspaceId];
         if (!isEffortSupported(model)) {
-          useAppStore.getState().setEffortLevel(selectedWorkspaceId, "auto");
+          store.setEffortLevel(selectedWorkspaceId, "auto");
           await setAppSetting(`effort_level:${selectedWorkspaceId}`, "auto");
+        } else if (currentEffort === "xhigh" && !isXhighEffortAllowed(model)) {
+          store.setEffortLevel(selectedWorkspaceId, "high");
+          await setAppSetting(`effort_level:${selectedWorkspaceId}`, "high");
         } else if (currentEffort === "max" && !isMaxEffortAllowed(model)) {
-          useAppStore.getState().setEffortLevel(selectedWorkspaceId, "high");
+          store.setEffortLevel(selectedWorkspaceId, "high");
           await setAppSetting(`effort_level:${selectedWorkspaceId}`, "high");
         }
       },

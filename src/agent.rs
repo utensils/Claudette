@@ -303,7 +303,7 @@ pub fn build_claude_args(
     // Effort level — standalone flag, not part of --settings JSON.
     // "auto" and unknown values are skipped (let the CLI use its default).
     if let Some(ref effort) = settings.effort
-        && matches!(effort.as_str(), "low" | "medium" | "high" | "max")
+        && matches!(effort.as_str(), "low" | "medium" | "high" | "xhigh" | "max")
     {
         args.push("--effort".to_string());
         args.push(effort.clone());
@@ -1833,6 +1833,17 @@ mod tests {
         let args = build_claude_args("sess-1", "hello", false, &[], None, &settings, false);
         let idx = args.iter().position(|a| a == "--effort").unwrap();
         assert_eq!(args[idx + 1], "high");
+    }
+
+    #[test]
+    fn test_build_args_with_effort_xhigh() {
+        let settings = AgentSettings {
+            effort: Some("xhigh".to_string()),
+            ..Default::default()
+        };
+        let args = build_claude_args("sess-1", "hello", false, &[], None, &settings, false);
+        let idx = args.iter().position(|a| a == "--effort").unwrap();
+        assert_eq!(args[idx + 1], "xhigh");
     }
 
     #[test]
