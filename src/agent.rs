@@ -685,6 +685,35 @@ pub async fn stop_agent(pid: u32) -> Result<(), String> {
     }
 }
 
+/// Gracefully stop an agent process (SIGTERM → wait → SIGKILL).
+///
+/// Sends SIGTERM first and allows up to 500 ms for the process to exit.
+/// Falls back to SIGKILL if the deadline expires. Suitable for tearing
+/// down idle persistent sessions at turn boundaries where we don't need
+/// an instant kill.
+pub async fn stop_agent_graceful(pid: u32) -> Result<(), String> {
+    // Send SIGTERM for graceful shutdown.
+    let _ = tokio::process::Command::new("kill")
+        .args(["-15", &pid.to_string()])
+        .output()
+        .await;
+
+    // Poll for up to 500 ms.
+    for _ in 0..10 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let probe = tokio::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .await;
+        if probe.is_ok_and(|o| !o.status.success()) {
+            return Ok(());
+        }
+    }
+
+    // Escalate to SIGKILL.
+    stop_agent(pid).await
+}
+
 // ---------------------------------------------------------------------------
 // Persistent session — long-lived process for multi-turn MCP retention
 // ---------------------------------------------------------------------------
