@@ -186,11 +186,19 @@ Typographic **scale** only — sizes, weights, line-heights, letter-spacing. Fon
 
 ### `layout`
 
-| Token | Use |
-|---|---|
-| `scrollbar-width` | Scrollbar gutter size. |
-| `scrollbar-thumb-bg` / `scrollbar-thumb-hover-bg` | Scrollbar thumb colors. |
-| `focus-ring` | `box-shadow` applied to `:focus-visible`. |
+| Token | Default | Use |
+|---|---|---|
+| `scrollbar-width` | `8px` | Scrollbar gutter size. |
+| `scrollbar-thumb-bg` / `scrollbar-thumb-hover-bg` | — | Scrollbar thumb colors. |
+| `focus-ring` | `0 0 0 2px rgba(accent, 0.5)` | `box-shadow` applied to `:focus-visible`. |
+| `chat-max-width` | `none` | Max width of the chat messages column. `none` is full-bleed; set a length like `820px` for a centered reading column. |
+| `turn-gap` | `24px` | Vertical breathing room between consecutive chat turns. Applied as `margin-top` on each user turn after the first. |
+| `message-text-max-width` | `none` | Max width applied to each individual message body. `none` lets messages fill the canvas; set a length for a tighter reading measure. |
+| `composer-padding-y` | `14px` | Vertical padding inside the chat composer textarea. |
+| `composer-min-height` | `44px` | Minimum height of the composer input area. |
+| `sidebar-item-padding-y` | `6px` | Vertical padding of each workspace row in the sidebar — controls sidebar density. |
+| `sidebar-item-gap` | `2px` | Vertical gap between sibling repo groups in the sidebar list. |
+| `canvas-padding-inline` | `32px` | Horizontal padding on the chat canvas (both sides of the messages column). |
 
 > Panel widths (sidebar, right rail, terminal height) are **user preferences** persisted per user, not theme tokens. They're drag-resizable and saved to the app database.
 

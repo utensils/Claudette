@@ -7,6 +7,7 @@
     "version": "1.0.0",
     "scheme": "dark",
     "description": "Ochre ember on warm sepia — the beloved retro dev palette, rendered on a vintage CRT.",
+    "stylesheet": "stylesheets/gruvbox.css",
     "preview": {
       "background": "#282828",
       "surface": "#3c3836",
@@ -135,7 +136,11 @@
       "scrollbar-width": "8px",
       "scrollbar-thumb-bg": "rgba(254, 128, 25, 0.14)",
       "scrollbar-thumb-hover-bg": "rgba(254, 128, 25, 0.42)",
-      "focus-ring": "0 0 0 1px rgba(255, 230, 180, 0.50), 0 0 0 3px rgba(254, 128, 25, 0.50), 0 6px 18px rgba(214, 93, 14, 0.25)"
+      "focus-ring": "0 0 0 1px rgba(255, 230, 180, 0.50), 0 0 0 3px rgba(254, 128, 25, 0.50), 0 6px 18px rgba(214, 93, 14, 0.25)",
+      "chat-max-width": "960px",
+      "turn-gap": "14px",
+      "canvas-padding-inline": "28px",
+      "composer-min-height": "60px"
     }
   }
 }

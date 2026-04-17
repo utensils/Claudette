@@ -192,6 +192,19 @@
   --scrollbar-thumb-bg: rgba(255, 255, 255, 0.05);
   --scrollbar-thumb-hover-bg: rgba(var(--accent-primary-rgb), 0.25);
   --focus-ring: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.5);
+
+  /* Chat canvas & density — themes can tune how wide chat reads,
+     how much breathing room lives between turns, and how compact the
+     composer & sidebar feel. Defaults match previously hardcoded
+     values so the built-in theme renders identically. */
+  --chat-max-width: none;
+  --turn-gap: 24px;
+  --message-text-max-width: none;
+  --composer-padding-y: 14px;
+  --composer-min-height: 44px;
+  --sidebar-item-padding-y: 6px;
+  --sidebar-item-gap: 2px;
+  --canvas-padding-inline: 32px;
 }
 
 * {

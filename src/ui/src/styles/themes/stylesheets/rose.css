@@ -1,0 +1,27 @@
+/* Rosé — watercolor wash, soft lilac halos, pastel warmth. */
+
+body[data-theme="rose"] [class*="messages_"] {
+  background-image:
+    radial-gradient(60% 45% at 20% 0%, rgba(235, 188, 186, 0.10), transparent 65%),
+    radial-gradient(55% 45% at 85% 15%, rgba(196, 167, 231, 0.09), transparent 70%),
+    radial-gradient(70% 55% at 50% 100%, rgba(246, 193, 119, 0.05), transparent 70%);
+  background-attachment: fixed;
+}
+
+body[data-theme="rose"] [class*="composer_"] {
+  box-shadow:
+    var(--composer-ring),
+    0 0 0 6px rgba(196, 167, 231, 0.08),
+    0 8px 24px -8px rgba(196, 167, 231, 0.20);
+}
+
+body[data-theme="rose"] [class*="composer_"]:focus-within {
+  box-shadow:
+    var(--composer-ring-focus),
+    0 0 0 8px rgba(235, 188, 186, 0.14),
+    0 12px 32px -10px rgba(196, 167, 231, 0.30);
+}
+
+body[data-theme="rose"] [class*="roleLabel_"] {
+  letter-spacing: 0.02em;
+}

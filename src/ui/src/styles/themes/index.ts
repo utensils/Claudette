@@ -1,4 +1,5 @@
 import type { ThemeDefinition } from "../../types/theme";
+import { isStructuredTheme } from "../../types/theme";
 import defaultTheme from "./default.json";
 import claudetteTheme from "./claudette.json";
 import linearTheme from "./linear.json";
@@ -11,6 +12,52 @@ import bunkerTheme from "./bunker.json";
 import greenhouseTheme from "./greenhouse.json";
 import uplink1984Theme from "./uplink-1984.json";
 import phosphorUplinkTheme from "./phosphor-uplink.json";
+
+import claudetteCss from "./stylesheets/claudette.css?url";
+import linearCss from "./stylesheets/linear.css?url";
+import velvetCss from "./stylesheets/velvet.css?url";
+import roseCss from "./stylesheets/rose.css?url";
+import neonTokyoCss from "./stylesheets/neon-tokyo.css?url";
+import solarCss from "./stylesheets/solar.css?url";
+import gruvboxCss from "./stylesheets/gruvbox.css?url";
+import bunkerCss from "./stylesheets/bunker.css?url";
+
+/**
+ * Per-theme stylesheet URLs. Keyed by theme id. Each entry is a Vite
+ * `?url` import so the CSS ships as a static asset but is only loaded
+ * (by `applyTheme`) when the corresponding theme is active. To wire a
+ * stylesheet for a theme, drop a CSS file in `./stylesheets/` and add
+ * an entry here:
+ *
+ *   import fooCss from "./stylesheets/foo.css?url";
+ *   const BUILTIN_STYLESHEETS: Record<string, string> = { foo: fooCss };
+ *
+ * Themes without an entry simply have no extra stylesheet — their
+ * `manifest.stylesheet` is left undefined.
+ */
+const BUILTIN_STYLESHEETS: Record<string, string> = {
+  claudette: claudetteCss,
+  linear: linearCss,
+  velvet: velvetCss,
+  rose: roseCss,
+  "neon-tokyo": neonTokyoCss,
+  solar: solarCss,
+  gruvbox: gruvboxCss,
+  bunker: bunkerCss,
+};
+
+function withStylesheet(theme: ThemeDefinition): ThemeDefinition {
+  const id = isStructuredTheme(theme) ? theme.manifest.id : theme.id;
+  const url = BUILTIN_STYLESHEETS[id];
+  if (!url) return theme;
+  if (isStructuredTheme(theme)) {
+    return {
+      ...theme,
+      manifest: { ...theme.manifest, stylesheet: url },
+    };
+  }
+  return { ...theme, stylesheet: url };
+}
 
 export const BUILTIN_THEMES: ThemeDefinition[] = [
   defaultTheme as ThemeDefinition,
@@ -25,6 +72,6 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
   greenhouseTheme as ThemeDefinition,
   uplink1984Theme as ThemeDefinition,
   phosphorUplinkTheme as ThemeDefinition,
-];
+].map(withStylesheet);
 
 export const DEFAULT_THEME_ID = "default";

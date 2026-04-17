@@ -7,6 +7,7 @@
     "version": "1.0.0",
     "scheme": "dark",
     "description": "Modern product editorial — hushed indigo-black, a single violet signature, clean radii and quiet precision.",
+    "stylesheet": "stylesheets/linear.css",
     "preview": {
       "background": "#0a0a14",
       "surface": "#16162a",
@@ -135,7 +136,13 @@
       "scrollbar-width": "8px",
       "scrollbar-thumb-bg": "rgba(123, 110, 244, 0.14)",
       "scrollbar-thumb-hover-bg": "rgba(123, 110, 244, 0.42)",
-      "focus-ring": "0 0 0 1px rgba(230, 220, 255, 0.50), 0 0 0 3px rgba(123, 110, 244, 0.55), 0 6px 18px rgba(123, 110, 244, 0.25)"
+      "focus-ring": "0 0 0 1px rgba(230, 220, 255, 0.50), 0 0 0 3px rgba(123, 110, 244, 0.55), 0 6px 18px rgba(123, 110, 244, 0.25)",
+      "chat-max-width": "1080px",
+      "turn-gap": "10px",
+      "composer-min-height": "56px",
+      "canvas-padding-inline": "28px",
+      "sidebar-item-padding-y": "5px",
+      "sidebar-item-gap": "1px"
     }
   }
 }

@@ -7,6 +7,7 @@
     "version": "1.0.0",
     "scheme": "light",
     "description": "High-noon warm paper and burnt-amber wire — a desert-solstice light theme.",
+    "stylesheet": "stylesheets/solar.css",
     "preview": {
       "background": "#f3e6c9",
       "surface": "#fbf2e1",
@@ -135,7 +136,13 @@
       "scrollbar-width": "8px",
       "scrollbar-thumb-bg": "rgba(101, 70, 35, 0.20)",
       "scrollbar-thumb-hover-bg": "rgba(178, 92, 24, 0.40)",
-      "focus-ring": "0 0 0 2px rgba(178, 92, 24, 0.60), 0 6px 14px rgba(80, 55, 30, 0.18)"
+      "focus-ring": "0 0 0 2px rgba(178, 92, 24, 0.60), 0 6px 14px rgba(80, 55, 30, 0.18)",
+      "chat-max-width": "680px",
+      "turn-gap": "26px",
+      "canvas-padding-inline": "48px",
+      "composer-min-height": "88px",
+      "composer-padding-y": "18px",
+      "sidebar-item-padding-y": "8px"
     }
   }
 }

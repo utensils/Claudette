@@ -19,11 +19,46 @@ const fakeStyle = {
   set cssText(_v: string) { styleMap.clear(); },
 };
 
+// Minimal body shim: just tracks attributes via a Map.
+const bodyAttrs = new Map<string, string>();
+const fakeBody = {
+  setAttribute: (name: string, value: string) => { bodyAttrs.set(name, value); },
+  getAttribute: (name: string) => bodyAttrs.get(name) ?? null,
+  removeAttribute: (name: string) => { bodyAttrs.delete(name); },
+};
+
+// Minimal head / link tracking. registry is keyed by element id; elements
+// removed via remove() are evicted so subsequent getElementById returns null.
+type FakeLink = {
+  id: string;
+  rel: string;
+  href: string;
+  remove: () => void;
+};
+const elementsById = new Map<string, FakeLink>();
+const fakeHead = {
+  appendChild: (el: FakeLink) => {
+    if (el.id) elementsById.set(el.id, el);
+  },
+};
+function makeFakeLink(): FakeLink {
+  const link: FakeLink = {
+    id: "",
+    rel: "",
+    href: "",
+    remove: () => {
+      if (link.id) elementsById.delete(link.id);
+    },
+  };
+  return link;
+}
+
 vi.stubGlobal("document", {
   documentElement: { style: fakeStyle },
-  getElementById: () => null,
-  createElement: () => ({ rel: "", href: "", id: "" }),
-  head: { appendChild: () => {} },
+  body: fakeBody,
+  getElementById: (id: string) => elementsById.get(id) ?? null,
+  createElement: (_tag: string) => makeFakeLink(),
+  head: fakeHead,
 });
 
 // Mock the tauri service import that pulls in other runtime dependencies.
@@ -175,6 +210,9 @@ describe("applyTheme (structured shape)", () => {
       radius: {
         "radius-md": "6px",
       },
+      layout: {
+        "chat-max-width": "720px",
+      },
     },
   };
 
@@ -185,6 +223,9 @@ describe("applyTheme (structured shape)", () => {
     expect(styleMap.get("--panel-bg")).toBe("#222222");
     expect(styleMap.get("--font-size-base")).toBe("15px");
     expect(styleMap.get("--radius-md")).toBe("6px");
+    // Regression: new layout tokens must be in THEMEABLE_TOKENS so a
+    // theme can tune chat-canvas width / density.
+    expect(styleMap.get("--chat-max-width")).toBe("720px");
   });
 
   it("sets color-scheme property from the manifest", () => {
@@ -243,6 +284,143 @@ describe("applyTheme (legacy flat shape)", () => {
     expect(styleMap.get("--accent-primary")).toBe("#dd9900");
     expect(styleMap.get("--app-bg")).toBe("#fefefe");
     expect(styleMap.get("color-scheme")).toBe("light");
+  });
+});
+
+describe("applyTheme body[data-theme]", () => {
+  beforeEach(() => {
+    styleMap.clear();
+    bodyAttrs.clear();
+    elementsById.clear();
+  });
+
+  it("sets body[data-theme] to the structured theme id", () => {
+    const theme: StructuredTheme = {
+      manifest: { id: "atlas", name: "Atlas", scheme: "dark" },
+      tokens: { color: { "accent-primary": "#abcdef" } },
+    };
+    applyTheme(theme);
+    expect(bodyAttrs.get("data-theme")).toBe("atlas");
+  });
+
+  it("sets body[data-theme] to the legacy theme id", () => {
+    const legacy: LegacyTheme = {
+      id: "legacy-id",
+      name: "Legacy",
+      colors: { "accent-primary": "#f00" },
+    };
+    applyTheme(legacy);
+    expect(bodyAttrs.get("data-theme")).toBe("legacy-id");
+  });
+
+  it("updates body[data-theme] when switching themes", () => {
+    const a: StructuredTheme = {
+      manifest: { id: "first", name: "First" },
+      tokens: { color: { "accent-primary": "#111" } },
+    };
+    const b: StructuredTheme = {
+      manifest: { id: "second", name: "Second" },
+      tokens: { color: { "accent-primary": "#222" } },
+    };
+    applyTheme(a);
+    expect(bodyAttrs.get("data-theme")).toBe("first");
+    applyTheme(b);
+    expect(bodyAttrs.get("data-theme")).toBe("second");
+  });
+});
+
+describe("applyTheme per-theme stylesheet link", () => {
+  beforeEach(() => {
+    styleMap.clear();
+    bodyAttrs.clear();
+    elementsById.clear();
+  });
+
+  it("injects <link id=theme-stylesheet> when the theme declares a stylesheet", () => {
+    const theme: StructuredTheme = {
+      manifest: {
+        id: "sheeted",
+        name: "Sheeted",
+        stylesheet: "/themes/sheeted.css",
+      },
+      tokens: { color: { "accent-primary": "#abc" } },
+    };
+    applyTheme(theme);
+    const link = elementsById.get("theme-stylesheet");
+    expect(link).toBeDefined();
+    expect(link?.rel).toBe("stylesheet");
+    expect(link?.href).toBe("/themes/sheeted.css");
+  });
+
+  it("removes the link when switching to a theme without a stylesheet", () => {
+    const sheeted: StructuredTheme = {
+      manifest: { id: "a", name: "A", stylesheet: "/themes/a.css" },
+      tokens: { color: { "accent-primary": "#abc" } },
+    };
+    const bare: StructuredTheme = {
+      manifest: { id: "b", name: "B" },
+      tokens: { color: { "accent-primary": "#abc" } },
+    };
+    applyTheme(sheeted);
+    expect(elementsById.has("theme-stylesheet")).toBe(true);
+    applyTheme(bare);
+    expect(elementsById.has("theme-stylesheet")).toBe(false);
+  });
+
+  it("updates the link href when switching between stylesheet-bearing themes", () => {
+    const first: StructuredTheme = {
+      manifest: { id: "one", name: "One", stylesheet: "/themes/one.css" },
+      tokens: { color: { "accent-primary": "#000" } },
+    };
+    const second: StructuredTheme = {
+      manifest: { id: "two", name: "Two", stylesheet: "/themes/two.css" },
+      tokens: { color: { "accent-primary": "#fff" } },
+    };
+    applyTheme(first);
+    expect(elementsById.get("theme-stylesheet")?.href).toBe("/themes/one.css");
+    applyTheme(second);
+    expect(elementsById.get("theme-stylesheet")?.href).toBe("/themes/two.css");
+  });
+
+  it("omits the link entirely when no theme in a sequence has a stylesheet", () => {
+    const a: StructuredTheme = {
+      manifest: { id: "plain-a", name: "A" },
+      tokens: { color: { "accent-primary": "#111" } },
+    };
+    const b: StructuredTheme = {
+      manifest: { id: "plain-b", name: "B" },
+      tokens: { color: { "accent-primary": "#222" } },
+    };
+    applyTheme(a);
+    applyTheme(b);
+    expect(elementsById.has("theme-stylesheet")).toBe(false);
+  });
+
+  it("honors the stylesheet field on legacy flat themes", () => {
+    const legacy: LegacyTheme = {
+      id: "legacy-sheet",
+      name: "Legacy Sheet",
+      stylesheet: "/themes/legacy.css",
+      colors: { "accent-primary": "#123" },
+    };
+    applyTheme(legacy);
+    expect(elementsById.get("theme-stylesheet")?.href).toBe("/themes/legacy.css");
+  });
+
+  it("does not crash when the theme JSON includes an unknown stylesheet-shaped field", () => {
+    // Simulate a user theme that accidentally includes extra fields —
+    // applyTheme should be robust to anything normalizeTheme surfaces.
+    const quirky = {
+      manifest: { id: "quirky", name: "Quirky" },
+      tokens: { color: { "accent-primary": "#abc" } },
+      // Unknown top-level field — ignored by normalizeTheme. We're just
+      // verifying applyTheme stays happy with extra keys on the input.
+      stylesheet: "/ignored.css",
+    } as unknown as ThemeDefinition;
+    expect(() => applyTheme(quirky)).not.toThrow();
+    // Since normalizeTheme reads stylesheet from manifest (not top level)
+    // for structured themes, no link should be injected here.
+    expect(elementsById.has("theme-stylesheet")).toBe(false);
   });
 });
 

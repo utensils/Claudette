@@ -1,0 +1,34 @@
+/* Neon Tokyo — scanlines, magenta grid, neon text glow. */
+
+body[data-theme="neon-tokyo"] [class*="messages_"] {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 46, 136, 0.05) 0px,
+    rgba(255, 46, 136, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  background-attachment: fixed;
+}
+
+body[data-theme="neon-tokyo"] [class*="sidebar_"] {
+  background-image:
+    linear-gradient(rgba(255, 46, 136, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px, 24px 24px;
+  background-position: 0 0, 0 0;
+}
+
+body[data-theme="neon-tokyo"] [class*="role_User"] [class*="roleLabel_"],
+body[data-theme="neon-tokyo"] [class*="title_"] {
+  text-shadow:
+    0 0 4px rgba(255, 46, 136, 0.55),
+    0 0 12px rgba(255, 46, 136, 0.28);
+  letter-spacing: 0.04em;
+}
+
+body[data-theme="neon-tokyo"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(255, 46, 136, 0.90),
+    inset 0 0 18px rgba(255, 46, 136, 0.12);
+}

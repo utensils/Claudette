@@ -7,6 +7,7 @@
     "version": "1.0.0",
     "scheme": "dark",
     "description": "Dusty rose ink on moonlit vellum — a leather-bound journal for writers and long-form thinkers.",
+    "stylesheet": "stylesheets/rose.css",
     "preview": {
       "background": "#191724",
       "surface": "#26233a",
@@ -135,7 +136,12 @@
       "scrollbar-width": "8px",
       "scrollbar-thumb-bg": "rgba(235, 188, 186, 0.14)",
       "scrollbar-thumb-hover-bg": "rgba(235, 188, 186, 0.40)",
-      "focus-ring": "0 0 0 1px rgba(255, 230, 228, 0.48), 0 0 0 3px rgba(235, 188, 186, 0.52), 0 6px 18px rgba(235, 188, 186, 0.22)"
+      "focus-ring": "0 0 0 1px rgba(255, 230, 228, 0.48), 0 0 0 3px rgba(235, 188, 186, 0.52), 0 6px 18px rgba(235, 188, 186, 0.22)",
+      "chat-max-width": "720px",
+      "turn-gap": "22px",
+      "canvas-padding-inline": "40px",
+      "composer-min-height": "76px",
+      "sidebar-item-padding-y": "7px"
     }
   }
 }

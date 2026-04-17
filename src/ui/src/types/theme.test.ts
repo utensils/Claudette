@@ -191,6 +191,51 @@ describe("normalizeTheme legacy shell-token backfill", () => {
   });
 });
 
+describe("normalizeTheme stylesheetUrl", () => {
+  it("surfaces manifest.stylesheet as stylesheetUrl on structured themes", () => {
+    const theme: StructuredTheme = {
+      manifest: {
+        id: "sheeted",
+        name: "Sheeted",
+        stylesheet: "/assets/themes/sheeted.css",
+      },
+      tokens: { color: { "accent-primary": "#abc" } },
+    };
+    expect(normalizeTheme(theme).stylesheetUrl).toBe(
+      "/assets/themes/sheeted.css",
+    );
+  });
+
+  it("leaves stylesheetUrl undefined on structured themes without a stylesheet", () => {
+    const theme: StructuredTheme = {
+      manifest: { id: "bare", name: "Bare" },
+      tokens: { color: { "accent-primary": "#abc" } },
+    };
+    expect(normalizeTheme(theme).stylesheetUrl).toBeUndefined();
+  });
+
+  it("surfaces top-level stylesheet as stylesheetUrl on legacy themes", () => {
+    const legacy: LegacyTheme = {
+      id: "legacy",
+      name: "Legacy",
+      stylesheet: "/assets/themes/legacy.css",
+      colors: { "accent-primary": "#123" },
+    };
+    expect(normalizeTheme(legacy).stylesheetUrl).toBe(
+      "/assets/themes/legacy.css",
+    );
+  });
+
+  it("leaves stylesheetUrl undefined on legacy themes without a stylesheet", () => {
+    const legacy: LegacyTheme = {
+      id: "legacy",
+      name: "Legacy",
+      colors: { "accent-primary": "#123" },
+    };
+    expect(normalizeTheme(legacy).stylesheetUrl).toBeUndefined();
+  });
+});
+
 describe("normalizeTheme scheme detection", () => {
   it("structured manifest.scheme wins over token color-scheme", () => {
     const mixed: StructuredTheme = {

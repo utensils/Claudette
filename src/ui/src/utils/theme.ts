@@ -169,6 +169,19 @@ const THEMEABLE_TOKENS = new Set<string>([
   "scrollbar-thumb-bg",
   "scrollbar-thumb-hover-bg",
   "focus-ring",
+
+  // Chat canvas & density — themes tune how wide the chat reads,
+  // the rhythm between turns, composer size, sidebar density, and
+  // outer canvas padding. Defaults in styles/theme.css match previously
+  // hardcoded values so the default theme renders unchanged.
+  "chat-max-width",
+  "turn-gap",
+  "message-text-max-width",
+  "composer-padding-y",
+  "composer-min-height",
+  "sidebar-item-padding-y",
+  "sidebar-item-gap",
+  "canvas-padding-inline",
 ]);
 
 /**
@@ -223,7 +236,31 @@ export function getTerminalTheme(): ITheme {
 
 export function applyTheme(theme: ThemeDefinition): void {
   const root = document.documentElement;
-  const { tokens, scheme } = normalizeTheme(theme);
+  const { id, tokens, scheme, stylesheetUrl } = normalizeTheme(theme);
+
+  // Surface the active theme id on <body> so per-theme stylesheets and
+  // CSS consumers can scope rules with `body[data-theme="..."]`.
+  document.body?.setAttribute("data-theme", id);
+
+  // Maintain exactly one <link id="theme-stylesheet"> in <head>.
+  // If the theme declares a stylesheet, point the link at it; otherwise
+  // remove the link entirely so the previous theme's CSS unloads.
+  const existing = document.getElementById(
+    "theme-stylesheet",
+  ) as HTMLLinkElement | null;
+  if (stylesheetUrl) {
+    if (existing) {
+      if (existing.href !== stylesheetUrl) existing.href = stylesheetUrl;
+    } else {
+      const link = document.createElement("link") as HTMLLinkElement;
+      link.id = "theme-stylesheet";
+      link.rel = "stylesheet";
+      link.href = stylesheetUrl;
+      document.head.appendChild(link);
+    }
+  } else if (existing) {
+    existing.remove();
+  }
 
   // Clear every themeable variable first so removing a token in a
   // reloaded theme file actually takes effect. Any token NOT in the

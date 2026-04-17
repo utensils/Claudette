@@ -28,6 +28,15 @@ export interface ThemeManifest {
    */
   scheme?: "dark" | "light";
   /**
+   * Optional path to an extra per-theme stylesheet. For built-in themes
+   * this is resolved at bundle time via a Vite `?url` import (see
+   * `styles/themes/index.ts`). For user themes it's a path relative to
+   * the theme JSON. At runtime `applyTheme()` injects a single
+   * `<link id="theme-stylesheet">` pointing at the current theme's
+   * stylesheet and removes it when the theme has none.
+   */
+  stylesheet?: string;
+  /**
    * Swatches shown in the theme picker preview tile. Optional —
    * the picker can fall back to reading tokens directly.
    */
@@ -62,6 +71,7 @@ export interface LegacyTheme {
   name: string;
   author?: string;
   description?: string;
+  stylesheet?: string;
   colors: Record<string, string>;
 }
 
@@ -85,6 +95,7 @@ export function normalizeTheme(theme: ThemeDefinition): {
   author?: string;
   description?: string;
   scheme: "dark" | "light";
+  stylesheetUrl?: string;
   tokens: Record<string, string>;
 } {
   if (isStructuredTheme(theme)) {
@@ -100,6 +111,7 @@ export function normalizeTheme(theme: ThemeDefinition): {
       author: theme.manifest.author,
       description: theme.manifest.description,
       scheme: theme.manifest.scheme ?? detectScheme(flat),
+      stylesheetUrl: theme.manifest.stylesheet,
       tokens: flat,
     };
   }
@@ -109,6 +121,7 @@ export function normalizeTheme(theme: ThemeDefinition): {
     author: theme.author,
     description: theme.description,
     scheme: detectScheme(theme.colors),
+    stylesheetUrl: theme.stylesheet,
     tokens: backfillLegacyShellTokens(theme.colors),
   };
 }

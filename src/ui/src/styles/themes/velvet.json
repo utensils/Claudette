@@ -7,6 +7,7 @@
     "version": "1.0.0",
     "scheme": "dark",
     "description": "Champagne and ink — a midnight-opera theme of indigo velvet and low-lit gilt.",
+    "stylesheet": "stylesheets/velvet.css",
     "preview": {
       "background": "#0c0f1f",
       "surface": "#1a1e38",
@@ -135,7 +136,11 @@
       "scrollbar-width": "8px",
       "scrollbar-thumb-bg": "rgba(212, 184, 106, 0.12)",
       "scrollbar-thumb-hover-bg": "rgba(212, 184, 106, 0.38)",
-      "focus-ring": "0 0 0 1px rgba(212, 184, 106, 0.75), 0 0 0 4px rgba(212, 184, 106, 0.10)"
+      "focus-ring": "0 0 0 1px rgba(212, 184, 106, 0.75), 0 0 0 4px rgba(212, 184, 106, 0.10)",
+      "chat-max-width": "820px",
+      "turn-gap": "18px",
+      "canvas-padding-inline": "36px",
+      "composer-min-height": "68px"
     }
   }
 }

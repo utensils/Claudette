@@ -1,0 +1,35 @@
+/* Velvet — theatrical spotlight vignette, champagne hairlines. */
+
+body[data-theme="velvet"] [class*="messages_"] {
+  background-image:
+    radial-gradient(55% 45% at 50% -10%, rgba(212, 184, 106, 0.10), transparent 60%),
+    radial-gradient(140% 100% at 50% 50%, transparent 40%, rgba(4, 6, 18, 0.55) 100%);
+  background-attachment: fixed;
+}
+
+body[data-theme="velvet"] [class*="roleLabel_"] {
+  position: relative;
+  padding-bottom: 3px;
+}
+
+body[data-theme="velvet"] [class*="roleLabel_"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 22px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(212, 184, 106, 0.70),
+    rgba(212, 184, 106, 0)
+  );
+}
+
+body[data-theme="velvet"] [class*="composer_"] {
+  background-image: linear-gradient(
+    180deg,
+    rgba(212, 184, 106, 0.025),
+    transparent 40%
+  );
+}

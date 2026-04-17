@@ -7,6 +7,7 @@
     "version": "1.0.0",
     "scheme": "dark",
     "description": "Raw concrete, single floodlight, safety orange. Type into a bunker at 3am.",
+    "stylesheet": "stylesheets/bunker.css",
     "preview": {
       "background": "#1a1a1a",
       "surface": "#2b2b2b",
@@ -135,7 +136,14 @@
       "scrollbar-width": "10px",
       "scrollbar-thumb-bg": "#2b2b2b",
       "scrollbar-thumb-hover-bg": "#ff5b13",
-      "focus-ring": "0 0 0 2px #ff5b13"
+      "focus-ring": "0 0 0 2px #ff5b13",
+      "chat-max-width": "100%",
+      "turn-gap": "10px",
+      "canvas-padding-inline": "24px",
+      "composer-min-height": "52px",
+      "composer-padding-y": "12px",
+      "sidebar-item-padding-y": "5px",
+      "sidebar-item-gap": "0px"
     }
   }
 }

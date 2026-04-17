@@ -7,6 +7,7 @@
     "version": "2.0.0",
     "scheme": "dark",
     "description": "The flagship — terracotta ember over warm parchment-black. Claude Code in the terminal, rendered with intent.",
+    "stylesheet": "stylesheets/claudette.css",
     "preview": {
       "background": "#14100d",
       "surface": "#241e17",
@@ -135,7 +136,13 @@
       "scrollbar-width": "8px",
       "scrollbar-thumb-bg": "rgba(217, 119, 87, 0.14)",
       "scrollbar-thumb-hover-bg": "rgba(217, 119, 87, 0.42)",
-      "focus-ring": "0 0 0 1px rgba(255, 220, 180, 0.50), 0 0 0 3px rgba(217, 119, 87, 0.55), 0 6px 18px rgba(217, 119, 87, 0.25)"
+      "focus-ring": "0 0 0 1px rgba(255, 220, 180, 0.50), 0 0 0 3px rgba(217, 119, 87, 0.55), 0 6px 18px rgba(217, 119, 87, 0.25)",
+      "chat-max-width": "720px",
+      "turn-gap": "22px",
+      "canvas-padding-inline": "40px",
+      "composer-min-height": "80px",
+      "composer-padding-y": "16px",
+      "sidebar-item-padding-y": "7px"
     }
   }
 }

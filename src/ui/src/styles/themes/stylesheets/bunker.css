@@ -1,0 +1,33 @@
+/* Bunker — concrete block grid, hard shadows, ALL CAPS brutalism. */
+
+body[data-theme="bunker"] [class*="sidebar_"] {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'><filter id='c'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23c)'/></svg>");
+  background-size: 32px 32px, 32px 32px, 120px 120px;
+}
+
+body[data-theme="bunker"] [class*="wsItem_"] {
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.55);
+  border-radius: 0 !important;
+}
+
+body[data-theme="bunker"] [class*="wsSelected_"] {
+  box-shadow: 3px 3px 0 #ff5b13;
+}
+
+body[data-theme="bunker"] [class*="roleLabel_"] {
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+body[data-theme="bunker"] [class*="messages_"] {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 22px,
+    rgba(255, 255, 255, 0.012) 22px 23px
+  );
+  background-attachment: fixed;
+}

@@ -7,6 +7,7 @@
     "version": "1.0.0",
     "scheme": "dark",
     "description": "Synth rain on wet asphalt — 2049-era magenta and cyan electricity across chrome-black substrates.",
+    "stylesheet": "stylesheets/neon-tokyo.css",
     "preview": {
       "background": "#0a0612",
       "surface": "#17112a",
@@ -135,7 +136,14 @@
       "scrollbar-width": "8px",
       "scrollbar-thumb-bg": "rgba(179, 136, 255, 0.14)",
       "scrollbar-thumb-hover-bg": "rgba(255, 46, 136, 0.40)",
-      "focus-ring": "0 0 0 1px rgba(255, 46, 136, 0.90), 0 0 0 3px rgba(0, 229, 255, 0.25), 0 0 18px rgba(255, 46, 136, 0.45), 0 0 36px rgba(255, 46, 136, 0.18)"
+      "focus-ring": "0 0 0 1px rgba(255, 46, 136, 0.90), 0 0 0 3px rgba(0, 229, 255, 0.25), 0 0 18px rgba(255, 46, 136, 0.45), 0 0 36px rgba(255, 46, 136, 0.18)",
+      "chat-max-width": "100%",
+      "turn-gap": "6px",
+      "composer-padding-y": "10px",
+      "composer-min-height": "44px",
+      "canvas-padding-inline": "20px",
+      "sidebar-item-padding-y": "4px",
+      "sidebar-item-gap": "0px"
     }
   }
 }

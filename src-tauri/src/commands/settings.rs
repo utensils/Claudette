@@ -46,6 +46,8 @@ pub struct ThemeManifest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scheme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub stylesheet: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preview: Option<ThemePreview>,
 }
 
@@ -69,6 +71,8 @@ pub struct LegacyTheme {
     pub author: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stylesheet: Option<String>,
     pub colors: HashMap<String, String>,
 }
 

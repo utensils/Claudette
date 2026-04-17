@@ -1,0 +1,19 @@
+/* Linear — violet mesh gradient on the canvas, hairline precision. */
+
+body[data-theme="linear"] [class*="messages_"] {
+  background-image:
+    radial-gradient(60% 45% at 15% 0%, rgba(123, 110, 244, 0.14), transparent 65%),
+    radial-gradient(50% 40% at 95% 5%, rgba(90, 120, 220, 0.10), transparent 70%),
+    radial-gradient(70% 50% at 50% 100%, rgba(60, 180, 200, 0.06), transparent 70%),
+    radial-gradient(45% 60% at 80% 60%, rgba(145, 110, 230, 0.07), transparent 75%);
+  background-attachment: fixed;
+}
+
+body[data-theme="linear"] [class*="wsSelected_"] {
+  box-shadow: inset 2px 0 0 rgba(123, 110, 244, 0.90);
+}
+
+body[data-theme="linear"] [class*="roleLabel_"] {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}

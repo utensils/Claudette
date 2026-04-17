@@ -222,7 +222,16 @@
         "scrollbar-width":          { "type": "string" },
         "scrollbar-thumb-bg":       { "type": "string" },
         "scrollbar-thumb-hover-bg": { "type": "string" },
-        "focus-ring":               { "type": "string", "description": "box-shadow applied to :focus-visible." }
+        "focus-ring":               { "type": "string", "description": "box-shadow applied to :focus-visible." },
+
+        "chat-max-width":           { "type": "string", "description": "Max width of the chat messages column. Use `none` for full-bleed (the built-in default) or a length like `820px` for a centered reading column." },
+        "turn-gap":                 { "type": "string", "description": "Vertical breathing room between consecutive chat turns. Applied as margin-top on each user turn after the first." },
+        "message-text-max-width":   { "type": "string", "description": "Max width applied to individual message bodies. `none` lets messages fill the canvas; set a length for a tighter reading measure." },
+        "composer-padding-y":       { "type": "string", "description": "Vertical padding inside the chat composer textarea." },
+        "composer-min-height":      { "type": "string", "description": "Minimum height of the composer input area." },
+        "sidebar-item-padding-y":   { "type": "string", "description": "Vertical padding of each workspace row in the sidebar — controls sidebar density." },
+        "sidebar-item-gap":         { "type": "string", "description": "Vertical gap between sibling repo groups in the sidebar list." },
+        "canvas-padding-inline":    { "type": "string", "description": "Horizontal padding on the chat canvas (both sides of the messages column)." }
       }
     }
   }
