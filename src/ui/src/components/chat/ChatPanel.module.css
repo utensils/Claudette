@@ -948,15 +948,16 @@
 }
 
 .sendBtnStop {
-  background: var(--status-stopped);
-  border-color: var(--status-stopped);
-  color: var(--app-bg);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--divider);
+  color: var(--text-muted);
 }
 
 .sendBtnStop:hover:not(:disabled) {
-  background: var(--status-stopped);
-  border-color: var(--status-stopped);
-  filter: brightness(1.1);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-dim);
+  color: var(--text-primary);
+  filter: none;
 }
 
 .sendBtnStop:active:not(:disabled) {
