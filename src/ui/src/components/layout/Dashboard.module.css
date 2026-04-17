@@ -165,6 +165,15 @@
   color: var(--badge-ask);
 }
 
+@keyframes pulse-badge {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
 .statusLabel {
   font-size: 11px;
   font-weight: 500;
