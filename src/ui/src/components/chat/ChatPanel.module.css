@@ -954,6 +954,12 @@
   border-color: transparent;
 }
 
+/* Override the inherited .sendBtn:active brightness so it doesn't compose
+   with the child .stopSquare filter and dim the square more than intended. */
+.sendBtnStop:active:not(:disabled) {
+  filter: none;
+}
+
 .sendBtnStop:hover:not(:disabled) .stopSquare {
   filter: brightness(1.1);
 }
@@ -973,6 +979,12 @@
 @keyframes stopPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stopSquare {
+    animation: none;
+  }
 }
 
 /* -- Attachment UI -- */
