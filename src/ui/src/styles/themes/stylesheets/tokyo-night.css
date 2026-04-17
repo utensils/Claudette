@@ -1,0 +1,50 @@
+/* Tokyo Night — deep storm-cloud gradient overhead + faint city glow below. */
+
+body[data-theme="tokyo-night"] [class*="messages_"] {
+  background-image:
+    linear-gradient(180deg, rgba(36, 40, 59, 0.55) 0%, rgba(26, 27, 38, 0) 40%),
+    radial-gradient(90% 40% at 50% 100%, rgba(122, 162, 247, 0.14), transparent 65%),
+    radial-gradient(55% 30% at 30% 105%, rgba(247, 118, 142, 0.08), transparent 70%),
+    radial-gradient(55% 30% at 75% 105%, rgba(187, 154, 247, 0.08), transparent 70%),
+    repeating-linear-gradient(
+      180deg,
+      rgba(125, 207, 255, 0.016) 0px,
+      rgba(125, 207, 255, 0.016) 1px,
+      transparent 1px,
+      transparent 5px
+    );
+  background-attachment: fixed;
+}
+
+body[data-theme="tokyo-night"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(122, 162, 247, 0.28),
+    rgba(187, 154, 247, 0.20),
+    rgba(125, 207, 255, 0.22),
+    transparent
+  );
+  filter: blur(1px);
+  pointer-events: none;
+}
+
+body[data-theme="tokyo-night"] [class*="sidebar_"] {
+  background-image: linear-gradient(
+    180deg,
+    rgba(122, 162, 247, 0.04),
+    transparent 35%
+  );
+}
+
+body[data-theme="tokyo-night"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(122, 162, 247, 0.90),
+    inset 0 0 16px rgba(125, 207, 255, 0.12);
+}

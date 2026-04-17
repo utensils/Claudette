@@ -19,6 +19,15 @@ body[data-theme="gruvbox"] [class*="wsSelected_"] {
   box-shadow: inset 0 -2px 0 rgba(254, 128, 25, 0.70);
 }
 
+body[data-theme="gruvbox"] hr,
+body[data-theme="gruvbox"] [class*="divider"],
+body[data-theme="gruvbox"] [class*="separator"],
+body[data-theme="gruvbox"] [class*="toolbar_"],
+body[data-theme="gruvbox"] [class*="fieldGroup_"] {
+  border-bottom: 2px solid rgba(254, 128, 25, 0.55) !important;
+  box-shadow: 0 3px 0 rgba(40, 25, 10, 0.55);
+}
+
 body[data-theme="gruvbox"] [class*="roleLabel_"] {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   letter-spacing: 0.08em;

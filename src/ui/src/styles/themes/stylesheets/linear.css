@@ -22,6 +22,16 @@ body[data-theme="linear"] [class*="wsSelected_"] {
   box-shadow: inset 2px 0 0 rgba(139, 92, 246, 0.95);
 }
 
+body[data-theme="linear"] hr,
+body[data-theme="linear"] [class*="divider"],
+body[data-theme="linear"] [class*="separator"],
+body[data-theme="linear"] [class*="toolbar_"],
+body[data-theme="linear"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(139, 92, 246, 0.28) !important;
+  border-bottom-width: 1px !important;
+  border-bottom-style: solid !important;
+}
+
 body[data-theme="linear"] [class*="roleLabel_"] {
   letter-spacing: 0.02em;
   text-transform: none;

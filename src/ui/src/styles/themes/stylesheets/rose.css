@@ -28,6 +28,16 @@ body[data-theme="rose"] [class*="composer_"]:focus-within {
     0 12px 32px -10px rgba(196, 167, 231, 0.30);
 }
 
+body[data-theme="rose"] hr,
+body[data-theme="rose"] [class*="divider"],
+body[data-theme="rose"] [class*="separator"],
+body[data-theme="rose"] [class*="toolbar_"],
+body[data-theme="rose"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(196, 135, 140, 0.55) !important;
+  border-bottom-style: dotted !important;
+  border-bottom-width: 1px !important;
+}
+
 body[data-theme="rose"] [class*="roleLabel_"] {
   letter-spacing: 0.02em;
 }

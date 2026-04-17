@@ -29,6 +29,15 @@ body[data-theme="solar"] [class*="wsSelected_"] {
   position: relative;
 }
 
+body[data-theme="solar"] hr,
+body[data-theme="solar"] [class*="divider"],
+body[data-theme="solar"] [class*="separator"],
+body[data-theme="solar"] [class*="toolbar_"],
+body[data-theme="solar"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(178, 92, 24, 0.35) !important;
+  box-shadow: none;
+}
+
 body[data-theme="solar"] [class*="wsSelected_"]::after {
   content: "";
   position: absolute;

@@ -12,6 +12,10 @@ import bunkerTheme from "./bunker.json";
 import greenhouseTheme from "./greenhouse.json";
 import uplink1984Theme from "./uplink-1984.json";
 import phosphorUplinkTheme from "./phosphor-uplink.json";
+import draculaTheme from "./dracula.json";
+import tokyoNightTheme from "./tokyo-night.json";
+import catppuccinMochaTheme from "./catppuccin-mocha.json";
+import monokaiProTheme from "./monokai-pro.json";
 
 import claudetteCss from "./stylesheets/claudette.css?url";
 import linearCss from "./stylesheets/linear.css?url";
@@ -21,6 +25,10 @@ import neonTokyoCss from "./stylesheets/neon-tokyo.css?url";
 import solarCss from "./stylesheets/solar.css?url";
 import gruvboxCss from "./stylesheets/gruvbox.css?url";
 import bunkerCss from "./stylesheets/bunker.css?url";
+import draculaCss from "./stylesheets/dracula.css?url";
+import tokyoNightCss from "./stylesheets/tokyo-night.css?url";
+import catppuccinMochaCss from "./stylesheets/catppuccin-mocha.css?url";
+import monokaiProCss from "./stylesheets/monokai-pro.css?url";
 
 /**
  * Per-theme stylesheet URLs. Keyed by theme id. Each entry is a Vite
@@ -44,6 +52,10 @@ const BUILTIN_STYLESHEETS: Record<string, string> = {
   solar: solarCss,
   gruvbox: gruvboxCss,
   bunker: bunkerCss,
+  dracula: draculaCss,
+  "tokyo-night": tokyoNightCss,
+  "catppuccin-mocha": catppuccinMochaCss,
+  "monokai-pro": monokaiProCss,
 };
 
 function withStylesheet(theme: ThemeDefinition): ThemeDefinition {
@@ -62,6 +74,10 @@ function withStylesheet(theme: ThemeDefinition): ThemeDefinition {
 export const BUILTIN_THEMES: ThemeDefinition[] = [
   defaultTheme as ThemeDefinition,
   claudetteTheme as ThemeDefinition,
+  draculaTheme as ThemeDefinition,
+  tokyoNightTheme as ThemeDefinition,
+  catppuccinMochaTheme as ThemeDefinition,
+  monokaiProTheme as ThemeDefinition,
   linearTheme as ThemeDefinition,
   velvetTheme as ThemeDefinition,
   roseTheme as ThemeDefinition,

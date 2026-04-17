@@ -1,0 +1,148 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "dracula",
+    "name": "Dracula",
+    "author": "Dracula Team (port)",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Bat-cave violet with hot-pink accents, mint-green echoes, and a lacquered purple sheen.",
+    "stylesheet": "stylesheets/dracula.css",
+    "preview": {
+      "background": "#282a36",
+      "surface": "#343746",
+      "accent": "#ff79c6",
+      "text": "#f8f8f2"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+
+      "app-bg": "#282a36",
+      "sidebar-bg": "#21222c",
+      "sidebar-border": "#3a3c4b",
+      "panel-bg": "#2b2d3c",
+      "surface-bg": "#343746",
+      "sunken-bg": "#1a1b24",
+
+      "text-primary": "#f8f8f2",
+      "text-muted": "#cac9d6",
+      "text-dim": "#9d9db0",
+      "text-faint": "#6a6b80",
+      "text-separator": "#44475a",
+
+      "accent-primary": "#ff79c6",
+      "accent-primary-rgb": "255, 121, 198",
+      "accent-dim": "#d15aa3",
+      "accent-bg": "rgba(255, 121, 198, 0.10)",
+      "accent-bg-strong": "rgba(255, 121, 198, 0.22)",
+      "accent-glow": "0 0 1px rgba(255, 220, 238, 0.70), 0 0 12px rgba(255, 121, 198, 0.55), 0 0 32px rgba(189, 147, 249, 0.28), 0 0 72px rgba(139, 92, 246, 0.12)",
+
+      "hover-bg": "rgba(189, 147, 249, 0.08)",
+      "hover-bg-subtle": "rgba(189, 147, 249, 0.045)",
+      "selected-bg": "rgba(255, 121, 198, 0.16)",
+      "divider": "#3a3c4b",
+
+      "status-running": "#50fa7b",
+      "status-idle": "#9d9db0",
+      "status-stopped": "#ff5555",
+
+      "badge-done": "#50fa7b",
+      "badge-plan": "#bd93f9",
+      "badge-ask": "#f1fa8c",
+
+      "diff-added-bg": "rgba(80, 250, 123, 0.14)",
+      "diff-removed-bg": "rgba(255, 85, 85, 0.14)",
+      "diff-added-text": "#7bff9d",
+      "diff-removed-text": "#ff7777",
+      "diff-hunk-header": "#bd93f9",
+      "diff-line-number": "#6a6b80",
+
+      "chat-user-bg": "rgba(248, 248, 242, 0.028)",
+      "chat-system-bg": "rgba(189, 147, 249, 0.07)",
+      "chat-input-bg": "#1a1b24",
+      "chat-header-bg": "#21222c",
+
+      "terminal-tab-bg": "#21222c",
+      "terminal-tab-active-bg": "#343746",
+      "terminal-bg": "#1a1b24",
+      "terminal-fg": "#f8f8f2",
+      "terminal-cursor": "#ff79c6",
+      "terminal-selection": "rgba(255, 121, 198, 0.30)",
+
+      "toolbar-active": "rgba(255, 121, 198, 0.18)",
+      "toolbar-active-text": "#ff9dd4",
+
+      "error-bg": "rgba(255, 85, 85, 0.12)",
+      "error-border": "rgba(255, 85, 85, 0.42)",
+      "error-hover": "rgba(255, 85, 85, 0.18)",
+
+      "overlay-bg": "rgba(20, 18, 32, 0.70)",
+      "overlay-bg-heavy": "rgba(20, 18, 32, 0.88)",
+
+      "canvas-atmosphere": "radial-gradient(70% 45% at 22% -5%, rgba(189, 147, 249, 0.14), transparent 60%), radial-gradient(65% 50% at 85% 10%, rgba(255, 121, 198, 0.10), transparent 65%), radial-gradient(140% 100% at 50% 120%, rgba(16, 14, 26, 0.60), transparent 55%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><filter id='d'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch' seed='5'/><feColorMatrix values='0 0 0 0 0.74  0 0 0 0 0.58  0 0 0 0 0.98  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23d)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(248, 248, 242, 0.06)",
+      "rim-light-strong": "inset 0 1px 0 rgba(189, 147, 249, 0.22), inset 0 -1px 0 rgba(10, 8, 18, 0.45)",
+      "selection-bg": "rgba(255, 121, 198, 0.36)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(10, 8, 18, 0.65), 0 0 0 1px rgba(189, 147, 249, 0.06)",
+      "shadow-md": "0 10px 26px -10px rgba(10, 8, 18, 0.80), 0 2px 6px -2px rgba(20, 18, 32, 0.55), 0 0 0 1px rgba(189, 147, 249, 0.07)",
+      "shadow-lg": "0 26px 54px -18px rgba(10, 8, 18, 0.90), 0 8px 16px -6px rgba(20, 18, 32, 0.62), 0 0 0 1px rgba(189, 147, 249, 0.10)",
+      "shadow-card-hover": "0 18px 38px -14px rgba(10, 8, 18, 0.85), 0 4px 10px -2px rgba(20, 18, 32, 0.55), 0 0 0 1px rgba(255, 121, 198, 0.42), 0 0 30px rgba(189, 147, 249, 0.22)",
+      "well-shadow": "inset 0 2px 10px rgba(6, 4, 12, 0.80), inset 0 -1px 0 rgba(248, 248, 242, 0.04), inset 0 0 0 1px rgba(189, 147, 249, 0.07)",
+      "composer-ring": "inset 0 0 0 1px rgba(189, 147, 249, 0.22), inset 0 1px 0 rgba(248, 248, 242, 0.06)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(255, 121, 198, 0.85), inset 0 1px 0 rgba(255, 220, 238, 0.22), 0 0 0 3px rgba(189, 147, 249, 0.20), 0 10px 30px -8px rgba(255, 121, 198, 0.35), 0 0 44px rgba(189, 147, 249, 0.12)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.3",
+      "line-height-normal": "1.58",
+      "line-height-relaxed": "1.72",
+      "letter-spacing-tight": "-0.01em",
+      "letter-spacing-wide": "0.055em"
+    },
+    "radius": {
+      "radius-sm": "5px",
+      "radius-md": "9px",
+      "radius-lg": "16px",
+      "radius-pill": "999px",
+      "border-radius": "9px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.12s ease",
+      "transition-normal": "0.2s ease",
+      "transition-slow": "0.3s ease",
+      "ease-standard": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(189, 147, 249, 0.18)",
+      "scrollbar-thumb-hover-bg": "rgba(255, 121, 198, 0.48)",
+      "focus-ring": "0 0 0 1px rgba(255, 220, 238, 0.55), 0 0 0 3px rgba(255, 121, 198, 0.55), 0 6px 18px rgba(189, 147, 249, 0.28)",
+      "chat-max-width": "880px",
+      "turn-gap": "16px",
+      "composer-min-height": "64px",
+      "composer-padding-y": "14px",
+      "canvas-padding-inline": "32px",
+      "sidebar-item-padding-y": "6px"
+    }
+  }
+}

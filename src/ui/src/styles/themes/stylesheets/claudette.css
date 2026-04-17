@@ -18,6 +18,15 @@ body[data-theme="claudette"] [class*="wsSelected_"] {
   position: relative;
 }
 
+body[data-theme="claudette"] hr,
+body[data-theme="claudette"] [class*="divider"],
+body[data-theme="claudette"] [class*="separator"],
+body[data-theme="claudette"] [class*="toolbar_"],
+body[data-theme="claudette"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(234, 210, 178, 0.45) !important;
+  box-shadow: 0 1px 0 rgba(217, 119, 87, 0.14);
+}
+
 body[data-theme="claudette"] [class*="wsSelected_"]::after {
   content: "";
   position: absolute;

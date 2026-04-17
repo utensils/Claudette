@@ -34,6 +34,16 @@ body[data-theme="bunker"] [class*="wsSelected_"] {
   box-shadow: 3px 3px 0 #ff5b13;
 }
 
+body[data-theme="bunker"] hr,
+body[data-theme="bunker"] [class*="divider"],
+body[data-theme="bunker"] [class*="separator"],
+body[data-theme="bunker"] [class*="toolbar_"],
+body[data-theme="bunker"] [class*="fieldGroup_"] {
+  border-bottom: 2px solid #000 !important;
+  border-radius: 0 !important;
+  box-shadow: 0 2px 0 rgba(255, 91, 19, 0.85);
+}
+
 body[data-theme="bunker"] [class*="roleLabel_"] {
   text-transform: uppercase;
   font-weight: 800;

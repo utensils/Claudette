@@ -45,6 +45,16 @@ body[data-theme="neon-tokyo"] [class*="title_"] {
   letter-spacing: 0.04em;
 }
 
+body[data-theme="neon-tokyo"] hr,
+body[data-theme="neon-tokyo"] [class*="divider"],
+body[data-theme="neon-tokyo"] [class*="separator"],
+body[data-theme="neon-tokyo"] [class*="toolbar_"],
+body[data-theme="neon-tokyo"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(255, 46, 136, 0.55) !important;
+  border-bottom-style: dashed !important;
+  box-shadow: 0 1px 6px rgba(0, 229, 255, 0.20);
+}
+
 body[data-theme="neon-tokyo"] [class*="wsSelected_"] {
   box-shadow:
     inset 2px 0 0 rgba(255, 46, 136, 0.95),

@@ -15,6 +15,15 @@ body[data-theme="velvet"] [class*="messages_"] {
   background-attachment: fixed;
 }
 
+body[data-theme="velvet"] hr,
+body[data-theme="velvet"] [class*="divider"],
+body[data-theme="velvet"] [class*="separator"],
+body[data-theme="velvet"] [class*="toolbar_"],
+body[data-theme="velvet"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(212, 184, 106, 0.38) !important;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+}
+
 body[data-theme="velvet"] [class*="roleLabel_"] {
   position: relative;
   padding-bottom: 3px;

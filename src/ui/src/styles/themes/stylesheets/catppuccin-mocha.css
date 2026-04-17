@@ -1,0 +1,36 @@
+/* Catppuccin Mocha — soft pastel mesh + gentle fog, rounded role pills. */
+
+body[data-theme="catppuccin-mocha"] [class*="messages_"] {
+  background-image:
+    radial-gradient(45% 32% at 15% 8%, rgba(245, 194, 231, 0.14), transparent 70%),
+    radial-gradient(40% 30% at 85% 12%, rgba(203, 166, 247, 0.14), transparent 72%),
+    radial-gradient(50% 35% at 30% 95%, rgba(137, 180, 250, 0.10), transparent 70%),
+    radial-gradient(45% 30% at 75% 100%, rgba(166, 227, 161, 0.08), transparent 72%),
+    linear-gradient(180deg, rgba(30, 30, 46, 0) 55%, rgba(17, 17, 27, 0.35) 100%);
+  background-attachment: fixed;
+}
+
+body[data-theme="catppuccin-mocha"] [class*="messages_"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 20% at 50% 0%, rgba(205, 214, 244, 0.035), transparent 80%),
+    radial-gradient(70% 18% at 50% 100%, rgba(203, 166, 247, 0.04), transparent 75%);
+  mix-blend-mode: screen;
+}
+
+body[data-theme="catppuccin-mocha"] [class*="roleLabel_"] {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(203, 166, 247, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(245, 194, 231, 0.22);
+}
+
+body[data-theme="catppuccin-mocha"] [class*="wsSelected_"] {
+  border-radius: 10px;
+  box-shadow:
+    inset 0 0 0 1px rgba(203, 166, 247, 0.45),
+    inset 0 0 18px rgba(245, 194, 231, 0.10);
+}
