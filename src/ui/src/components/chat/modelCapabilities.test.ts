@@ -104,8 +104,12 @@ describe("isMaxEffortAllowed", () => {
     expect(isMaxEffortAllowed("claude-opus-4-6[1m]")).toBe(true);
   });
 
-  it("returns false for sonnet", () => {
-    expect(isMaxEffortAllowed("sonnet")).toBe(false);
+  it("returns true for sonnet", () => {
+    expect(isMaxEffortAllowed("sonnet")).toBe(true);
+  });
+
+  it("returns true for claude-sonnet-4-6[1m]", () => {
+    expect(isMaxEffortAllowed("claude-sonnet-4-6[1m]")).toBe(true);
   });
 
   it("returns false for haiku", () => {
