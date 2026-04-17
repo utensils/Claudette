@@ -1,0 +1,153 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "paper",
+    "name": "Paper",
+    "author": "Claudette",
+    "version": "1.0.0",
+    "scheme": "light",
+    "description": "Writer's cream — warm paper grain, dusty sepia ink, and a narrow editorial column.",
+    "stylesheet": "stylesheets/paper.css",
+    "preview": {
+      "background": "#f6f1e4",
+      "surface": "#fbf7ec",
+      "accent": "#8c4a3a",
+      "text": "#2a2420"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "light",
+      "app-bg": "#f6f1e4",
+      "sidebar-bg": "#eee6d0",
+      "sidebar-border": "#d8cdb2",
+      "panel-bg": "#eee6d0",
+      "surface-bg": "#fbf7ec",
+      "sunken-bg": "#e8ddc1",
+      "text-primary": "#2a2420",
+      "text-muted": "#635b4e",
+      "text-dim": "#8c8272",
+      "text-faint": "#b4a994",
+      "text-separator": "#ccc1a6",
+      "accent-primary": "#8c4a3a",
+      "accent-primary-rgb": "140, 74, 58",
+      "accent-dim": "#6e3a2e",
+      "accent-bg": "rgba(140, 74, 58, 0.08)",
+      "accent-bg-strong": "rgba(140, 74, 58, 0.18)",
+      "accent-glow": "0 0 1px rgba(255, 240, 210, 0.70), 0 0 8px rgba(140, 74, 58, 0.22), 0 0 20px rgba(140, 74, 58, 0.10)",
+      "hover-bg": "rgba(80, 55, 30, 0.06)",
+      "hover-bg-subtle": "rgba(80, 55, 30, 0.03)",
+      "selected-bg": "rgba(140, 74, 58, 0.14)",
+      "divider": "#d8cdb2",
+      "status-running": "#8c4a3a",
+      "status-idle": "#8c8272",
+      "status-stopped": "#a53a28",
+      "badge-done": "#5e7232",
+      "badge-plan": "#3f5683",
+      "badge-ask": "#b06a22",
+      "diff-added-bg": "rgba(94, 114, 50, 0.18)",
+      "diff-removed-bg": "rgba(165, 58, 40, 0.14)",
+      "diff-added-text": "#46561c",
+      "diff-removed-text": "#7a2a1c",
+      "diff-hunk-header": "#6e3a2e",
+      "diff-line-number": "#b4a994",
+      "chat-user-bg": "rgba(140, 74, 58, 0.04)",
+      "chat-system-bg": "rgba(99, 91, 78, 0.05)",
+      "chat-input-bg": "#fbf7ec",
+      "chat-header-bg": "#eee6d0",
+      "terminal-tab-bg": "#e8ddc1",
+      "terminal-tab-active-bg": "#fbf7ec",
+      "terminal-bg": "#fbf7ec",
+      "terminal-fg": "#2a2420",
+      "terminal-cursor": "#8c4a3a",
+      "terminal-selection": "rgba(140, 74, 58, 0.24)",
+      "toolbar-active": "rgba(140, 74, 58, 0.14)",
+      "toolbar-active-text": "#6e3a2e",
+      "error-bg": "rgba(165, 58, 40, 0.09)",
+      "error-border": "rgba(165, 58, 40, 0.40)",
+      "error-hover": "rgba(165, 58, 40, 0.16)",
+      "overlay-bg": "rgba(60, 40, 20, 0.38)",
+      "overlay-bg-heavy": "rgba(40, 26, 12, 0.58)",
+      "canvas-atmosphere": "radial-gradient(75% 45% at 50% -8%, rgba(140, 74, 58, 0.08), transparent 60%), radial-gradient(90% 60% at 50% 110%, rgba(216, 200, 164, 0.35), transparent 70%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.32  0 0 0 0 0.22  0 0 0 0 0.12  0 0 0 0.065 0'/></filter><rect width='100%25' height='100%25' filter='url(%23p)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(60, 40, 20, 0.06)",
+      "rim-light-strong": "inset 0 1px 0 rgba(140, 74, 58, 0.18), inset 0 -1px 0 rgba(60, 40, 20, 0.08)",
+      "selection-bg": "rgba(140, 74, 58, 0.26)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(80, 55, 30, 0.10), 0 0 0 1px rgba(140, 74, 58, 0.04)",
+      "shadow-md": "0 6px 18px -8px rgba(80, 55, 30, 0.22), 0 2px 4px -2px rgba(80, 55, 30, 0.10)",
+      "shadow-lg": "0 18px 38px -16px rgba(80, 55, 30, 0.28), 0 6px 12px -6px rgba(80, 55, 30, 0.14)",
+      "shadow-card-hover": "0 12px 28px -10px rgba(80, 55, 30, 0.24), 0 2px 4px -1px rgba(80, 55, 30, 0.10), 0 0 0 1px rgba(140, 74, 58, 0.32)",
+      "well-shadow": "inset 0 2px 6px rgba(80, 55, 30, 0.14), inset 0 1px 0 rgba(255, 250, 230, 0.50), inset 0 0 0 1px rgba(140, 74, 58, 0.06)",
+      "composer-ring": "inset 0 0 0 1px rgba(99, 91, 78, 0.30), inset 0 1px 0 rgba(255, 250, 230, 0.55)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(140, 74, 58, 0.70), inset 0 1px 0 rgba(255, 250, 230, 0.60), 0 0 0 3px rgba(140, 74, 58, 0.14), 0 10px 24px -8px rgba(140, 74, 58, 0.22)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "14px",
+      "font-size-md": "15px",
+      "font-size-lg": "17px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.36",
+      "line-height-normal": "1.68",
+      "line-height-relaxed": "1.82",
+      "letter-spacing-tight": "-0.01em",
+      "letter-spacing-wide": "0.05em"
+    },
+    "radius": {
+      "radius-sm": "2px",
+      "radius-md": "3px",
+      "radius-lg": "4px",
+      "radius-pill": "999px",
+      "border-radius": "3px"
+    },
+    "spacing": {
+      "space-xs": "5px",
+      "space-sm": "10px",
+      "space-md": "16px",
+      "space-lg": "22px",
+      "space-xl": "32px"
+    },
+    "motion": {
+      "transition-fast": "0.16s cubic-bezier(0.3, 0.7, 0.2, 1)",
+      "transition-normal": "0.24s cubic-bezier(0.3, 0.7, 0.2, 1)",
+      "transition-slow": "0.38s cubic-bezier(0.3, 0.7, 0.2, 1)",
+      "ease-standard": "cubic-bezier(0.3, 0.7, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)",
+      "transition-hover": "0.22s cubic-bezier(0.2, 0, 0, 1)",
+      "transition-emphasis": "0.7s ease"
+    },
+    "layout": {
+      "scrollbar-width": "10px",
+      "scrollbar-thumb-bg": "rgba(99, 91, 78, 0.22)",
+      "scrollbar-thumb-hover-bg": "rgba(140, 74, 58, 0.48)",
+      "focus-ring": "0 0 0 1px rgba(255, 250, 230, 0.80), 0 0 0 3px rgba(140, 74, 58, 0.48), 0 4px 12px rgba(140, 74, 58, 0.18)",
+      "chat-max-width": "640px",
+      "turn-gap": "22px",
+      "canvas-padding-inline": "56px",
+      "composer-min-height": "88px",
+      "composer-padding-y": "18px",
+      "sidebar-item-padding-y": "8px"
+    },
+    "border": {
+      "border-thin": "1px"
+    },
+    "icon": {
+      "icon-md": "16px",
+      "icon-lg": "18px"
+    },
+    "control": {
+      "control-height-md": "34px",
+      "control-height-lg": "40px"
+    },
+    "component": {
+      "card-padding": "22px",
+      "menu-item-padding-y": "10px",
+      "menu-item-padding-x": "18px"
+    }
+  }
+}

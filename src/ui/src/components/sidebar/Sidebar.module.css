@@ -149,6 +149,8 @@
   border-radius: var(--radius-md);
   cursor: grab;
   gap: 8px;
+  background: var(--sidebar-item-bg, transparent);
+  box-shadow: var(--panel-header-chrome, none);
   transition: background var(--transition-fast);
 }
 
@@ -276,6 +278,8 @@
   cursor: pointer;
   gap: 8px;
   position: relative;
+  background: var(--sidebar-item-bg, transparent);
+  box-shadow: var(--sidebar-item-chrome, none);
   transition: background var(--transition-fast);
 }
 
@@ -286,7 +290,8 @@
 /* Selected workspace: a single hairline wire to the left, no fill block.
    The hover fill still shows on top for tactile feedback. */
 .wsSelected {
-  background: var(--selected-bg);
+  background: var(--sidebar-selected-bg, var(--selected-bg));
+  box-shadow: var(--sidebar-selected-chrome, none);
 }
 
 .wsSelected::before {

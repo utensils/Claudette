@@ -4,7 +4,7 @@
     "id": "velvet",
     "name": "Velvet",
     "author": "James Brink",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
     "description": "Midnight opera \u2014 theatrical champagne-gold spotlight on deep indigo velvet, with a crescent moon watching from the wings.",
     "stylesheet": "stylesheets/velvet.css",
@@ -149,6 +149,17 @@
       "card-padding": "20px",
       "menu-item-padding-y": "9px",
       "menu-item-padding-x": "16px"
+    },
+    "shape": {
+      "user-msg-padding": "14px 20px",
+      "user-msg-chrome": "inset 0 0 0 1px rgba(212, 184, 106, 0.18), 0 4px 16px rgba(4, 6, 22, 0.65)",
+      "user-msg-bg": "rgba(212, 184, 106, 0.04)",
+      "user-msg-margin-top": "28px",
+      "role-label-glyph": "''",
+      "role-label-transform": "uppercase",
+      "role-label-weight": "600",
+      "sidebar-selected-chrome": "inset 0 0 0 1px rgba(212, 184, 106, 0.28), 0 2px 10px rgba(4, 6, 22, 0.55)",
+      "chat-header-chrome": "0 1px 0 rgba(212, 184, 106, 0.10)"
     }
   }
 }

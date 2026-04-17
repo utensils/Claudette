@@ -1,0 +1,144 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "kanagawa",
+    "name": "Kanagawa Wave",
+    "author": "rebelot (port)",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Kanagawa Wave — Japanese ink-wash palette over sumi-black (#1f1f28), edo-red (#c34043) and crane-blue (#7e9cd8) against parchment text, editorial calm rhythm.",
+    "stylesheet": "stylesheets/kanagawa.css",
+    "preview": {
+      "background": "#1f1f28",
+      "surface": "#2a2a37",
+      "accent": "#7e9cd8",
+      "text": "#dcd7ba"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+      "app-bg": "#1f1f28",
+      "sidebar-bg": "#1a1a22",
+      "sidebar-border": "#32323f",
+      "panel-bg": "#2a2a37",
+      "surface-bg": "#323240",
+      "sunken-bg": "#16161d",
+      "text-primary": "#dcd7ba",
+      "text-muted": "#c0b88f",
+      "text-dim": "#9e9a80",
+      "text-faint": "#727169",
+      "text-separator": "#43434f",
+      "accent-primary": "#7e9cd8",
+      "accent-primary-rgb": "126, 156, 216",
+      "accent-dim": "#5f7cb0",
+      "accent-bg": "rgba(126, 156, 216, 0.10)",
+      "accent-bg-strong": "rgba(126, 156, 216, 0.22)",
+      "accent-glow": "0 0 1px rgba(220, 215, 186, 0.68), 0 0 12px rgba(126, 156, 216, 0.50), 0 0 30px rgba(149, 127, 184, 0.24), 0 0 64px rgba(106, 149, 137, 0.12)",
+      "hover-bg": "rgba(220, 215, 186, 0.05)",
+      "hover-bg-subtle": "rgba(220, 215, 186, 0.028)",
+      "selected-bg": "rgba(126, 156, 216, 0.15)",
+      "divider": "#32323f",
+      "status-running": "#76946a",
+      "status-idle": "#727169",
+      "status-stopped": "#c34043",
+      "badge-done": "#76946a",
+      "badge-plan": "#957fb8",
+      "badge-ask": "#c0a36e",
+      "diff-added-bg": "rgba(118, 148, 106, 0.14)",
+      "diff-removed-bg": "rgba(195, 64, 67, 0.13)",
+      "diff-added-text": "#8db27e",
+      "diff-removed-text": "#d65c5f",
+      "diff-hunk-header": "#6a9589",
+      "diff-line-number": "#727169",
+      "chat-user-bg": "rgba(220, 215, 186, 0.022)",
+      "chat-system-bg": "rgba(126, 156, 216, 0.06)",
+      "chat-input-bg": "#16161d",
+      "chat-header-bg": "#1a1a22",
+      "terminal-tab-bg": "#1a1a22",
+      "terminal-tab-active-bg": "#323240",
+      "terminal-bg": "#16161d",
+      "terminal-fg": "#dcd7ba",
+      "terminal-cursor": "#7e9cd8",
+      "terminal-selection": "rgba(126, 156, 216, 0.28)",
+      "toolbar-active": "rgba(126, 156, 216, 0.18)",
+      "toolbar-active-text": "#9cb4e4",
+      "error-bg": "rgba(195, 64, 67, 0.10)",
+      "error-border": "rgba(195, 64, 67, 0.40)",
+      "error-hover": "rgba(195, 64, 67, 0.16)",
+      "overlay-bg": "rgba(10, 10, 14, 0.72)",
+      "overlay-bg-heavy": "rgba(10, 10, 14, 0.90)",
+      "canvas-atmosphere": "radial-gradient(92% 52% at 50% -6%, rgba(126, 156, 216, 0.09), transparent 62%), radial-gradient(65% 28% at 22% -2%, rgba(149, 127, 184, 0.07), transparent 74%), radial-gradient(65% 28% at 78% -2%, rgba(255, 160, 102, 0.05), transparent 74%), radial-gradient(120% 80% at 50% 100%, rgba(10, 10, 14, 0.55), transparent 60%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='k'><feTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='2' stitchTiles='stitch' seed='11'/><feColorMatrix values='0 0 0 0 0.86  0 0 0 0 0.84  0 0 0 0 0.73  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23k)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(220, 215, 186, 0.055)",
+      "rim-light-strong": "inset 0 1px 0 rgba(126, 156, 216, 0.22), inset 0 -1px 0 rgba(10, 10, 14, 0.50)",
+      "selection-bg": "rgba(126, 156, 216, 0.32)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(8, 8, 12, 0.62), 0 0 0 1px rgba(126, 156, 216, 0.05)",
+      "shadow-md": "0 10px 28px -12px rgba(8, 8, 12, 0.82), 0 2px 6px -2px rgba(22, 22, 29, 0.55), 0 0 0 1px rgba(126, 156, 216, 0.06)",
+      "shadow-lg": "0 24px 52px -18px rgba(8, 8, 12, 0.90), 0 8px 16px -6px rgba(22, 22, 29, 0.60), 0 0 0 1px rgba(126, 156, 216, 0.09)",
+      "shadow-card-hover": "0 16px 36px -14px rgba(8, 8, 12, 0.85), 0 4px 10px -2px rgba(22, 22, 29, 0.58), 0 0 0 1px rgba(126, 156, 216, 0.42), 0 0 28px rgba(149, 127, 184, 0.16)",
+      "well-shadow": "inset 0 2px 10px rgba(4, 4, 7, 0.78), inset 0 -1px 0 rgba(220, 215, 186, 0.04), inset 0 0 0 1px rgba(126, 156, 216, 0.06)",
+      "composer-ring": "inset 0 0 0 1px rgba(126, 156, 216, 0.22), inset 0 1px 0 rgba(220, 215, 186, 0.06)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(126, 156, 216, 0.88), inset 0 1px 0 rgba(220, 215, 186, 0.22), 0 0 0 3px rgba(126, 156, 216, 0.18), 0 10px 28px -8px rgba(95, 124, 176, 0.32), 0 0 40px rgba(149, 127, 184, 0.12)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.32",
+      "line-height-normal": "1.64",
+      "line-height-relaxed": "1.78",
+      "letter-spacing-tight": "-0.005em",
+      "letter-spacing-wide": "0.06em"
+    },
+    "radius": {
+      "radius-sm": "2px",
+      "radius-md": "4px",
+      "radius-lg": "8px",
+      "radius-pill": "999px",
+      "border-radius": "4px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.16s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-normal": "0.26s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-slow": "0.38s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-standard": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(126, 156, 216, 0.16)",
+      "scrollbar-thumb-hover-bg": "rgba(126, 156, 216, 0.44)",
+      "focus-ring": "0 0 0 1px rgba(220, 215, 186, 0.50), 0 0 0 3px rgba(126, 156, 216, 0.55), 0 6px 18px rgba(95, 124, 176, 0.26)",
+      "chat-max-width": "820px",
+      "turn-gap": "20px",
+      "composer-min-height": "72px",
+      "composer-padding-y": "17px",
+      "canvas-padding-inline": "44px",
+      "sidebar-item-padding-y": "8px"
+    },
+    "border": {
+      "border-thin": "1px"
+    },
+    "icon": {
+      "icon-md": "17px"
+    },
+    "control": {
+      "control-height-md": "34px"
+    }
+  }
+}

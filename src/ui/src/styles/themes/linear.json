@@ -4,7 +4,7 @@
     "id": "linear",
     "name": "Linear",
     "author": "Claudette",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
     "description": "Tech editorial \u2014 Linear.app's signature indigo (#5e6ad2) over charcoal-black, crisp hairlines, mesh-gradient hero, snappy transitions.",
     "stylesheet": "stylesheets/linear.css",
@@ -68,7 +68,7 @@
       "error-hover": "rgba(224, 106, 122, 0.16)",
       "overlay-bg": "rgba(4, 4, 8, 0.72)",
       "overlay-bg-heavy": "rgba(4, 4, 8, 0.90)",
-      "canvas-atmosphere": "radial-gradient(50% 45% at 8% -6%, rgba(94, 106, 210, 0.38), transparent 62%), radial-gradient(55% 50% at 92% -2%, rgba(138, 120, 230, 0.28), transparent 65%), radial-gradient(60% 60% at 88% 95%, rgba(94, 106, 210, 0.20), transparent 68%), radial-gradient(55% 55% at 12% 100%, rgba(138, 120, 230, 0.16), transparent 68%), radial-gradient(45% 45% at 50% 50%, rgba(94, 106, 210, 0.06), transparent 70%)",
+      "canvas-atmosphere": "radial-gradient(85% 60% at 80% 0%, rgba(94, 106, 210, 0.08), transparent 60%)",
       "rim-light": "inset 0 1px 0 rgba(229, 229, 234, 0.045)",
       "rim-light-strong": "inset 0 1px 0 rgba(154, 164, 240, 0.14), inset 0 -1px 0 rgba(4, 4, 8, 0.55)",
       "selection-bg": "rgba(94, 106, 210, 0.34)"
@@ -156,6 +156,18 @@
       "menu-item-padding-y": "6px",
       "menu-item-padding-x": "10px",
       "card-padding": "14px"
+    },
+    "shape": {
+      "user-msg-padding": "6px 12px 6px 14px",
+      "user-msg-chrome": "inset 2px 0 0 rgba(94, 106, 210, 0.60)",
+      "user-msg-bg": "transparent",
+      "role-label-glyph": "'\u203a'",
+      "role-label-glyph-color": "#5e6ad2",
+      "role-label-transform": "none",
+      "role-label-weight": "500",
+      "chat-header-chrome": "0 1px 0 rgba(94, 106, 210, 0.18)",
+      "sidebar-selected-chrome": "inset 2px 0 0 #5e6ad2",
+      "app-bg-gradient": "radial-gradient(85% 60% at 80% 0%, rgba(94, 106, 210, 0.10), transparent 60%)"
     }
   }
 }

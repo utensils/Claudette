@@ -1,0 +1,54 @@
+/* Paper — writer's cream, dusty sepia ink, paper-grain noise, narrow editorial column. */
+
+/* Dark hairline on light panels (rim-light is DARK on light themes). */
+body[data-theme="paper"] [class*="panel_"] {
+  box-shadow: inset 1px 0 0 rgba(60, 40, 20, 0.07);
+}
+
+body[data-theme="paper"] hr,
+body[data-theme="paper"] [class*="divider"],
+body[data-theme="paper"] [class*="separator"],
+body[data-theme="paper"] [class*="toolbar_"],
+body[data-theme="paper"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(99, 91, 78, 0.28) !important;
+  box-shadow: 0 1px 0 rgba(255, 250, 230, 0.60);
+}
+
+/* Editorial role label — sentence-case, fine tracking, soft paper highlight. */
+body[data-theme="paper"] [class*="roleLabel_"] {
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 0 rgba(255, 250, 230, 0.65);
+}
+
+/* Selected workspace — hairline sepia underline, no rail. */
+body[data-theme="paper"] [class*="wsSelected_"] {
+  position: relative;
+}
+body[data-theme="paper"] [class*="wsSelected_"]::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(140, 74, 58, 0.55), rgba(176, 106, 34, 0.35), transparent);
+  pointer-events: none;
+}
+
+/* Composer focus — warm paper-lit ring, no harsh glow. */
+body[data-theme="paper"] [class*="inputArea_"]:focus-within {
+  box-shadow:
+    inset 0 0 0 1px rgba(140, 74, 58, 0.78),
+    inset 0 1px 0 rgba(255, 250, 230, 0.65),
+    0 0 0 3px rgba(140, 74, 58, 0.12),
+    0 10px 24px -8px rgba(140, 74, 58, 0.22);
+}
+
+/* User role label — subtle typographic "¶" pilcrow, writer's mark. */
+body[data-theme="paper"] [class*="role_User"] [class*="roleLabel"]::before {
+  content: "\00B6";
+  color: #8c4a3a;
+  font-weight: 600;
+  margin-right: 6px;
+  opacity: 0.75;
+}

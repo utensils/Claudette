@@ -4,9 +4,9 @@
     "id": "monokai-pro",
     "name": "Monokai Pro",
     "author": "Monokai (port)",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
-    "description": "Monokai Pro Classic \u2014 canonical sunset palette (#ff6188 coral, #ffd866 yellow, #a9dc76 green) on smoky charcoal. Tasteful conic warmth, amber fiber.",
+    "description": "Monokai Pro Classic — canonical sunset palette (#ff6188 coral, #ffd866 yellow, #a9dc76 green) on smoky charcoal. Tasteful conic warmth, amber fiber.",
     "stylesheet": "stylesheets/monokai-pro.css",
     "preview": {
       "background": "#2d2a2e",
@@ -141,6 +141,16 @@
     },
     "component": {
       "menu-item-padding-x": "12px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 14px",
+      "user-msg-chrome": "inset 2px 0 0 #ff6188, inset -2px 0 0 #ffd866",
+      "user-msg-bg": "rgba(255, 97, 136, 0.05)",
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#ff6188",
+      "role-label-transform": "uppercase",
+      "sidebar-selected-chrome": "inset 2px 0 0 #ff6188",
+      "chat-header-chrome": "0 1px 0 rgba(255, 97, 136, 0.22)"
     }
   }
 }

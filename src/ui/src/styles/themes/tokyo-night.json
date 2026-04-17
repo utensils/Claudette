@@ -4,9 +4,9 @@
     "id": "tokyo-night",
     "name": "Tokyo Night",
     "author": "enkia (port)",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
-    "description": "Canonical Tokyo Night (Storm) \u2014 slate-indigo base, #7aa2f7 sky-blue, #bb9af7 mauve, #9ece6a green, with storm-cloud overhead and city-glow horizon.",
+    "description": "Canonical Tokyo Night (Storm) — slate-indigo base, #7aa2f7 sky-blue, #bb9af7 mauve, #9ece6a green, with storm-cloud overhead and city-glow horizon.",
     "stylesheet": "stylesheets/tokyo-night.css",
     "preview": {
       "background": "#1a1b26",
@@ -140,6 +140,15 @@
     },
     "control": {
       "control-height-md": "32px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 16px 10px 18px",
+      "user-msg-chrome": "inset 3px 0 0 #bb9af7",
+      "user-msg-bg": "rgba(187, 154, 247, 0.04)",
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#bb9af7",
+      "sidebar-selected-chrome": "inset 3px 0 0 #bb9af7",
+      "chat-header-chrome": "0 1px 0 rgba(125, 207, 255, 0.18)"
     }
   }
 }

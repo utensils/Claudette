@@ -17,6 +17,16 @@ import tokyoNightTheme from "./tokyo-night.json";
 import catppuccinMochaTheme from "./catppuccin-mocha.json";
 import monokaiProTheme from "./monokai-pro.json";
 import codexTheme from "./codex.json";
+import nordTheme from "./nord.json";
+import everforestTheme from "./everforest.json";
+import oneDarkTheme from "./one-dark.json";
+import ayuMirageTheme from "./ayu-mirage.json";
+import kanagawaTheme from "./kanagawa.json";
+import paperTheme from "./paper.json";
+import matrixTheme from "./matrix.json";
+import apolloTheme from "./apollo.json";
+import rivieraTheme from "./riviera.json";
+import terminalTheme from "./terminal.json";
 
 import defaultCss from "./stylesheets/default.css?url";
 import claudetteCss from "./stylesheets/claudette.css?url";
@@ -35,6 +45,16 @@ import tokyoNightCss from "./stylesheets/tokyo-night.css?url";
 import catppuccinMochaCss from "./stylesheets/catppuccin-mocha.css?url";
 import monokaiProCss from "./stylesheets/monokai-pro.css?url";
 import codexCss from "./stylesheets/codex.css?url";
+import nordCss from "./stylesheets/nord.css?url";
+import everforestCss from "./stylesheets/everforest.css?url";
+import oneDarkCss from "./stylesheets/one-dark.css?url";
+import ayuMirageCss from "./stylesheets/ayu-mirage.css?url";
+import kanagawaCss from "./stylesheets/kanagawa.css?url";
+import paperCss from "./stylesheets/paper.css?url";
+import matrixCss from "./stylesheets/matrix.css?url";
+import apolloCss from "./stylesheets/apollo.css?url";
+import rivieraCss from "./stylesheets/riviera.css?url";
+import terminalCss from "./stylesheets/terminal.css?url";
 
 /**
  * Per-theme stylesheet URLs. Keyed by theme id. Each entry is a Vite
@@ -67,6 +87,16 @@ const BUILTIN_STYLESHEETS: Record<string, string> = {
   "catppuccin-mocha": catppuccinMochaCss,
   "monokai-pro": monokaiProCss,
   codex: codexCss,
+  nord: nordCss,
+  everforest: everforestCss,
+  "one-dark": oneDarkCss,
+  "ayu-mirage": ayuMirageCss,
+  kanagawa: kanagawaCss,
+  paper: paperCss,
+  matrix: matrixCss,
+  apollo: apolloCss,
+  riviera: rivieraCss,
+  terminal: terminalCss,
 };
 
 function withStylesheet(theme: ThemeDefinition): ThemeDefinition {
@@ -100,6 +130,16 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
   uplink1984Theme as ThemeDefinition,
   phosphorUplinkTheme as ThemeDefinition,
   codexTheme as ThemeDefinition,
+  nordTheme as ThemeDefinition,
+  everforestTheme as ThemeDefinition,
+  oneDarkTheme as ThemeDefinition,
+  ayuMirageTheme as ThemeDefinition,
+  kanagawaTheme as ThemeDefinition,
+  paperTheme as ThemeDefinition,
+  matrixTheme as ThemeDefinition,
+  apolloTheme as ThemeDefinition,
+  rivieraTheme as ThemeDefinition,
+  terminalTheme as ThemeDefinition,
 ].map(withStylesheet);
 
 export const DEFAULT_THEME_ID = "claudette";

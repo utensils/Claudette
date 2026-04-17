@@ -3,7 +3,7 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: var(--app-bg);
+  background: var(--app-bg-gradient, none), var(--app-bg);
 }
 
 .main {
@@ -14,7 +14,7 @@
   --right-sidebar-w: 250px;
   --terminal-h: 300px;
   /* The whole main region is the dark substrate that panels sit on top of. */
-  background: var(--app-bg);
+  background: var(--app-bg-gradient, none), var(--app-bg);
 }
 
 /* Shared wrapper for settings and workspace view panels. */

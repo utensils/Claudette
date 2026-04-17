@@ -1,0 +1,144 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "ayu-mirage",
+    "name": "Ayu Mirage",
+    "author": "ayu (port)",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Ayu Mirage — muted twilight navy (#1f2430) with canonical warm yellow (#ffcc66) and blue (#73d0ff), balanced editorial warmth.",
+    "stylesheet": "stylesheets/ayu-mirage.css",
+    "preview": {
+      "background": "#1f2430",
+      "surface": "#232834",
+      "accent": "#ffcc66",
+      "text": "#cbccc6"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+      "app-bg": "#1f2430",
+      "sidebar-bg": "#1a1f2a",
+      "sidebar-border": "#2a3040",
+      "panel-bg": "#232834",
+      "surface-bg": "#2a2f3c",
+      "sunken-bg": "#191e2a",
+      "text-primary": "#cbccc6",
+      "text-muted": "#a8aba2",
+      "text-dim": "#8a8e84",
+      "text-faint": "#707a8c",
+      "text-separator": "#3a4054",
+      "accent-primary": "#ffcc66",
+      "accent-primary-rgb": "255, 204, 102",
+      "accent-dim": "#dba855",
+      "accent-bg": "rgba(255, 204, 102, 0.10)",
+      "accent-bg-strong": "rgba(255, 204, 102, 0.22)",
+      "accent-glow": "0 0 1px rgba(255, 232, 170, 0.70), 0 0 12px rgba(255, 204, 102, 0.52), 0 0 30px rgba(255, 167, 89, 0.24), 0 0 64px rgba(115, 208, 255, 0.10)",
+      "hover-bg": "rgba(203, 204, 198, 0.05)",
+      "hover-bg-subtle": "rgba(203, 204, 198, 0.028)",
+      "selected-bg": "rgba(255, 204, 102, 0.15)",
+      "divider": "#2a3040",
+      "status-running": "#bae67e",
+      "status-idle": "#707a8c",
+      "status-stopped": "#ff3333",
+      "badge-done": "#bae67e",
+      "badge-plan": "#dfbfff",
+      "badge-ask": "#ffa759",
+      "diff-added-bg": "rgba(186, 230, 126, 0.14)",
+      "diff-removed-bg": "rgba(255, 51, 51, 0.12)",
+      "diff-added-text": "#bae67e",
+      "diff-removed-text": "#ff6a6a",
+      "diff-hunk-header": "#73d0ff",
+      "diff-line-number": "#707a8c",
+      "chat-user-bg": "rgba(203, 204, 198, 0.022)",
+      "chat-system-bg": "rgba(255, 204, 102, 0.06)",
+      "chat-input-bg": "#191e2a",
+      "chat-header-bg": "#1a1f2a",
+      "terminal-tab-bg": "#1a1f2a",
+      "terminal-tab-active-bg": "#2a2f3c",
+      "terminal-bg": "#191e2a",
+      "terminal-fg": "#cbccc6",
+      "terminal-cursor": "#ffcc66",
+      "terminal-selection": "rgba(255, 204, 102, 0.28)",
+      "toolbar-active": "rgba(255, 204, 102, 0.18)",
+      "toolbar-active-text": "#ffd684",
+      "error-bg": "rgba(255, 51, 51, 0.10)",
+      "error-border": "rgba(255, 51, 51, 0.40)",
+      "error-hover": "rgba(255, 51, 51, 0.16)",
+      "overlay-bg": "rgba(10, 12, 20, 0.72)",
+      "overlay-bg-heavy": "rgba(10, 12, 20, 0.90)",
+      "canvas-atmosphere": "radial-gradient(92% 52% at 50% -5%, rgba(255, 204, 102, 0.09), transparent 60%), radial-gradient(70% 32% at 25% -2%, rgba(115, 208, 255, 0.07), transparent 72%), radial-gradient(70% 32% at 75% -2%, rgba(255, 167, 89, 0.06), transparent 72%), radial-gradient(120% 80% at 50% 100%, rgba(10, 12, 20, 0.55), transparent 60%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='a'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch' seed='3'/><feColorMatrix values='0 0 0 0 0.80  0 0 0 0 0.80  0 0 0 0 0.78  0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23a)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(203, 204, 198, 0.055)",
+      "rim-light-strong": "inset 0 1px 0 rgba(255, 204, 102, 0.22), inset 0 -1px 0 rgba(10, 12, 20, 0.50)",
+      "selection-bg": "rgba(255, 204, 102, 0.32)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(8, 10, 16, 0.62), 0 0 0 1px rgba(255, 204, 102, 0.05)",
+      "shadow-md": "0 10px 28px -12px rgba(8, 10, 16, 0.82), 0 2px 6px -2px rgba(25, 30, 42, 0.55), 0 0 0 1px rgba(255, 204, 102, 0.06)",
+      "shadow-lg": "0 24px 52px -18px rgba(8, 10, 16, 0.90), 0 8px 16px -6px rgba(25, 30, 42, 0.60), 0 0 0 1px rgba(255, 204, 102, 0.09)",
+      "shadow-card-hover": "0 16px 36px -14px rgba(8, 10, 16, 0.85), 0 4px 10px -2px rgba(25, 30, 42, 0.58), 0 0 0 1px rgba(255, 204, 102, 0.42), 0 0 28px rgba(255, 167, 89, 0.16)",
+      "well-shadow": "inset 0 2px 10px rgba(5, 6, 12, 0.78), inset 0 -1px 0 rgba(203, 204, 198, 0.04), inset 0 0 0 1px rgba(255, 204, 102, 0.06)",
+      "composer-ring": "inset 0 0 0 1px rgba(255, 204, 102, 0.22), inset 0 1px 0 rgba(203, 204, 198, 0.06)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(255, 204, 102, 0.88), inset 0 1px 0 rgba(255, 232, 170, 0.22), 0 0 0 3px rgba(255, 204, 102, 0.18), 0 10px 28px -8px rgba(219, 168, 85, 0.32), 0 0 40px rgba(255, 167, 89, 0.12)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.3",
+      "line-height-normal": "1.56",
+      "line-height-relaxed": "1.7",
+      "letter-spacing-tight": "-0.008em",
+      "letter-spacing-wide": "0.04em"
+    },
+    "radius": {
+      "radius-sm": "4px",
+      "radius-md": "6px",
+      "radius-lg": "10px",
+      "radius-pill": "999px",
+      "border-radius": "6px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.12s ease",
+      "transition-normal": "0.20s ease",
+      "transition-slow": "0.30s ease",
+      "ease-standard": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(255, 204, 102, 0.16)",
+      "scrollbar-thumb-hover-bg": "rgba(255, 204, 102, 0.44)",
+      "focus-ring": "0 0 0 1px rgba(255, 232, 170, 0.55), 0 0 0 3px rgba(255, 204, 102, 0.55), 0 6px 18px rgba(219, 168, 85, 0.26)",
+      "chat-max-width": "960px",
+      "turn-gap": "16px",
+      "composer-min-height": "62px",
+      "composer-padding-y": "14px",
+      "canvas-padding-inline": "32px",
+      "sidebar-item-padding-y": "6px"
+    },
+    "border": {
+      "border-thin": "1px"
+    },
+    "icon": {
+      "icon-md": "16px"
+    },
+    "control": {
+      "control-height-md": "32px"
+    }
+  }
+}

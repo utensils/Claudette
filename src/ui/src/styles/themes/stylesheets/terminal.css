@@ -1,0 +1,57 @@
+/* Terminal — pure ANSI monochrome, VT340 amber accent, uppercase HUD rhythm. */
+
+body[data-theme="terminal"] [class*="roleLabel_"] {
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #e5a050;
+  font-weight: 600;
+  text-shadow: 0 0 6px rgba(229, 160, 80, 0.35);
+}
+
+body[data-theme="terminal"] [class*="title_"] {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Dashed amber dividers — classic terminal separator feel. */
+body[data-theme="terminal"] hr,
+body[data-theme="terminal"] [class*="divider"],
+body[data-theme="terminal"] [class*="separator"],
+body[data-theme="terminal"] [class*="toolbar_"],
+body[data-theme="terminal"] [class*="fieldGroup_"] {
+  border-bottom-style: dashed !important;
+  border-bottom-color: rgba(229, 160, 80, 0.40) !important;
+  box-shadow: 0 0 4px rgba(229, 160, 80, 0.14);
+}
+
+/* Selected workspace — hard amber block rail, no fade. */
+body[data-theme="terminal"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 #e5a050,
+    inset 0 0 0 1px rgba(229, 160, 80, 0.22);
+}
+
+/* User prompt: dollar-sign, classic shell. */
+body[data-theme="terminal"] [class*="role_User"] [class*="roleLabel"]::before {
+  content: "$";
+  color: #e5a050;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 700;
+  margin-right: 6px;
+  text-shadow: 0 0 6px rgba(229, 160, 80, 0.55);
+}
+
+/* Amber caret. */
+body[data-theme="terminal"] textarea,
+body[data-theme="terminal"] input {
+  caret-color: #e5a050;
+}
+
+/* Square-pulse caret on focus to reinforce terminal cadence. */
+@keyframes terminal-caret-blink {
+  0%, 55%   { opacity: 1; }
+  56%, 100% { opacity: 0.3; }
+}
+body[data-theme="terminal"] [class*="input_"]:focus {
+  animation: terminal-caret-blink 1.1s steps(1, end) infinite;
+}

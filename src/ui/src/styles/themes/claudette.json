@@ -4,7 +4,7 @@
     "id": "claudette",
     "name": "Claudette",
     "author": "Claudette",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "scheme": "dark",
     "description": "The flagship \u2014 Claude Code in the terminal, reinterpreted. Canonical terracotta ember (#d77757) over warm parchment-black, with shimmer pulse, page-fold warmth, and a CLI caret rhythm.",
     "stylesheet": "stylesheets/claudette.css",
@@ -149,6 +149,15 @@
       "menu-item-padding-y": "10px",
       "menu-item-padding-x": "18px",
       "card-padding": "22px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 16px 10px 18px",
+      "user-msg-chrome": "inset 2px 0 0 rgba(215, 119, 87, 0.55), 0 2px 8px rgba(10, 8, 6, 0.50)",
+      "user-msg-bg": "rgba(215, 119, 87, 0.045)",
+      "role-label-glyph": "'\u203a'",
+      "role-label-glyph-color": "#d77757",
+      "chat-header-chrome": "0 1px 0 rgba(215, 119, 87, 0.14)",
+      "sidebar-selected-chrome": "inset 3px 0 0 #d77757"
     }
   }
 }

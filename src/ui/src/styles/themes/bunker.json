@@ -4,7 +4,7 @@
     "id": "bunker",
     "name": "Bunker",
     "author": "Claudette",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
     "description": "Raw concrete, safety orange, hard drop-shadows. Brutalist by architectural intent.",
     "stylesheet": "stylesheets/bunker.css",
@@ -149,6 +149,19 @@
       "ease-standard": "steps(1, end)",
       "ease-accelerate": "steps(1, end)",
       "ease-decelerate": "steps(1, end)"
+    },
+    "shape": {
+      "user-msg-padding": "12px 16px",
+      "user-msg-chrome": "inset 0 0 0 2px #000, 4px 4px 0 rgba(0, 0, 0, 0.80)",
+      "user-msg-bg": "rgba(255, 91, 19, 0.04)",
+      "user-msg-margin-top": "30px",
+      "role-label-glyph": "'//'",
+      "role-label-glyph-color": "#ff5b13",
+      "role-label-transform": "uppercase",
+      "role-label-weight": "700",
+      "chat-header-chrome": "0 2px 0 #000",
+      "sidebar-selected-chrome": "inset 0 0 0 2px #000, 3px 3px 0 rgba(0, 0, 0, 0.70)",
+      "panel-header-chrome": "0 2px 0 #000"
     }
   }
 }

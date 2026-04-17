@@ -4,9 +4,9 @@
     "id": "catppuccin-mocha",
     "name": "Catppuccin Mocha",
     "author": "Catppuccin (port)",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
-    "description": "Official Catppuccin Mocha \u2014 canonical base #1e1e2e, mauve/pink/rosewater bloom, four-corner pastel mesh with screen-blended fog.",
+    "description": "Official Catppuccin Mocha — canonical base #1e1e2e, mauve/pink/rosewater bloom, four-corner pastel mesh with screen-blended fog.",
     "stylesheet": "stylesheets/catppuccin-mocha.css",
     "preview": {
       "background": "#1e1e2e",
@@ -147,6 +147,16 @@
       "card-padding": "20px",
       "menu-item-padding-y": "9px",
       "menu-item-padding-x": "14px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 18px",
+      "user-msg-chrome": "inset 0 0 0 1px rgba(203, 166, 247, 0.22)",
+      "user-msg-bg": "rgba(203, 166, 247, 0.06)",
+      "role-label-glyph": "''",
+      "role-label-transform": "none",
+      "role-label-weight": "500",
+      "sidebar-selected-chrome": "inset 0 0 0 1px rgba(203, 166, 247, 0.28)",
+      "chat-header-chrome": "0 1px 0 rgba(203, 166, 247, 0.18)"
     }
   }
 }

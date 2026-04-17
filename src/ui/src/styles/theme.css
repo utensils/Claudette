@@ -256,6 +256,50 @@
   --transition-instant: 0s;
   --transition-hover: 0.15s ease;
   --transition-emphasis: 0.5s ease;
+
+  /* ── Shape / Layout variants ── raw-value tokens that let themes push
+     STRUCTURAL treatments (not just colors): user-message shape,
+     composer chrome, sidebar selection language, role-label glyphs,
+     panel chrome. Components consume these via `var(--token, <current>)`
+     so the default theme is byte-identical. Themes override any subset
+     to remix shape (bubble vs prose vs card), rail vs card sidebar
+     selection, dot vs chevron vs pill role labels, etc. */
+
+  /* User message shape — bubble / prose / card / banner. */
+  --user-msg-padding: 8px 14px 8px 16px;
+  --user-msg-chrome: inset 2px 0 0 rgba(var(--accent-primary-rgb), 0.35);
+  --user-msg-bg: transparent;
+  --user-msg-margin-top: 24px;
+
+  /* Composer chrome — override ring at rest / on focus without
+     touching the shadow language. */
+  --composer-chrome: var(--composer-ring);
+  --composer-chrome-focus: var(--composer-ring-focus);
+
+  /* Sidebar item shape — background vs rail vs card selection. */
+  --sidebar-item-bg: transparent;
+  --sidebar-item-chrome: none;
+  --sidebar-selected-chrome: none;
+  --sidebar-selected-bg: var(--selected-bg);
+
+  /* Chat header padding + chrome — slab themes drop a chrome
+     shadow below the header; editorial themes leave it unlined. */
+  --chat-header-padding: 12px 22px;
+  --chat-header-chrome: none;
+
+  /* Role label — dot vs chevron vs pill vs bar. `--role-label-glyph`
+     is a raw `content` value the ::before accepts; defaults to an empty
+     string so the existing dot treatment wins. */
+  --role-label-glyph: "";
+  --role-label-glyph-color: var(--accent-primary);
+  --role-label-weight: 600;
+  --role-label-transform: uppercase;
+
+  /* Panel chrome — optional shadow below panel headers, and an
+     optional extra canvas-level gradient layered on top of --app-bg
+     (distinct from --canvas-atmosphere which lives behind the chat). */
+  --panel-header-chrome: none;
+  --app-bg-gradient: none;
 }
 
 * {

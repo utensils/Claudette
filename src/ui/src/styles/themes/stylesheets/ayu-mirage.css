@@ -1,0 +1,48 @@
+/* Ayu Mirage — balanced twilight, warm yellow meets crane-blue. */
+
+body[data-theme="ayu-mirage"] [class*="sidebar_"] {
+  background-image: radial-gradient(60% 40% at 50% 0%, rgba(255, 204, 102, 0.05), transparent 72%);
+}
+
+body[data-theme="ayu-mirage"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(255, 204, 102, 0.95),
+    inset 0 0 14px rgba(255, 167, 89, 0.10);
+}
+
+body[data-theme="ayu-mirage"] hr,
+body[data-theme="ayu-mirage"] [class*="divider"],
+body[data-theme="ayu-mirage"] [class*="separator"],
+body[data-theme="ayu-mirage"] [class*="toolbar_"],
+body[data-theme="ayu-mirage"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(255, 204, 102, 0.22) !important;
+}
+
+body[data-theme="ayu-mirage"] [class*="roleLabel_"] {
+  color: rgba(115, 208, 255, 0.86);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Warm-to-cool hairline at top — yellow → blue across the canvas. */
+body[data-theme="ayu-mirage"] [class*="messages_"] {
+  position: relative;
+}
+body[data-theme="ayu-mirage"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 167, 89, 0.30) 18%,
+    rgba(255, 204, 102, 0.40) 48%,
+    rgba(115, 208, 255, 0.32) 80%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}

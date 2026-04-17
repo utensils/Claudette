@@ -1,0 +1,153 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "matrix",
+    "name": "Matrix",
+    "author": "Claudette",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Dense terminal HUD — bright phosphor green over void black, wide tracking, no scanlines.",
+    "stylesheet": "stylesheets/matrix.css",
+    "preview": {
+      "background": "#0a0f0c",
+      "surface": "#101813",
+      "accent": "#00ff41",
+      "text": "#00ff41"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+      "app-bg": "#0a0f0c",
+      "sidebar-bg": "#0c1310",
+      "sidebar-border": "#123019",
+      "panel-bg": "#0d1310",
+      "surface-bg": "#101813",
+      "sunken-bg": "#06090a",
+      "text-primary": "#00ff41",
+      "text-muted": "#4ca355",
+      "text-dim": "#2a7030",
+      "text-faint": "#1a4820",
+      "text-separator": "#123019",
+      "accent-primary": "#00ff41",
+      "accent-primary-rgb": "0, 255, 65",
+      "accent-dim": "#00b030",
+      "accent-bg": "rgba(0, 255, 65, 0.10)",
+      "accent-bg-strong": "rgba(0, 255, 65, 0.22)",
+      "accent-glow": "0 0 1px rgba(204, 255, 204, 0.85), 0 0 8px rgba(0, 255, 65, 0.70), 0 0 24px rgba(0, 255, 65, 0.40), 0 0 60px rgba(57, 255, 138, 0.18)",
+      "hover-bg": "rgba(0, 255, 65, 0.06)",
+      "hover-bg-subtle": "rgba(0, 255, 65, 0.03)",
+      "selected-bg": "rgba(0, 255, 65, 0.14)",
+      "divider": "#123019",
+      "status-running": "#00ff41",
+      "status-idle": "#4ca355",
+      "status-stopped": "#ff3b3b",
+      "badge-done": "#39ff8a",
+      "badge-plan": "#4ca355",
+      "badge-ask": "#ccff66",
+      "diff-added-bg": "rgba(0, 255, 65, 0.14)",
+      "diff-removed-bg": "rgba(255, 59, 59, 0.14)",
+      "diff-added-text": "#39ff8a",
+      "diff-removed-text": "#ff6666",
+      "diff-hunk-header": "#ccffcc",
+      "diff-line-number": "#2a7030",
+      "chat-user-bg": "rgba(0, 255, 65, 0.035)",
+      "chat-system-bg": "rgba(0, 255, 65, 0.06)",
+      "chat-input-bg": "#06090a",
+      "chat-header-bg": "#0c1310",
+      "terminal-tab-bg": "#0c1310",
+      "terminal-tab-active-bg": "#101813",
+      "terminal-bg": "#06090a",
+      "terminal-fg": "#00ff41",
+      "terminal-cursor": "#ccffcc",
+      "terminal-selection": "rgba(0, 255, 65, 0.34)",
+      "toolbar-active": "rgba(0, 255, 65, 0.20)",
+      "toolbar-active-text": "#39ff8a",
+      "error-bg": "rgba(255, 59, 59, 0.12)",
+      "error-border": "rgba(255, 59, 59, 0.50)",
+      "error-hover": "rgba(255, 59, 59, 0.20)",
+      "overlay-bg": "rgba(6, 9, 10, 0.76)",
+      "overlay-bg-heavy": "rgba(6, 9, 10, 0.92)",
+      "canvas-atmosphere": "radial-gradient(90% 60% at 50% -5%, rgba(0, 255, 65, 0.10), transparent 60%), radial-gradient(70% 50% at 50% 110%, rgba(0, 255, 65, 0.08), transparent 65%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 1  0 0 0 0 0.25  0 0 0 0.035 0'/></filter><rect width='100%25' height='100%25' filter='url(%23p)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(0, 255, 65, 0.10)",
+      "rim-light-strong": "inset 0 1px 0 rgba(0, 255, 65, 0.22), inset 0 -1px 0 rgba(6, 9, 10, 0.60)",
+      "selection-bg": "rgba(0, 255, 65, 0.36)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(0, 0, 0, 0.70), 0 0 0 1px rgba(0, 255, 65, 0.08)",
+      "shadow-md": "0 8px 22px -10px rgba(0, 0, 0, 0.82), 0 2px 5px -2px rgba(0, 255, 65, 0.10), 0 0 0 1px rgba(0, 255, 65, 0.10)",
+      "shadow-lg": "0 20px 44px -18px rgba(0, 0, 0, 0.88), 0 6px 14px -6px rgba(0, 255, 65, 0.12), 0 0 0 1px rgba(0, 255, 65, 0.14)",
+      "shadow-card-hover": "0 14px 34px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(0, 255, 65, 0.55), 0 0 24px rgba(0, 255, 65, 0.22)",
+      "well-shadow": "inset 0 2px 10px rgba(0, 0, 0, 0.72), inset 0 -1px 0 rgba(0, 255, 65, 0.06), inset 0 0 0 1px rgba(0, 255, 65, 0.08)",
+      "composer-ring": "inset 0 0 0 1px rgba(0, 255, 65, 0.26), inset 0 1px 0 rgba(0, 255, 65, 0.08)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(0, 255, 65, 0.90), inset 0 1px 0 rgba(204, 255, 204, 0.25), 0 0 0 3px rgba(0, 255, 65, 0.22), 0 0 40px rgba(0, 255, 65, 0.22)"
+    },
+    "typography": {
+      "font-size-sm": "10px",
+      "font-size-base": "12px",
+      "font-size-md": "13px",
+      "font-size-lg": "15px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.18",
+      "line-height-normal": "1.48",
+      "line-height-relaxed": "1.62",
+      "letter-spacing-tight": "-0.005em",
+      "letter-spacing-wide": "0.12em"
+    },
+    "radius": {
+      "radius-sm": "1px",
+      "radius-md": "2px",
+      "radius-lg": "2px",
+      "radius-pill": "999px",
+      "border-radius": "2px"
+    },
+    "spacing": {
+      "space-xs": "3px",
+      "space-sm": "6px",
+      "space-md": "10px",
+      "space-lg": "14px",
+      "space-xl": "20px"
+    },
+    "motion": {
+      "transition-fast": "0.08s steps(2, end)",
+      "transition-normal": "0.12s steps(2, end)",
+      "transition-slow": "0.18s steps(3, end)",
+      "transition-instant": "0s",
+      "transition-hover": "0.08s steps(2, end)",
+      "transition-emphasis": "0.16s steps(2, end)",
+      "ease-standard": "steps(2, end)",
+      "ease-accelerate": "steps(2, end)",
+      "ease-decelerate": "steps(2, end)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(0, 255, 65, 0.20)",
+      "scrollbar-thumb-hover-bg": "rgba(0, 255, 65, 0.55)",
+      "focus-ring": "0 0 0 1px rgba(204, 255, 204, 0.60), 0 0 0 3px rgba(0, 255, 65, 0.60), 0 0 20px rgba(0, 255, 65, 0.35)",
+      "chat-max-width": "100%",
+      "turn-gap": "8px",
+      "canvas-padding-inline": "20px",
+      "composer-min-height": "56px",
+      "composer-padding-y": "10px",
+      "sidebar-item-padding-y": "4px",
+      "sidebar-item-gap": "0px"
+    },
+    "border": {
+      "border-thin": "1px"
+    },
+    "icon": {
+      "icon-xs": "9px",
+      "icon-sm": "10px",
+      "icon-md": "12px",
+      "icon-lg": "14px"
+    },
+    "control": {
+      "control-height-sm": "22px",
+      "control-height-md": "26px",
+      "control-height-lg": "32px"
+    }
+  }
+}

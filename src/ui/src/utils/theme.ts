@@ -229,6 +229,28 @@ const THEMEABLE_TOKENS = new Set<string>([
   "transition-instant",
   "transition-hover",
   "transition-emphasis",
+
+  // Shape / Layout variants — raw-value tokens that let themes push
+  // structural treatments (bubble vs prose vs card user messages,
+  // rail vs card sidebar selection, dot vs chevron role labels, etc.)
+  "user-msg-padding",
+  "user-msg-chrome",
+  "user-msg-bg",
+  "user-msg-margin-top",
+  "composer-chrome",
+  "composer-chrome-focus",
+  "sidebar-item-bg",
+  "sidebar-item-chrome",
+  "sidebar-selected-chrome",
+  "sidebar-selected-bg",
+  "chat-header-padding",
+  "chat-header-chrome",
+  "role-label-glyph",
+  "role-label-glyph-color",
+  "role-label-weight",
+  "role-label-transform",
+  "panel-header-chrome",
+  "app-bg-gradient",
 ]);
 
 /**

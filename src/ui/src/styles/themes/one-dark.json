@@ -1,0 +1,144 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "one-dark",
+    "name": "One Dark",
+    "author": "Atom (port)",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Canonical Atom One Dark — slate charcoal (#282c34) with editor-blue (#61afef) accent, mauve and green syntax accents, dev-dense information density.",
+    "stylesheet": "stylesheets/one-dark.css",
+    "preview": {
+      "background": "#282c34",
+      "surface": "#2c313c",
+      "accent": "#61afef",
+      "text": "#abb2bf"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+      "app-bg": "#282c34",
+      "sidebar-bg": "#21252b",
+      "sidebar-border": "#3a3f4b",
+      "panel-bg": "#2c313c",
+      "surface-bg": "#323842",
+      "sunken-bg": "#1b1f24",
+      "text-primary": "#abb2bf",
+      "text-muted": "#9099a9",
+      "text-dim": "#7a8290",
+      "text-faint": "#5c6370",
+      "text-separator": "#3a3f4b",
+      "accent-primary": "#61afef",
+      "accent-primary-rgb": "97, 175, 239",
+      "accent-dim": "#4a8fc9",
+      "accent-bg": "rgba(97, 175, 239, 0.10)",
+      "accent-bg-strong": "rgba(97, 175, 239, 0.22)",
+      "accent-glow": "0 0 1px rgba(198, 222, 250, 0.68), 0 0 12px rgba(97, 175, 239, 0.52), 0 0 30px rgba(86, 182, 194, 0.22), 0 0 64px rgba(198, 120, 221, 0.10)",
+      "hover-bg": "rgba(171, 178, 191, 0.05)",
+      "hover-bg-subtle": "rgba(171, 178, 191, 0.028)",
+      "selected-bg": "rgba(97, 175, 239, 0.15)",
+      "divider": "#3a3f4b",
+      "status-running": "#98c379",
+      "status-idle": "#7a8290",
+      "status-stopped": "#e06c75",
+      "badge-done": "#98c379",
+      "badge-plan": "#c678dd",
+      "badge-ask": "#e5c07b",
+      "diff-added-bg": "rgba(152, 195, 121, 0.13)",
+      "diff-removed-bg": "rgba(224, 108, 117, 0.13)",
+      "diff-added-text": "#98c379",
+      "diff-removed-text": "#e06c75",
+      "diff-hunk-header": "#56b6c2",
+      "diff-line-number": "#5c6370",
+      "chat-user-bg": "rgba(171, 178, 191, 0.022)",
+      "chat-system-bg": "rgba(97, 175, 239, 0.06)",
+      "chat-input-bg": "#1b1f24",
+      "chat-header-bg": "#21252b",
+      "terminal-tab-bg": "#21252b",
+      "terminal-tab-active-bg": "#323842",
+      "terminal-bg": "#1b1f24",
+      "terminal-fg": "#abb2bf",
+      "terminal-cursor": "#61afef",
+      "terminal-selection": "rgba(97, 175, 239, 0.28)",
+      "toolbar-active": "rgba(97, 175, 239, 0.20)",
+      "toolbar-active-text": "#8cc4f4",
+      "error-bg": "rgba(224, 108, 117, 0.10)",
+      "error-border": "rgba(224, 108, 117, 0.40)",
+      "error-hover": "rgba(224, 108, 117, 0.16)",
+      "overlay-bg": "rgba(14, 16, 20, 0.72)",
+      "overlay-bg-heavy": "rgba(14, 16, 20, 0.90)",
+      "canvas-atmosphere": "radial-gradient(90% 50% at 50% -4%, rgba(97, 175, 239, 0.10), transparent 60%), radial-gradient(70% 30% at 25% -2%, rgba(198, 120, 221, 0.06), transparent 72%), radial-gradient(70% 30% at 75% -2%, rgba(86, 182, 194, 0.07), transparent 72%), radial-gradient(120% 80% at 50% 100%, rgba(14, 16, 20, 0.55), transparent 60%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='o'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch' seed='9'/><feColorMatrix values='0 0 0 0 0.67  0 0 0 0 0.70  0 0 0 0 0.75  0 0 0 0.035 0'/></filter><rect width='100%25' height='100%25' filter='url(%23o)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(171, 178, 191, 0.055)",
+      "rim-light-strong": "inset 0 1px 0 rgba(97, 175, 239, 0.22), inset 0 -1px 0 rgba(14, 16, 20, 0.50)",
+      "selection-bg": "rgba(97, 175, 239, 0.32)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(10, 12, 16, 0.60), 0 0 0 1px rgba(97, 175, 239, 0.05)",
+      "shadow-md": "0 10px 28px -12px rgba(10, 12, 16, 0.80), 0 2px 6px -2px rgba(27, 31, 36, 0.55), 0 0 0 1px rgba(97, 175, 239, 0.06)",
+      "shadow-lg": "0 24px 52px -18px rgba(10, 12, 16, 0.90), 0 8px 16px -6px rgba(27, 31, 36, 0.60), 0 0 0 1px rgba(97, 175, 239, 0.09)",
+      "shadow-card-hover": "0 16px 36px -14px rgba(10, 12, 16, 0.85), 0 4px 10px -2px rgba(27, 31, 36, 0.58), 0 0 0 1px rgba(97, 175, 239, 0.42), 0 0 28px rgba(97, 175, 239, 0.16)",
+      "well-shadow": "inset 0 2px 10px rgba(5, 7, 10, 0.78), inset 0 -1px 0 rgba(171, 178, 191, 0.04), inset 0 0 0 1px rgba(97, 175, 239, 0.06)",
+      "composer-ring": "inset 0 0 0 1px rgba(97, 175, 239, 0.22), inset 0 1px 0 rgba(171, 178, 191, 0.06)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(97, 175, 239, 0.88), inset 0 1px 0 rgba(198, 222, 250, 0.22), 0 0 0 3px rgba(97, 175, 239, 0.20), 0 10px 28px -8px rgba(74, 143, 201, 0.32), 0 0 40px rgba(97, 175, 239, 0.12)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.28",
+      "line-height-normal": "1.52",
+      "line-height-relaxed": "1.68",
+      "letter-spacing-tight": "-0.01em",
+      "letter-spacing-wide": "0.05em"
+    },
+    "radius": {
+      "radius-sm": "3px",
+      "radius-md": "5px",
+      "radius-lg": "8px",
+      "radius-pill": "999px",
+      "border-radius": "5px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.10s ease",
+      "transition-normal": "0.18s ease",
+      "transition-slow": "0.28s ease",
+      "ease-standard": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(97, 175, 239, 0.16)",
+      "scrollbar-thumb-hover-bg": "rgba(97, 175, 239, 0.44)",
+      "focus-ring": "0 0 0 1px rgba(198, 222, 250, 0.55), 0 0 0 3px rgba(97, 175, 239, 0.55), 0 6px 18px rgba(97, 175, 239, 0.26)",
+      "chat-max-width": "1020px",
+      "turn-gap": "14px",
+      "composer-min-height": "58px",
+      "composer-padding-y": "12px",
+      "canvas-padding-inline": "28px",
+      "sidebar-item-padding-y": "5px"
+    },
+    "border": {
+      "border-thin": "1px"
+    },
+    "icon": {
+      "icon-md": "15px"
+    },
+    "control": {
+      "control-height-md": "30px"
+    }
+  }
+}

@@ -1,20 +1,18 @@
-/* Linear — marketing-hero mesh, crisp hairlines everywhere, zero noise. */
+/* Linear — clean, crisp. A single violet wash in the top-right, nothing else. */
 
 body[data-theme="linear"] [class*="messages_"] {
-  background-image:
-    /* four-corner indigo mesh — Linear product hero DNA */
-    radial-gradient(50% 45% at 8% -6%, rgba(94, 106, 210, 0.40), transparent 62%),
-    radial-gradient(55% 50% at 92% -2%, rgba(138, 120, 230, 0.30), transparent 65%),
-    radial-gradient(60% 60% at 88% 95%, rgba(94, 106, 210, 0.22), transparent 68%),
-    radial-gradient(55% 55% at 12% 100%, rgba(138, 120, 230, 0.18), transparent 68%),
-    radial-gradient(45% 45% at 50% 50%, rgba(94, 106, 210, 0.06), transparent 72%);
+  background-image: radial-gradient(
+    70% 50% at 85% -5%,
+    rgba(94, 106, 210, 0.10),
+    transparent 60%
+  );
   background-attachment: fixed;
 }
 
-/* Crisp 1px hairlines — a Linear signature. Panels get a full border. */
+/* Hairlines between panels — a Linear signature. */
 body[data-theme="linear"] [class*="panel_"],
 body[data-theme="linear"] [class*="sidebar_"] {
-  box-shadow: inset -1px 0 0 rgba(94, 106, 210, 0.10);
+  box-shadow: inset -1px 0 0 rgba(94, 106, 210, 0.08);
 }
 
 body[data-theme="linear"] hr,
@@ -22,32 +20,8 @@ body[data-theme="linear"] [class*="divider"],
 body[data-theme="linear"] [class*="separator"],
 body[data-theme="linear"] [class*="toolbar_"],
 body[data-theme="linear"] [class*="fieldGroup_"] {
-  border-bottom-color: rgba(94, 106, 210, 0.20) !important;
+  border-bottom-color: rgba(94, 106, 210, 0.18) !important;
   border-bottom-width: 1px !important;
   border-bottom-style: solid !important;
   box-shadow: none;
-}
-
-/* Minimal selected marker — 2px left rail, no fill bloat */
-body[data-theme="linear"] [class*="wsSelected_"] {
-  box-shadow:
-    inset 2px 0 0 rgba(94, 106, 210, 1),
-    inset 0 0 0 1px rgba(94, 106, 210, 0.14);
-}
-
-/* Role labels: quiet, tracked, lowercase — editorial, not LABEL */
-body[data-theme="linear"] [class*="roleLabel_"] {
-  letter-spacing: 0.01em;
-  text-transform: none;
-  font-weight: 500;
-  opacity: 0.72;
-}
-
-/* Composer: hairline-tight, no excessive padding */
-body[data-theme="linear"] [class*="composer_"] {
-  background-image: linear-gradient(
-    180deg,
-    rgba(94, 106, 210, 0.035),
-    transparent 30%
-  );
 }

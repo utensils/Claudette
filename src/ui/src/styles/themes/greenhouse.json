@@ -4,7 +4,7 @@
     "id": "greenhouse",
     "name": "Greenhouse",
     "author": "Claudette",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
     "description": "Biophilic sanctuary — mossy forest-floor black cradled in saffron golden-hour light filtered through greenhouse glass. Warm bark-brown shadows, organic radii, leaf silhouettes in the corners.",
     "stylesheet": "stylesheets/greenhouse.css",
@@ -148,6 +148,15 @@
     "component": {
       "card-padding": "20px",
       "menu-item-padding-y": "9px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 16px 10px 20px",
+      "user-msg-chrome": "inset 4px 0 0 #e8a53c",
+      "user-msg-bg": "rgba(232, 165, 60, 0.05)",
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#e8a53c",
+      "sidebar-selected-chrome": "inset 4px 0 0 #e8a53c",
+      "chat-header-chrome": "0 1px 0 rgba(232, 165, 60, 0.22)"
     }
   }
 }

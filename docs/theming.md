@@ -238,6 +238,99 @@ Drives the overall density feel.
 | `popover-max-height` | `400px` | Max height of a popover list. |
 | `modal-width` | `420px` | Default modal shell width. |
 
+### `shape` — structural divergence (bubble vs prose vs card, rail vs block selection, dot vs chevron role labels)
+
+Color-only themes all end up looking like the same app with a different paint job. The `shape` group opens up *structural* divergence — user-message shape, composer chrome, sidebar selection language, role-label glyphs, panel chrome — so a "card" theme and a "prose" theme can look like different products.
+
+These are **raw-value tokens**: they hold CSS values (box-shadow composites, padding shorthand, `content` strings) that component CSS consumes via `var(--token, <default>)`. Defaults reproduce the built-in theme byte-for-byte; override any subset to remix the shape.
+
+#### User message — bubble / prose / card
+
+The default is *prose with an accent rail* — no bounding box, a 2px accent wire on the left.
+
+| Token | Default | Use |
+|---|---|---|
+| `user-msg-padding` | `8px 14px 8px 16px` | Padding inside the user message block. |
+| `user-msg-chrome` | `inset 2px 0 0 rgba(accent, 0.35)` | `box-shadow` composite — the rail / border / ring. |
+| `user-msg-bg` | `transparent` | Background fill. Set a tint to turn prose into a bubble. |
+| `user-msg-margin-top` | `24px` | Top margin per user turn (after the first). Matches `--turn-gap`. |
+
+**Card treatment recipe:**
+
+```json
+"user-msg-chrome": "inset 0 0 0 1px rgba(255,255,255,0.08), 0 2px 8px rgba(0,0,0,0.4)",
+"user-msg-bg":     "rgba(var(--accent-primary-rgb), 0.06)",
+"user-msg-padding": "12px 16px"
+```
+
+**Bubble treatment recipe:**
+
+```json
+"user-msg-chrome": "none",
+"user-msg-bg":     "rgba(var(--accent-primary-rgb), 0.1)",
+"user-msg-padding": "10px 16px"
+```
+
+#### Composer — slab vs line
+
+| Token | Default | Use |
+|---|---|---|
+| `composer-chrome` | `var(--composer-ring)` | `box-shadow` on the composer slab at rest. |
+| `composer-chrome-focus` | `var(--composer-ring-focus)` | `box-shadow` on the composer on focus-within. |
+
+Override without touching `--composer-ring` when you want a per-theme chrome shape distinct from the base ring.
+
+**Line treatment recipe** (Bunker-style hairline, no shadow):
+
+```json
+"composer-chrome":       "inset 0 -1px 0 rgba(255,255,255,0.1)",
+"composer-chrome-focus": "inset 0 -2px 0 var(--accent-primary)"
+```
+
+#### Sidebar selection — background vs rail vs card
+
+The default uses an accent *rail* drawn via `::before` plus a subtle `selected-bg` tint.
+
+| Token | Default | Use |
+|---|---|---|
+| `sidebar-item-bg` | `transparent` | Background of every sidebar item at rest. |
+| `sidebar-item-chrome` | `none` | `box-shadow` composite on every item — a card-style theme paints a per-item hairline here. |
+| `sidebar-selected-bg` | `var(--selected-bg)` | Background of the selected item. |
+| `sidebar-selected-chrome` | `none` | Additional `box-shadow` applied only when selected — heavy ring, card shadow, etc. |
+
+**Card treatment recipe:**
+
+```json
+"sidebar-item-chrome":     "inset 0 0 0 1px rgba(255,255,255,0.04)",
+"sidebar-selected-chrome": "inset 0 0 0 1px var(--accent-primary), 0 2px 10px rgba(0,0,0,0.4)",
+"sidebar-selected-bg":     "rgba(var(--accent-primary-rgb), 0.08)"
+```
+
+#### Chat header — dissolve vs slab
+
+| Token | Default | Use |
+|---|---|---|
+| `chat-header-padding` | `12px 22px` | Header padding. |
+| `chat-header-chrome` | `none` | `box-shadow` below the header. Slab themes can drop a divider or shadow here; the default lets the header dissolve into the canvas atmosphere. |
+
+#### Role label — dot vs chevron vs pill
+
+| Token | Default | Use |
+|---|---|---|
+| `role-label-glyph` | `""` | Raw `content` value for a `::after` prefix. Set `"›"`, `"▌"`, `"//"`, etc. to swap the dot glyph for a chevron / bar / slashes. |
+| `role-label-glyph-color` | `var(--accent-primary)` | Color of the custom glyph. |
+| `role-label-weight` | `600` | Font-weight of the label. |
+| `role-label-transform` | `uppercase` | `text-transform` — set `none` for sentence-case labels. |
+
+> The default `""` glyph renders nothing, so the existing tiny accent dot still wins. Themes that opt into a glyph override the empty string.
+
+#### Panel chrome
+
+| Token | Default | Use |
+|---|---|---|
+| `panel-header-chrome` | `none` | `box-shadow` applied below panel headers (sidebar repo header, etc.). Hairline / shadow / rim light — your call. |
+| `app-bg-gradient` | `none` | Optional additional `background` layer laid ON TOP of `--app-bg` on the outer window shell. Distinct from `--canvas-atmosphere` (which sits behind the chat); this lives at the shell level so themes can add one more depth layer without restating the canvas gradient. |
+
 ### `zIndex` — normalized layer order
 
 Keep to this order: sticky < raised < dropdown < overlay < modal. Do not use raw values in component CSS.

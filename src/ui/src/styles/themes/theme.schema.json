@@ -72,7 +72,8 @@
         "icon": { "$ref": "#/$defs/iconTokens" },
         "control": { "$ref": "#/$defs/controlTokens" },
         "component": { "$ref": "#/$defs/componentTokens" },
-        "zIndex": { "$ref": "#/$defs/zIndexTokens" }
+        "zIndex": { "$ref": "#/$defs/zIndexTokens" },
+        "shape": { "$ref": "#/$defs/shapeTokens" }
       }
     },
     "colorTokens": {
@@ -285,6 +286,36 @@
         "z-dropdown": { "type": "string", "description": "Menus, disclosures. Defaults to `50`." },
         "z-overlay":  { "type": "string", "description": "Modal backdrops. Defaults to `99`." },
         "z-modal":    { "type": "string", "description": "Modal / popover content. Defaults to `100`." }
+      }
+    },
+    "shapeTokens": {
+      "type": "object",
+      "description": "Raw-value tokens that let themes push STRUCTURAL treatments (not just colors) — user-message shape (bubble / prose / card), composer chrome, sidebar selection language (rail / block / card), role-label glyphs (dot / chevron / pill), panel chrome. Components consume via `var(--token, <current>)`; defaults preserve the built-in theme exactly.",
+      "additionalProperties": false,
+      "properties": {
+        "user-msg-padding":      { "type": "string", "description": "Padding applied to user-role messages. Default `8px 14px 8px 16px`." },
+        "user-msg-chrome":       { "type": "string", "description": "box-shadow composite on user messages — the at-rest chrome/border. Default is a 2px accent rail: `inset 2px 0 0 rgba(accent, 0.35)`. Themes can swap for a full `inset 0 0 0 1px <color>, 0 2px 8px rgba(0,0,0,0.4)` card treatment, a bubble, etc." },
+        "user-msg-bg":           { "type": "string", "description": "Background of user messages. Default `transparent`. Set a tint for bubble/card treatments." },
+        "user-msg-margin-top":   { "type": "string", "description": "Margin-top on user turns (after the first). Default `24px` to match `--turn-gap`." },
+
+        "composer-chrome":       { "type": "string", "description": "box-shadow applied to the composer slab at rest. Defaults to `var(--composer-ring)`; override to swap the at-rest treatment (slab vs line vs card) without touching the base ring." },
+        "composer-chrome-focus": { "type": "string", "description": "box-shadow applied to the composer slab on focus-within. Defaults to `var(--composer-ring-focus)`." },
+
+        "sidebar-item-bg":         { "type": "string", "description": "Background of sidebar workspace rows at rest. Default `transparent`." },
+        "sidebar-item-chrome":     { "type": "string", "description": "box-shadow composite on sidebar items at rest — border/chrome treatment. Default `none`. Card-style themes can paint a per-item border here." },
+        "sidebar-selected-chrome": { "type": "string", "description": "Additional box-shadow chrome applied only when a sidebar item is selected. Default `none` (the built-in uses an accent rail drawn via ::before). Themes can push a heavy ring or card shadow here for bolder selection." },
+        "sidebar-selected-bg":     { "type": "string", "description": "Background of the selected sidebar item. Defaults to `var(--selected-bg)`." },
+
+        "chat-header-padding":   { "type": "string", "description": "Padding of the chat panel header. Default `12px 22px`." },
+        "chat-header-chrome":    { "type": "string", "description": "box-shadow applied below the chat header. Default `none` (the built-in theme lets the header dissolve into the canvas). Slab themes can drop a divider / shadow here." },
+
+        "role-label-glyph":       { "type": "string", "description": "Raw CSS `content` value for the role-label ::before. Default `\"\"` (an empty string so the existing tiny dot treatment wins). Themes can set `'›'`, `'▌'`, `'//'`, etc. to swap glyph language." },
+        "role-label-glyph-color": { "type": "string", "description": "Color of the role-label glyph. Defaults to `var(--accent-primary)`." },
+        "role-label-weight":      { "type": "string", "description": "Font-weight of the role label. Default `600`." },
+        "role-label-transform":   { "type": "string", "description": "text-transform of the role label. Default `uppercase`. Set `none` for sentence-case themes." },
+
+        "panel-header-chrome": { "type": "string", "description": "box-shadow below panel headers (sidebar section, repo header, etc.). Default `none`. Slab/brutalist themes can drop a hairline or shadow here." },
+        "app-bg-gradient":     { "type": "string", "description": "Optional additional canvas-level gradient layered ON TOP of `--app-bg`. Default `none`. Distinct from `--canvas-atmosphere` (which lives behind the chat messages) — this one sits on the outer window shell, letting themes add an extra depth layer without having to restate the atmosphere." }
       }
     },
     "layoutTokens": {

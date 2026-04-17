@@ -4,7 +4,7 @@
     "id": "rose",
     "name": "Rosé",
     "author": "Claudette (Rosé Pine Moon port)",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
     "description": "Rosé Pine Moon — a writer's candlelit sanctuary. Warm Moon base (#232136) cradles Love, Gold, Rose, and Iris. Slow, unhurried motion for long-form thinking.",
     "stylesheet": "stylesheets/rose.css",
@@ -144,6 +144,16 @@
     "component": {
       "card-padding": "20px",
       "menu-item-padding-y": "10px"
+    },
+    "shape": {
+      "user-msg-padding": "12px 18px",
+      "user-msg-chrome": "inset 0 0 0 1px rgba(235, 188, 186, 0.22)",
+      "user-msg-bg": "rgba(235, 188, 186, 0.06)",
+      "role-label-glyph": "''",
+      "role-label-transform": "none",
+      "role-label-weight": "500",
+      "chat-header-chrome": "0 1px 0 rgba(235, 188, 186, 0.22), 0 3px 0 rgba(235, 188, 186, 0.10)",
+      "sidebar-selected-chrome": "inset 0 0 0 1px rgba(235, 188, 186, 0.28)"
     }
   }
 }

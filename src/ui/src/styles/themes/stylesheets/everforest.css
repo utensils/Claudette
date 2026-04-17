@@ -1,0 +1,47 @@
+/* Everforest — warm forest-floor calm, moss-and-bark chromaticity. */
+
+body[data-theme="everforest"] [class*="sidebar_"] {
+  background-image: radial-gradient(70% 40% at 50% 0%, rgba(167, 192, 128, 0.06), transparent 72%);
+}
+
+body[data-theme="everforest"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(167, 192, 128, 0.95),
+    inset 0 0 14px rgba(131, 192, 146, 0.12);
+}
+
+body[data-theme="everforest"] hr,
+body[data-theme="everforest"] [class*="divider"],
+body[data-theme="everforest"] [class*="separator"],
+body[data-theme="everforest"] [class*="toolbar_"],
+body[data-theme="everforest"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(167, 192, 128, 0.22) !important;
+}
+
+body[data-theme="everforest"] [class*="roleLabel_"] {
+  color: rgba(131, 192, 146, 0.88);
+  letter-spacing: 0.035em;
+}
+
+/* Warm canopy hairline at top of chat canvas — aqua→green→orange. */
+body[data-theme="everforest"] [class*="messages_"] {
+  position: relative;
+}
+body[data-theme="everforest"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(127, 187, 179, 0.30) 20%,
+    rgba(167, 192, 128, 0.42) 50%,
+    rgba(230, 152, 117, 0.28) 80%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}

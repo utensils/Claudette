@@ -1,0 +1,53 @@
+/* Matrix — bright phosphor green HUD, dense terminal rhythm, no scanlines. */
+
+body[data-theme="matrix"] [class*="roleLabel_"] {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #00ff41;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.55), 0 0 2px rgba(204, 255, 204, 0.60);
+}
+
+body[data-theme="matrix"] [class*="title_"] {
+  color: #ccffcc;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.40);
+}
+
+/* Caret as hot white inside the green column. */
+body[data-theme="matrix"] textarea,
+body[data-theme="matrix"] input {
+  caret-color: #ccffcc;
+}
+
+body[data-theme="matrix"] hr,
+body[data-theme="matrix"] [class*="divider"],
+body[data-theme="matrix"] [class*="separator"],
+body[data-theme="matrix"] [class*="toolbar_"],
+body[data-theme="matrix"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(0, 255, 65, 0.36) !important;
+  box-shadow: 0 0 6px rgba(0, 255, 65, 0.22);
+}
+
+body[data-theme="matrix"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 #00ff41,
+    inset 0 0 18px rgba(0, 255, 65, 0.18);
+}
+
+/* Role label glyph — double-angle prompt, bright-core. */
+body[data-theme="matrix"] [class*="role_User"] [class*="roleLabel"]::before {
+  content: ">>";
+  color: #ccffcc;
+  font-weight: 700;
+  margin-right: 6px;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.75);
+}
+
+/* Subtle phosphor pulse on composer focus — bright glow, not a spinner. */
+@keyframes matrix-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(0, 255, 65, 0.90), 0 0 0 3px rgba(0, 255, 65, 0.20), 0 0 28px rgba(0, 255, 65, 0.22); }
+  50%      { box-shadow: inset 0 0 0 1px rgba(57, 255, 138, 1.00), 0 0 0 3px rgba(57, 255, 138, 0.26), 0 0 38px rgba(57, 255, 138, 0.32); }
+}
+body[data-theme="matrix"] [class*="inputArea_"]:focus-within {
+  animation: matrix-pulse 1.8s ease-in-out infinite;
+}

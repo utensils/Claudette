@@ -4,7 +4,7 @@
     "id": "neon-tokyo",
     "name": "Neon Tokyo",
     "author": "James Brink",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
     "description": "Cyberpunk maximalism — hot magenta and electric cyan carve scanlines through chrome-black streets. Stacked neon bloom, dense HUD, loud on purpose.",
     "stylesheet": "stylesheets/neon-tokyo.css",
@@ -154,6 +154,16 @@
       "card-padding": "10px",
       "chip-padding-x": "5px",
       "chip-padding-y": "1px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 14px",
+      "user-msg-chrome": "inset 2px 0 0 #ff2e88, inset -2px 0 0 #00e5ff",
+      "user-msg-bg": "rgba(255, 46, 136, 0.06)",
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#ff2e88",
+      "role-label-transform": "uppercase",
+      "sidebar-selected-chrome": "inset 2px 0 0 #ff2e88, inset -2px 0 0 #00e5ff",
+      "chat-header-chrome": "0 1px 0 rgba(255, 46, 136, 0.28)"
     }
   }
 }

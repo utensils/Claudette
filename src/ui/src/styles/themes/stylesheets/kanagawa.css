@@ -1,0 +1,54 @@
+/* Kanagawa Wave — Japanese ink-wash, editorial restraint, crane-blue accent. */
+
+body[data-theme="kanagawa"] [class*="sidebar_"] {
+  background-image: radial-gradient(60% 40% at 50% 0%, rgba(126, 156, 216, 0.05), transparent 72%);
+}
+
+body[data-theme="kanagawa"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(126, 156, 216, 0.95),
+    inset 0 0 14px rgba(149, 127, 184, 0.10);
+}
+
+body[data-theme="kanagawa"] hr,
+body[data-theme="kanagawa"] [class*="divider"],
+body[data-theme="kanagawa"] [class*="separator"],
+body[data-theme="kanagawa"] [class*="toolbar_"],
+body[data-theme="kanagawa"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(192, 163, 110, 0.32) !important;
+}
+
+body[data-theme="kanagawa"] [class*="roleLabel_"] {
+  color: rgba(192, 163, 110, 0.90);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant: small-caps;
+}
+
+/* Ink-wash hairline — crane-blue sumi brushstroke at canvas top. */
+body[data-theme="kanagawa"] [class*="messages_"] {
+  position: relative;
+}
+body[data-theme="kanagawa"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(106, 149, 137, 0.28) 22%,
+    rgba(126, 156, 216, 0.42) 50%,
+    rgba(149, 127, 184, 0.28) 78%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Editorial caret colour — crane blue. */
+body[data-theme="kanagawa"] [class*="input_"]:focus {
+  caret-color: #7e9cd8;
+}

@@ -1,0 +1,47 @@
+/* One Dark — Atom editor chrome, dev-dense, editor-blue accents. */
+
+body[data-theme="one-dark"] [class*="sidebar_"] {
+  background-image: radial-gradient(55% 35% at 50% 0%, rgba(97, 175, 239, 0.05), transparent 70%);
+}
+
+body[data-theme="one-dark"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(97, 175, 239, 0.95),
+    inset 0 0 14px rgba(97, 175, 239, 0.10);
+}
+
+body[data-theme="one-dark"] hr,
+body[data-theme="one-dark"] [class*="divider"],
+body[data-theme="one-dark"] [class*="separator"],
+body[data-theme="one-dark"] [class*="toolbar_"],
+body[data-theme="one-dark"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(97, 175, 239, 0.22) !important;
+}
+
+body[data-theme="one-dark"] [class*="roleLabel_"] {
+  color: rgba(198, 120, 221, 0.85);
+  letter-spacing: 0.02em;
+}
+
+/* Thin editor-blue accent line at top — subtle horizon cue. */
+body[data-theme="one-dark"] [class*="messages_"] {
+  position: relative;
+}
+body[data-theme="one-dark"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(86, 182, 194, 0.28) 22%,
+    rgba(97, 175, 239, 0.40) 52%,
+    rgba(198, 120, 221, 0.28) 80%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}

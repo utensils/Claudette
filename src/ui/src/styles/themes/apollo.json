@@ -1,0 +1,153 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "apollo",
+    "name": "Apollo",
+    "author": "Claudette",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Mission-control deep navy with NASA worm red — moon-dust cream text against a starfield radial.",
+    "stylesheet": "stylesheets/apollo.css",
+    "preview": {
+      "background": "#0a1628",
+      "surface": "#152538",
+      "accent": "#fc3d21",
+      "text": "#e8e4d8"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+      "app-bg": "#0a1628",
+      "sidebar-bg": "#0e1d33",
+      "sidebar-border": "#1a2e4a",
+      "panel-bg": "#0e1d33",
+      "surface-bg": "#152538",
+      "sunken-bg": "#061021",
+      "text-primary": "#e8e4d8",
+      "text-muted": "#b5ad9a",
+      "text-dim": "#7e8599",
+      "text-faint": "#4e5568",
+      "text-separator": "#1a2e4a",
+      "accent-primary": "#fc3d21",
+      "accent-primary-rgb": "252, 61, 33",
+      "accent-dim": "#c42d18",
+      "accent-bg": "rgba(252, 61, 33, 0.10)",
+      "accent-bg-strong": "rgba(252, 61, 33, 0.22)",
+      "accent-glow": "0 0 1px rgba(255, 210, 196, 0.75), 0 0 10px rgba(252, 61, 33, 0.50), 0 0 28px rgba(252, 61, 33, 0.22)",
+      "hover-bg": "rgba(232, 228, 216, 0.05)",
+      "hover-bg-subtle": "rgba(232, 228, 216, 0.025)",
+      "selected-bg": "rgba(252, 61, 33, 0.14)",
+      "divider": "#1a2e4a",
+      "status-running": "#fc3d21",
+      "status-idle": "#7e8599",
+      "status-stopped": "#c42d18",
+      "badge-done": "#a7c957",
+      "badge-plan": "#4a90e2",
+      "badge-ask": "#ffb03a",
+      "diff-added-bg": "rgba(167, 201, 87, 0.14)",
+      "diff-removed-bg": "rgba(196, 45, 24, 0.14)",
+      "diff-added-text": "#bddb74",
+      "diff-removed-text": "#f27156",
+      "diff-hunk-header": "#4a90e2",
+      "diff-line-number": "#4e5568",
+      "chat-user-bg": "rgba(232, 228, 216, 0.025)",
+      "chat-system-bg": "rgba(252, 61, 33, 0.06)",
+      "chat-input-bg": "#061021",
+      "chat-header-bg": "#0e1d33",
+      "terminal-tab-bg": "#0e1d33",
+      "terminal-tab-active-bg": "#152538",
+      "terminal-bg": "#061021",
+      "terminal-fg": "#e8e4d8",
+      "terminal-cursor": "#fc3d21",
+      "terminal-selection": "rgba(252, 61, 33, 0.32)",
+      "toolbar-active": "rgba(252, 61, 33, 0.18)",
+      "toolbar-active-text": "#ff6b52",
+      "error-bg": "rgba(196, 45, 24, 0.12)",
+      "error-border": "rgba(196, 45, 24, 0.45)",
+      "error-hover": "rgba(196, 45, 24, 0.20)",
+      "overlay-bg": "rgba(6, 16, 33, 0.74)",
+      "overlay-bg-heavy": "rgba(6, 16, 33, 0.90)",
+      "canvas-atmosphere": "radial-gradient(2px 2px at 22% 18%, rgba(232, 228, 216, 0.20), transparent 60%), radial-gradient(1px 1px at 78% 34%, rgba(232, 228, 216, 0.18), transparent 60%), radial-gradient(1.5px 1.5px at 42% 72%, rgba(232, 228, 216, 0.14), transparent 60%), radial-gradient(1px 1px at 88% 82%, rgba(74, 144, 226, 0.22), transparent 60%), radial-gradient(85% 55% at 50% -6%, rgba(74, 144, 226, 0.10), transparent 65%), radial-gradient(75% 50% at 50% 110%, rgba(252, 61, 33, 0.08), transparent 70%)",
+      "rim-light": "inset 0 1px 0 rgba(232, 228, 216, 0.065)",
+      "rim-light-strong": "inset 0 1px 0 rgba(232, 228, 216, 0.14), inset 0 -1px 0 rgba(6, 16, 33, 0.60)",
+      "selection-bg": "rgba(252, 61, 33, 0.34)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(6, 16, 33, 0.65), 0 0 0 1px rgba(252, 61, 33, 0.06)",
+      "shadow-md": "0 10px 26px -12px rgba(6, 16, 33, 0.82), 0 2px 6px -2px rgba(10, 22, 40, 0.55), 0 0 0 1px rgba(252, 61, 33, 0.06)",
+      "shadow-lg": "0 24px 52px -18px rgba(6, 16, 33, 0.90), 0 8px 18px -6px rgba(10, 22, 40, 0.65), 0 0 0 1px rgba(252, 61, 33, 0.08)",
+      "shadow-card-hover": "0 16px 38px -14px rgba(6, 16, 33, 0.88), 0 4px 10px -2px rgba(10, 22, 40, 0.58), 0 0 0 1px rgba(252, 61, 33, 0.40), 0 0 24px rgba(252, 61, 33, 0.18)",
+      "well-shadow": "inset 0 2px 10px rgba(6, 16, 33, 0.70), inset 0 -1px 0 rgba(232, 228, 216, 0.045), inset 0 0 0 1px rgba(252, 61, 33, 0.05)",
+      "composer-ring": "inset 0 0 0 1px rgba(252, 61, 33, 0.22), inset 0 1px 0 rgba(232, 228, 216, 0.06)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(252, 61, 33, 0.82), inset 0 1px 0 rgba(255, 210, 196, 0.20), 0 0 0 3px rgba(252, 61, 33, 0.18), 0 10px 28px -8px rgba(252, 61, 33, 0.30), 0 0 36px rgba(252, 61, 33, 0.12)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.28",
+      "line-height-normal": "1.58",
+      "line-height-relaxed": "1.70",
+      "letter-spacing-tight": "-0.012em",
+      "letter-spacing-wide": "0.10em"
+    },
+    "radius": {
+      "radius-sm": "2px",
+      "radius-md": "4px",
+      "radius-lg": "6px",
+      "radius-pill": "999px",
+      "border-radius": "4px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.14s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-normal": "0.22s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-slow": "0.34s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-standard": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)",
+      "transition-hover": "0.20s cubic-bezier(0.2, 0, 0, 1)",
+      "transition-emphasis": "0.7s ease"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(252, 61, 33, 0.16)",
+      "scrollbar-thumb-hover-bg": "rgba(252, 61, 33, 0.44)",
+      "focus-ring": "0 0 0 1px rgba(255, 210, 196, 0.50), 0 0 0 3px rgba(252, 61, 33, 0.52), 0 6px 18px rgba(252, 61, 33, 0.22)",
+      "chat-max-width": "920px",
+      "turn-gap": "16px",
+      "canvas-padding-inline": "36px",
+      "composer-min-height": "78px",
+      "composer-padding-y": "16px",
+      "sidebar-item-padding-y": "7px"
+    },
+    "border": {
+      "border-thin": "1px"
+    },
+    "icon": {
+      "icon-md": "17px",
+      "icon-lg": "20px"
+    },
+    "control": {
+      "control-height-md": "34px",
+      "control-height-lg": "42px"
+    },
+    "component": {
+      "card-padding": "22px",
+      "menu-item-padding-y": "10px",
+      "menu-item-padding-x": "18px"
+    }
+  }
+}

@@ -4,9 +4,9 @@
     "id": "default",
     "name": "Default",
     "author": "James Brink",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
-    "description": "Warm chrome, dark terminal chat \u2014 Ristretto-inspired amber (#f9cc6c) on rosewood, hand-crafted linen texture and wax-seal edges.",
+    "description": "Warm chrome, dark terminal chat — Ristretto-inspired amber (#f9cc6c) on rosewood, hand-crafted linen texture and wax-seal edges.",
     "stylesheet": "stylesheets/default.css",
     "preview": {
       "background": "#2c2525",
@@ -124,6 +124,12 @@
       "scrollbar-thumb-bg": "rgba(249, 204, 108, 0.14)",
       "scrollbar-thumb-hover-bg": "rgba(249, 204, 108, 0.42)",
       "focus-ring": "0 0 0 1px rgba(255, 238, 200, 0.50), 0 0 0 3px rgba(249, 204, 108, 0.50), 0 6px 18px rgba(212, 168, 74, 0.22)"
+    },
+    "shape": {
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#d4a84a",
+      "chat-header-chrome": "0 1px 0 rgba(212, 168, 74, 0.12)",
+      "sidebar-selected-chrome": "inset 2px 0 0 #d4a84a"
     }
   }
 }

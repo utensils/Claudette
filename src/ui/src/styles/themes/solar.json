@@ -4,9 +4,9 @@
     "id": "solar",
     "name": "Solar",
     "author": "James Brink",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "light",
-    "description": "Editorial ivory paper and burnt-sienna wire \u2014 desert solstice at high noon.",
+    "description": "Editorial ivory paper and burnt-sienna wire — desert solstice at high noon.",
     "stylesheet": "stylesheets/solar.css",
     "preview": {
       "background": "#f6ead3",
@@ -148,6 +148,15 @@
       "card-padding": "22px",
       "menu-item-padding-y": "10px",
       "menu-item-padding-x": "18px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 16px 10px 20px",
+      "user-msg-chrome": "inset 4px 0 0 #b25c18",
+      "user-msg-bg": "rgba(178, 92, 24, 0.04)",
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#b25c18",
+      "sidebar-selected-chrome": "inset 3px 0 0 #b25c18",
+      "chat-header-chrome": "0 1px 0 rgba(178, 92, 24, 0.22)"
     }
   }
 }

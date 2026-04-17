@@ -4,9 +4,9 @@
     "id": "phosphor-uplink",
     "name": "Phosphor Uplink",
     "author": "Claudette",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
-    "description": "Amber P3 phosphor on cathode black \u2014 satellite uplink, slower decay, 1984.",
+    "description": "Amber P3 phosphor on cathode black — satellite uplink, slower decay, 1984.",
     "stylesheet": "stylesheets/phosphor-uplink.css",
     "preview": {
       "background": "#070a0d",
@@ -142,6 +142,17 @@
     "component": {
       "menu-item-padding-y": "5px",
       "menu-item-padding-x": "10px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 14px",
+      "user-msg-chrome": "inset 0 0 0 1px rgba(255, 176, 0, 0.30)",
+      "user-msg-bg": "rgba(255, 176, 0, 0.03)",
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#ffb000",
+      "role-label-transform": "uppercase",
+      "role-label-weight": "600",
+      "sidebar-selected-chrome": "inset 0 0 0 1px rgba(255, 176, 0, 0.35)",
+      "chat-header-chrome": "0 1px 0 rgba(255, 176, 0, 0.28)"
     }
   }
 }

@@ -4,7 +4,7 @@
     "id": "dracula",
     "name": "Dracula",
     "author": "Dracula Team (port)",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "scheme": "dark",
     "description": "Canonical Dracula — #282a36 bat-cave under a starfield, with the full palette singing across badges, status, and color-bar accents.",
     "stylesheet": "stylesheets/dracula.css",
@@ -141,6 +141,16 @@
     },
     "component": {
       "menu-item-padding-x": "12px"
+    },
+    "shape": {
+      "user-msg-padding": "12px 18px",
+      "user-msg-chrome": "inset 0 0 0 1px rgba(189, 147, 249, 0.25)",
+      "user-msg-bg": "rgba(189, 147, 249, 0.08)",
+      "role-label-glyph": "''",
+      "role-label-transform": "none",
+      "role-label-weight": "600",
+      "sidebar-selected-chrome": "inset 0 0 0 1px rgba(189, 147, 249, 0.32)",
+      "chat-header-chrome": "0 1px 0 rgba(189, 147, 249, 0.18)"
     }
   }
 }

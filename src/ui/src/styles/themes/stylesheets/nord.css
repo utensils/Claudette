@@ -1,0 +1,48 @@
+/* Nord — Scandinavian calm, aurora ghost over Polar Night slate. */
+
+body[data-theme="nord"] [class*="sidebar_"] {
+  background-image: radial-gradient(60% 40% at 50% 0%, rgba(136, 192, 208, 0.05), transparent 70%);
+}
+
+body[data-theme="nord"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(136, 192, 208, 0.95),
+    inset 0 0 14px rgba(129, 161, 193, 0.10);
+}
+
+body[data-theme="nord"] hr,
+body[data-theme="nord"] [class*="divider"],
+body[data-theme="nord"] [class*="separator"],
+body[data-theme="nord"] [class*="toolbar_"],
+body[data-theme="nord"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(136, 192, 208, 0.20) !important;
+}
+
+body[data-theme="nord"] [class*="roleLabel_"] {
+  color: rgba(143, 188, 187, 0.88);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Faint aurora hairline at top of chat canvas — cool Frost gradient. */
+body[data-theme="nord"] [class*="messages_"] {
+  position: relative;
+}
+body[data-theme="nord"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(94, 129, 172, 0.28) 20%,
+    rgba(136, 192, 208, 0.40) 50%,
+    rgba(143, 188, 187, 0.30) 78%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}

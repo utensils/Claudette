@@ -13,10 +13,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 22px;
+  padding: var(--chat-header-padding, 12px 22px);
   background: transparent;
   position: relative;
   z-index: calc(var(--z-sticky, 1) + 1);
+  box-shadow: var(--chat-header-chrome, none);
 }
 
 .headerLeft {
@@ -189,11 +190,11 @@
    No bounding box — the whole turn reads as indented prose with a hairline. */
 .role_User {
   position: relative;
-  background: transparent;
+  background: var(--user-msg-bg, transparent);
   border-radius: 0;
-  padding: 8px 14px 8px 16px;
-  margin-top: var(--turn-gap, 24px);
-  box-shadow: inset 2px 0 0 rgba(var(--accent-primary-rgb), 0.35);
+  padding: var(--user-msg-padding, 8px 14px 8px 16px);
+  margin-top: var(--user-msg-margin-top, var(--turn-gap, 24px));
+  box-shadow: var(--user-msg-chrome, inset 2px 0 0 rgba(var(--accent-primary-rgb), 0.35));
 }
 
 .messages > .role_User:first-child,
@@ -275,11 +276,11 @@
 /* Role labels */
 .roleLabel {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: var(--role-label-weight, 600);
   color: var(--text-faint);
   margin-bottom: 4px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: var(--role-label-transform, uppercase);
   display: flex;
   align-items: center;
   gap: 5px;
@@ -293,6 +294,17 @@
   border-radius: 50%;
   background: rgba(var(--accent-primary-rgb), 0.4);
   flex-shrink: 0;
+}
+
+/* Optional glyph treatment — themes override `--role-label-glyph`
+   with a non-empty content string (e.g. `"›"`, `"▌"`) to swap the
+   dot for a chevron / bar / pill prefix. Default `""` keeps the dot
+   above rendering alone. */
+.roleLabel::after {
+  content: var(--role-label-glyph, "");
+  color: var(--role-label-glyph-color, var(--accent-primary));
+  order: -1;
+  font-weight: var(--role-label-weight, 600);
 }
 
 .role_Assistant .roleLabel {
@@ -919,14 +931,14 @@
   inset: 6px 22px 18px 22px;
   background: var(--sunken-bg);
   border-radius: var(--radius-md);
-  box-shadow: var(--composer-ring);
+  box-shadow: var(--composer-chrome, var(--composer-ring));
   pointer-events: none;
   transition: box-shadow var(--transition-normal);
   z-index: 0;
 }
 
 .inputArea:focus-within::before {
-  box-shadow: var(--composer-ring-focus);
+  box-shadow: var(--composer-chrome-focus, var(--composer-ring-focus));
 }
 
 .inputControls {

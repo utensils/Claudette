@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTDIR="/tmp/claudette-debug/contact"
 OUTFILE=""
-TILE="5x4"
+TILE="6x5"
 CELL="520x290"
 
 while [[ $# -gt 0 ]]; do
@@ -87,7 +87,9 @@ THEMES=(
   default claudette dracula tokyo-night catppuccin-mocha
   linear velvet rose greenhouse solar
   gruvbox monokai-pro neon-tokyo bunker uplink-1984
-  phosphor-uplink codex
+  phosphor-uplink codex nord everforest one-dark
+  ayu-mirage kanagawa paper matrix apollo
+  riviera terminal
 )
 
 # Human-readable labels, same order
@@ -95,7 +97,9 @@ LABELS=(
   "Default" "Claudette" "Dracula" "Tokyo Night" "Catppuccin Mocha"
   "Linear" "Velvet" "Rosé" "Greenhouse" "Solar"
   "Gruvbox" "Monokai Pro" "Neon Tokyo" "Bunker" "Uplink 1984"
-  "Phosphor Uplink" "Codex"
+  "Phosphor Uplink" "Codex" "Nord" "Everforest" "One Dark"
+  "Ayu Mirage" "Kanagawa" "Paper" "Matrix" "Apollo"
+  "Riviera" "Terminal"
 )
 
 FONT="/System/Library/Fonts/HelveticaNeue.ttc"

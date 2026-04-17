@@ -1,0 +1,50 @@
+/* Riviera — Mediterranean midnight, coral sunset + turquoise tide. */
+
+body[data-theme="riviera"] [class*="panel_"] {
+  box-shadow:
+    inset 1px 0 0 rgba(255, 139, 114, 0.08),
+    inset -1px 0 0 rgba(125, 211, 192, 0.05);
+}
+
+body[data-theme="riviera"] hr,
+body[data-theme="riviera"] [class*="divider"],
+body[data-theme="riviera"] [class*="separator"],
+body[data-theme="riviera"] [class*="toolbar_"],
+body[data-theme="riviera"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(125, 211, 192, 0.30) !important;
+  box-shadow: 0 1px 0 rgba(255, 139, 114, 0.12);
+}
+
+/* Selected workspace — coral → turquoise gradient underline, sunset over water. */
+body[data-theme="riviera"] [class*="wsSelected_"] {
+  position: relative;
+}
+body[data-theme="riviera"] [class*="wsSelected_"]::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 139, 114, 0.65), rgba(125, 211, 192, 0.55), transparent);
+  pointer-events: none;
+}
+
+/* User role label — tilde like a wave crest */
+body[data-theme="riviera"] [class*="role_User"] [class*="roleLabel"]::before {
+  content: "~";
+  color: #7dd3c0;
+  font-weight: 600;
+  margin-right: 6px;
+  text-shadow: 0 0 8px rgba(125, 211, 192, 0.48);
+}
+
+/* Composer focus — coral ring with turquoise corona. */
+body[data-theme="riviera"] [class*="inputArea_"]:focus-within {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 139, 114, 0.80),
+    inset 0 1px 0 rgba(255, 230, 218, 0.22),
+    0 0 0 3px rgba(255, 139, 114, 0.16),
+    0 10px 28px -8px rgba(255, 139, 114, 0.30),
+    0 0 44px rgba(125, 211, 192, 0.20);
+}

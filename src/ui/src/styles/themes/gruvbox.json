@@ -4,9 +4,9 @@
     "id": "gruvbox",
     "name": "Gruvbox",
     "author": "Claudette",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "scheme": "dark",
-    "description": "Gruvbox Hard \u2014 canonical #1d2021 bg, ochre ember on worn-notebook paper. Earthy, developer-beloved.",
+    "description": "Gruvbox Hard — canonical #1d2021 bg, ochre ember on worn-notebook paper. Earthy, developer-beloved.",
     "stylesheet": "stylesheets/gruvbox.css",
     "preview": {
       "background": "#1d2021",
@@ -142,6 +142,16 @@
     },
     "component": {
       "menu-item-padding-x": "12px"
+    },
+    "shape": {
+      "user-msg-padding": "10px 16px",
+      "user-msg-chrome": "inset 3px 0 0 #fe8019",
+      "user-msg-bg": "rgba(254, 128, 25, 0.05)",
+      "role-label-glyph": "'›'",
+      "role-label-glyph-color": "#fe8019",
+      "role-label-transform": "uppercase",
+      "sidebar-selected-chrome": "inset 3px 0 0 #fe8019",
+      "chat-header-chrome": "0 1px 0 rgba(254, 128, 25, 0.22)"
     }
   }
 }
