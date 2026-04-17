@@ -1,32 +1,33 @@
-/* Solar — sepia paper-grain + golden-hour conic sunrise. Desert solstice. */
+/* Solar 2.0 — editorial ivory paper, conic sunrise, warm sienna rules. */
 
 body[data-theme="solar"] [class*="messages_"] {
   background-image:
     conic-gradient(
-      from 210deg at 50% 120%,
-      rgba(255, 180, 80, 0.22) 0deg,
-      rgba(255, 140, 60, 0.28) 30deg,
-      rgba(220, 90, 40, 0.22) 60deg,
-      rgba(130, 60, 30, 0.12) 95deg,
-      rgba(80, 40, 20, 0.08) 130deg,
-      rgba(130, 60, 30, 0.12) 230deg,
-      rgba(255, 180, 80, 0.22) 300deg,
-      rgba(255, 180, 80, 0.22) 360deg
+      from 200deg at 50% 118%,
+      rgba(255, 196, 110, 0.30) 0deg,
+      rgba(245, 150, 70, 0.28) 26deg,
+      rgba(210, 100, 40, 0.22) 52deg,
+      rgba(150, 80, 40, 0.12) 88deg,
+      rgba(80, 50, 24, 0.06) 130deg,
+      rgba(80, 50, 24, 0.06) 230deg,
+      rgba(150, 80, 40, 0.12) 272deg,
+      rgba(245, 150, 70, 0.28) 334deg,
+      rgba(255, 196, 110, 0.30) 360deg
     ),
-    radial-gradient(70% 45% at 50% 100%, rgba(255, 200, 110, 0.28), transparent 70%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='3' stitchTiles='stitch' seed='4'/><feColorMatrix values='0 0 0 0 0.42  0 0 0 0 0.24  0 0 0 0 0.10  0 0 0 0.12 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
-  background-size: auto, auto, 200px 200px;
-  background-attachment: fixed, fixed, local;
+    radial-gradient(68% 40% at 50% 100%, rgba(255, 210, 130, 0.32), transparent 72%),
+    radial-gradient(40% 28% at 82% 12%, rgba(255, 230, 170, 0.28), transparent 70%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 260'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.58' numOctaves='3' stitchTiles='stitch' seed='3'/><feColorMatrix values='0 0 0 0 0.38  0 0 0 0 0.22  0 0 0 0 0.08  0 0 0 0.085 0'/></filter><rect width='100%25' height='100%25' filter='url(%23f)'/><g opacity='0.05' stroke='%238a4510' stroke-width='0.4' fill='none'><path d='M0 52 Q 90 62 180 50 T 360 58'/><path d='M0 140 Q 110 150 200 138 T 380 144'/></g></svg>");
+  background-size: auto, auto, auto, 260px 260px;
+  background-attachment: fixed, fixed, fixed, local;
+  box-shadow:
+    inset 0 0 120px rgba(255, 210, 130, 0.14),
+    inset 0 -40px 80px rgba(178, 92, 24, 0.05);
 }
 
 body[data-theme="solar"] [class*="panel_"] {
   box-shadow:
     inset 1px 0 0 rgba(178, 92, 24, 0.12),
-    inset -1px 0 0 rgba(178, 92, 24, 0.08);
-}
-
-body[data-theme="solar"] [class*="wsSelected_"] {
-  position: relative;
+    inset -1px 0 0 rgba(178, 92, 24, 0.06);
 }
 
 body[data-theme="solar"] hr,
@@ -34,22 +35,43 @@ body[data-theme="solar"] [class*="divider"],
 body[data-theme="solar"] [class*="separator"],
 body[data-theme="solar"] [class*="toolbar_"],
 body[data-theme="solar"] [class*="fieldGroup_"] {
-  border-bottom-color: rgba(178, 92, 24, 0.35) !important;
-  box-shadow: none;
+  border-bottom-color: rgba(178, 92, 24, 0.38) !important;
+  box-shadow: 0 1px 0 rgba(255, 240, 200, 0.55);
 }
 
+/* Selected workspace: warm sienna underline that fades to gold */
+body[data-theme="solar"] [class*="wsSelected_"] {
+  position: relative;
+}
 body[data-theme="solar"] [class*="wsSelected_"]::after {
   content: "";
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: 12px;
+  right: 12px;
   bottom: 3px;
   height: 1px;
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(178, 92, 24, 0.55),
+    rgba(178, 92, 24, 0.65),
+    rgba(210, 140, 60, 0.45),
     transparent
   );
   pointer-events: none;
+}
+
+/* Editorial drop-cap style on user role label — tiny serif feel via weight + tracking */
+body[data-theme="solar"] [class*="roleLabel_"] {
+  letter-spacing: 0.05em;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.60);
+}
+
+/* Composer focus: warm sun-flare glow */
+body[data-theme="solar"] [class*="inputArea_"]:focus-within {
+  box-shadow:
+    inset 0 0 0 1px rgba(178, 92, 24, 0.80),
+    inset 0 1px 0 rgba(255, 240, 200, 0.65),
+    0 0 0 3px rgba(178, 92, 24, 0.15),
+    0 10px 28px -8px rgba(178, 92, 24, 0.32),
+    0 0 42px rgba(255, 180, 90, 0.18);
 }

@@ -1,0 +1,161 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "codex",
+    "name": "Codex",
+    "author": "Claudette",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Inspired by OpenAI Codex CLI (2026) — ink-black canvas with OpenAI mint accent, horizon-banded atmosphere, and a shimmer sweep borrowed from the CLI's ratatui spinner.",
+    "stylesheet": "stylesheets/codex.css",
+    "preview": {
+      "background": "#0b0b0c",
+      "surface": "#17181b",
+      "accent": "#10a37f",
+      "text": "#ececf1"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+      "app-bg": "#0b0b0c",
+      "sidebar-bg": "#0e0e10",
+      "sidebar-border": "#1d1e22",
+      "panel-bg": "#111113",
+      "surface-bg": "#17181b",
+      "sunken-bg": "#070708",
+      "text-primary": "#ececf1",
+      "text-muted": "#a9adb8",
+      "text-dim": "#72767f",
+      "text-faint": "#4a4d55",
+      "text-separator": "#24262b",
+      "accent-primary": "#10a37f",
+      "accent-primary-rgb": "16, 163, 127",
+      "accent-shimmer": "#3ddc97",
+      "accent-dim": "#0a7a5e",
+      "accent-bg": "rgba(16, 163, 127, 0.08)",
+      "accent-bg-strong": "rgba(16, 163, 127, 0.22)",
+      "accent-glow": "0 0 1px rgba(180, 245, 215, 0.60), 0 0 10px rgba(16, 163, 127, 0.48), 0 0 28px rgba(61, 220, 151, 0.22), 0 0 60px rgba(16, 163, 127, 0.08)",
+      "hover-bg": "rgba(236, 236, 241, 0.05)",
+      "hover-bg-subtle": "rgba(236, 236, 241, 0.025)",
+      "selected-bg": "rgba(16, 163, 127, 0.14)",
+      "divider": "#1d1e22",
+      "status-running": "#10a37f",
+      "status-idle": "#72767f",
+      "status-stopped": "#e06c75",
+      "badge-done": "#10a37f",
+      "badge-plan": "#7ba1d9",
+      "badge-ask": "#e8c277",
+      "diff-added-bg": "rgba(16, 163, 127, 0.14)",
+      "diff-removed-bg": "rgba(224, 108, 117, 0.14)",
+      "diff-added-text": "#3ddc97",
+      "diff-removed-text": "#e06c75",
+      "diff-hunk-header": "#7ba1d9",
+      "diff-line-number": "#4a4d55",
+      "chat-user-bg": "rgba(236, 236, 241, 0.022)",
+      "chat-system-bg": "rgba(16, 163, 127, 0.05)",
+      "chat-input-bg": "#07070a",
+      "chat-header-bg": "#0e0e10",
+      "terminal-tab-bg": "#0e0e10",
+      "terminal-tab-active-bg": "#17181b",
+      "terminal-bg": "#070708",
+      "terminal-fg": "#ececf1",
+      "terminal-cursor": "#10a37f",
+      "terminal-selection": "rgba(16, 163, 127, 0.30)",
+      "toolbar-active": "rgba(16, 163, 127, 0.18)",
+      "toolbar-active-text": "#3ddc97",
+      "error-bg": "rgba(224, 108, 117, 0.10)",
+      "error-border": "rgba(224, 108, 117, 0.40)",
+      "error-hover": "rgba(224, 108, 117, 0.16)",
+      "overlay-bg": "rgba(7, 7, 8, 0.70)",
+      "overlay-bg-heavy": "rgba(7, 7, 8, 0.90)",
+      "canvas-atmosphere": "linear-gradient(180deg, rgba(16, 163, 127, 0.055) 0%, rgba(16, 163, 127, 0.018) 28%, transparent 54%), linear-gradient(180deg, transparent 62%, rgba(123, 161, 217, 0.035) 88%, rgba(7, 7, 8, 0.55) 100%), linear-gradient(90deg, transparent 0%, rgba(61, 220, 151, 0.07) 48%, rgba(61, 220, 151, 0.09) 50%, rgba(61, 220, 151, 0.07) 52%, transparent 100%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.92  0 0 0 0 0.92  0 0 0 0 0.94  0 0 0 0.025 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(236, 236, 241, 0.05)",
+      "rim-light-strong": "inset 0 1px 0 rgba(61, 220, 151, 0.20), inset 0 -1px 0 rgba(7, 7, 8, 0.55)",
+      "selection-bg": "rgba(16, 163, 127, 0.32)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(7, 7, 8, 0.60), 0 0 0 1px rgba(16, 163, 127, 0.04)",
+      "shadow-md": "0 10px 28px -12px rgba(7, 7, 8, 0.82), 0 2px 6px -2px rgba(17, 17, 19, 0.50), 0 0 0 1px rgba(16, 163, 127, 0.06)",
+      "shadow-lg": "0 24px 52px -18px rgba(7, 7, 8, 0.92), 0 8px 16px -6px rgba(17, 17, 19, 0.60), 0 0 0 1px rgba(16, 163, 127, 0.10)",
+      "shadow-card-hover": "0 16px 36px -14px rgba(7, 7, 8, 0.85), 0 4px 10px -2px rgba(17, 17, 19, 0.55), 0 0 0 1px rgba(16, 163, 127, 0.40), 0 0 28px rgba(61, 220, 151, 0.18)",
+      "well-shadow": "inset 0 2px 10px rgba(3, 3, 4, 0.80), inset 0 -1px 0 rgba(236, 236, 241, 0.04), inset 0 0 0 1px rgba(16, 163, 127, 0.06)",
+      "composer-ring": "inset 0 0 0 1px rgba(16, 163, 127, 0.24), inset 0 1px 0 rgba(236, 236, 241, 0.05)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(16, 163, 127, 0.85), inset 0 1px 0 rgba(180, 245, 215, 0.22), 0 0 0 3px rgba(16, 163, 127, 0.18), 0 10px 28px -8px rgba(16, 163, 127, 0.34), 0 0 40px rgba(61, 220, 151, 0.12)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.26",
+      "line-height-normal": "1.52",
+      "line-height-relaxed": "1.68",
+      "letter-spacing-tight": "-0.014em",
+      "letter-spacing-wide": "0.05em"
+    },
+    "radius": {
+      "radius-sm": "2px",
+      "radius-md": "4px",
+      "radius-lg": "6px",
+      "radius-pill": "999px",
+      "border-radius": "4px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.12s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-normal": "0.20s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-slow": "0.32s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-standard": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)",
+      "transition-hover": "0.18s cubic-bezier(0.2, 0, 0, 1)",
+      "transition-emphasis": "2s linear"
+    },
+    "layout": {
+      "scrollbar-width": "6px",
+      "scrollbar-thumb-bg": "rgba(16, 163, 127, 0.14)",
+      "scrollbar-thumb-hover-bg": "rgba(16, 163, 127, 0.42)",
+      "focus-ring": "0 0 0 1px rgba(180, 245, 215, 0.50), 0 0 0 3px rgba(16, 163, 127, 0.55), 0 6px 18px rgba(16, 163, 127, 0.22)",
+      "chat-max-width": "760px",
+      "turn-gap": "16px",
+      "canvas-padding-inline": "36px",
+      "composer-min-height": "72px",
+      "composer-padding-y": "14px",
+      "sidebar-item-padding-y": "6px"
+    },
+    "border": {
+      "border-thin": "1px",
+      "border-medium": "1px",
+      "border-thick": "2px"
+    },
+    "icon": {
+      "icon-xs": "12px",
+      "icon-sm": "14px",
+      "icon-md": "16px",
+      "icon-lg": "20px"
+    },
+    "control": {
+      "control-height-sm": "26px",
+      "control-height-md": "30px",
+      "control-height-lg": "38px"
+    },
+    "component": {
+      "menu-item-padding-y": "8px",
+      "menu-item-padding-x": "14px",
+      "card-padding": "18px",
+      "chip-padding-y": "3px",
+      "chip-padding-x": "8px"
+    }
+  }
+}

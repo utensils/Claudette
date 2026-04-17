@@ -1,0 +1,98 @@
+/* Codex 1.0 — OpenAI Codex CLI (2026) tribute: ink canvas, mint horizon,
+   and a 2s shimmer sweep borrowed from codex-rs/tui/src/shimmer.rs. */
+
+body[data-theme="codex"] [class*="messages_"] {
+  background-image:
+    linear-gradient(180deg, rgba(16, 163, 127, 0.065) 0%, rgba(16, 163, 127, 0.02) 30%, transparent 58%),
+    linear-gradient(180deg, transparent 60%, rgba(123, 161, 217, 0.04) 90%, rgba(7, 7, 8, 0.55) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 320'><g opacity='0.045' stroke='%2310a37f' stroke-width='0.5' fill='none'><path d='M0 80 L320 80'/><path d='M0 160 L320 160'/><path d='M0 240 L320 240'/></g></svg>");
+  background-size: auto, auto, 320px 320px;
+  background-attachment: fixed, fixed, local;
+  box-shadow: inset 0 0 80px rgba(7, 7, 8, 0.45);
+}
+
+/* Signature: a single bright mint horizon line near the top edge — echoes
+   the ratatui status-bar dense-line aesthetic of Codex CLI. */
+body[data-theme="codex"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(61, 220, 151, 0.0) 10%, rgba(61, 220, 151, 0.55) 50%, rgba(61, 220, 151, 0.0) 90%, transparent 100%);
+  z-index: 1;
+}
+
+body[data-theme="codex"] hr,
+body[data-theme="codex"] [class*="divider"],
+body[data-theme="codex"] [class*="separator"],
+body[data-theme="codex"] [class*="toolbar_"],
+body[data-theme="codex"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(29, 30, 34, 1) !important;
+  box-shadow: 0 1px 0 rgba(16, 163, 127, 0.08);
+}
+
+body[data-theme="codex"] [class*="wsSelected_"] {
+  position: relative;
+}
+body[data-theme="codex"] [class*="wsSelected_"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(16, 163, 127, 0.0), rgba(61, 220, 151, 0.95), rgba(16, 163, 127, 0.0));
+  border-radius: 1px;
+}
+
+/* Composer focus: mint shimmer sweep — CSS translation of shimmer.rs's
+   cosine intensity curve (2.0s period, left→right band). */
+@keyframes codex-shimmer-sweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+body[data-theme="codex"] [class*="inputArea_"]:focus-within {
+  position: relative;
+  overflow: hidden;
+}
+body[data-theme="codex"] [class*="inputArea_"]:focus-within::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    rgba(16, 163, 127, 0.0) 0%,
+    rgba(16, 163, 127, 0.35) 40%,
+    rgba(61, 220, 151, 0.95) 50%,
+    rgba(16, 163, 127, 0.35) 60%,
+    rgba(16, 163, 127, 0.0) 100%);
+  background-size: 200% 100%;
+  animation: codex-shimmer-sweep 2s linear infinite;
+}
+
+/* Caret: steady mint — Codex CLI expresses motion through shimmer, not blink. */
+body[data-theme="codex"] [class*="input_"]:focus {
+  caret-color: #3ddc97;
+}
+
+/* Role label glyph: "▌" — the exact LIVE_PREFIX character from
+   codex-rs/tui/src/ui_consts.rs, used as Codex's left-margin indicator. */
+body[data-theme="codex"] [class*="role_User"] [class*="roleLabel"]::before {
+  content: "▌";
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  color: #3ddc97;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1;
+  text-shadow: 0 0 6px rgba(16, 163, 127, 0.55);
+}

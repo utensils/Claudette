@@ -1,25 +1,20 @@
-/* Linear — 4-layer violet/indigo/cyan marketing-hero mesh. No noise. */
+/* Linear — marketing-hero mesh, crisp hairlines everywhere, zero noise. */
 
 body[data-theme="linear"] [class*="messages_"] {
   background-image:
-    radial-gradient(45% 40% at 12% -5%, rgba(139, 92, 246, 0.38), transparent 65%),
-    radial-gradient(55% 50% at 95% 8%, rgba(79, 102, 236, 0.32), transparent 70%),
-    radial-gradient(50% 55% at 85% 95%, rgba(56, 189, 248, 0.22), transparent 70%),
-    radial-gradient(60% 55% at 20% 105%, rgba(167, 139, 250, 0.24), transparent 70%),
-    radial-gradient(40% 40% at 55% 50%, rgba(99, 102, 241, 0.10), transparent 75%);
+    /* four-corner indigo mesh — Linear product hero DNA */
+    radial-gradient(50% 45% at 8% -6%, rgba(94, 106, 210, 0.40), transparent 62%),
+    radial-gradient(55% 50% at 92% -2%, rgba(138, 120, 230, 0.30), transparent 65%),
+    radial-gradient(60% 60% at 88% 95%, rgba(94, 106, 210, 0.22), transparent 68%),
+    radial-gradient(55% 55% at 12% 100%, rgba(138, 120, 230, 0.18), transparent 68%),
+    radial-gradient(45% 45% at 50% 50%, rgba(94, 106, 210, 0.06), transparent 72%);
   background-attachment: fixed;
 }
 
-body[data-theme="linear"] [class*="panel_"] {
-  background-image: linear-gradient(
-    180deg,
-    rgba(139, 92, 246, 0.04),
-    transparent 30%
-  );
-}
-
-body[data-theme="linear"] [class*="wsSelected_"] {
-  box-shadow: inset 2px 0 0 rgba(139, 92, 246, 0.95);
+/* Crisp 1px hairlines — a Linear signature. Panels get a full border. */
+body[data-theme="linear"] [class*="panel_"],
+body[data-theme="linear"] [class*="sidebar_"] {
+  box-shadow: inset -1px 0 0 rgba(94, 106, 210, 0.10);
 }
 
 body[data-theme="linear"] hr,
@@ -27,12 +22,32 @@ body[data-theme="linear"] [class*="divider"],
 body[data-theme="linear"] [class*="separator"],
 body[data-theme="linear"] [class*="toolbar_"],
 body[data-theme="linear"] [class*="fieldGroup_"] {
-  border-bottom-color: rgba(139, 92, 246, 0.28) !important;
+  border-bottom-color: rgba(94, 106, 210, 0.20) !important;
   border-bottom-width: 1px !important;
   border-bottom-style: solid !important;
+  box-shadow: none;
 }
 
+/* Minimal selected marker — 2px left rail, no fill bloat */
+body[data-theme="linear"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(94, 106, 210, 1),
+    inset 0 0 0 1px rgba(94, 106, 210, 0.14);
+}
+
+/* Role labels: quiet, tracked, lowercase — editorial, not LABEL */
 body[data-theme="linear"] [class*="roleLabel_"] {
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   text-transform: none;
+  font-weight: 500;
+  opacity: 0.72;
+}
+
+/* Composer: hairline-tight, no excessive padding */
+body[data-theme="linear"] [class*="composer_"] {
+  background-image: linear-gradient(
+    180deg,
+    rgba(94, 106, 210, 0.035),
+    transparent 30%
+  );
 }

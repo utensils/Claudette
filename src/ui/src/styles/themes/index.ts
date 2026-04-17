@@ -17,6 +17,7 @@ import tokyoNightTheme from "./tokyo-night.json";
 import catppuccinMochaTheme from "./catppuccin-mocha.json";
 import monokaiProTheme from "./monokai-pro.json";
 
+import defaultCss from "./stylesheets/default.css?url";
 import claudetteCss from "./stylesheets/claudette.css?url";
 import linearCss from "./stylesheets/linear.css?url";
 import velvetCss from "./stylesheets/velvet.css?url";
@@ -25,6 +26,9 @@ import neonTokyoCss from "./stylesheets/neon-tokyo.css?url";
 import solarCss from "./stylesheets/solar.css?url";
 import gruvboxCss from "./stylesheets/gruvbox.css?url";
 import bunkerCss from "./stylesheets/bunker.css?url";
+import greenhouseCss from "./stylesheets/greenhouse.css?url";
+import uplink1984Css from "./stylesheets/uplink-1984.css?url";
+import phosphorUplinkCss from "./stylesheets/phosphor-uplink.css?url";
 import draculaCss from "./stylesheets/dracula.css?url";
 import tokyoNightCss from "./stylesheets/tokyo-night.css?url";
 import catppuccinMochaCss from "./stylesheets/catppuccin-mocha.css?url";
@@ -44,6 +48,7 @@ import monokaiProCss from "./stylesheets/monokai-pro.css?url";
  * `manifest.stylesheet` is left undefined.
  */
 const BUILTIN_STYLESHEETS: Record<string, string> = {
+  default: defaultCss,
   claudette: claudetteCss,
   linear: linearCss,
   velvet: velvetCss,
@@ -52,6 +57,9 @@ const BUILTIN_STYLESHEETS: Record<string, string> = {
   solar: solarCss,
   gruvbox: gruvboxCss,
   bunker: bunkerCss,
+  greenhouse: greenhouseCss,
+  "uplink-1984": uplink1984Css,
+  "phosphor-uplink": phosphorUplinkCss,
   dracula: draculaCss,
   "tokyo-night": tokyoNightCss,
   "catppuccin-mocha": catppuccinMochaCss,

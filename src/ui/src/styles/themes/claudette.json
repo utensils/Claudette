@@ -4,9 +4,9 @@
     "id": "claudette",
     "name": "Claudette",
     "author": "Claudette",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "scheme": "dark",
-    "description": "The flagship \u2014 Claude Code in the terminal, reinterpreted. Canonical terracotta ember (#d77757) over warm parchment-black, with shimmer pulse and grid rhythm drawn from the CLI.",
+    "description": "The flagship \u2014 Claude Code in the terminal, reinterpreted. Canonical terracotta ember (#d77757) over warm parchment-black, with shimmer pulse, page-fold warmth, and a CLI caret rhythm.",
     "stylesheet": "stylesheets/claudette.css",
     "preview": {
       "background": "#14100d",

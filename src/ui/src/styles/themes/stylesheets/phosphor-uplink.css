@@ -1,0 +1,87 @@
+/* Phosphor Uplink — P3 amber CRT, slower decay than green sibling, heavy scanlines. */
+
+body[data-theme="phosphor-uplink"] [class*="messages_"] {
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 179, 71, 0.075) 0px,
+      rgba(255, 179, 71, 0.075) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(255, 179, 71, 0.14), transparent 58%),
+    radial-gradient(140% 90% at 50% 120%, rgba(90, 50, 10, 0.24), transparent 62%),
+    radial-gradient(ellipse 160% 140% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.58) 100%);
+  background-attachment: fixed;
+}
+
+body[data-theme="phosphor-uplink"] [class*="sidebar_"] {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 179, 71, 0.055) 0px,
+    rgba(255, 179, 71, 0.055) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* Amber phosphor glow — uppercase, wide tracking */
+body[data-theme="phosphor-uplink"] [class*="roleLabel_"] {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #ffb347;
+  text-shadow:
+    0 0 2px rgba(255, 240, 200, 0.80),
+    0 0 8px rgba(255, 179, 71, 0.65),
+    0 0 16px rgba(255, 179, 71, 0.32);
+}
+
+body[data-theme="phosphor-uplink"] [class*="title_"] {
+  color: #e8d9bf;
+  text-shadow:
+    0 0 1px rgba(255, 240, 200, 0.60),
+    0 0 6px rgba(255, 179, 71, 0.32);
+}
+
+/* Warm-white chevron on amber — slower afterglow via longer transition */
+body[data-theme="phosphor-uplink"] [class*="role_User"] [class*="roleLabel"]::before {
+  content: ">";
+  color: #fff0c8;
+  font-weight: 700;
+  margin-right: 6px;
+  text-shadow:
+    0 0 2px rgba(255, 240, 200, 0.95),
+    0 0 10px rgba(255, 179, 71, 0.70);
+}
+
+body[data-theme="phosphor-uplink"] textarea,
+body[data-theme="phosphor-uplink"] input {
+  caret-color: #fff0c8;
+}
+
+/* Dividers: warm amber wire */
+body[data-theme="phosphor-uplink"] hr,
+body[data-theme="phosphor-uplink"] [class*="divider"],
+body[data-theme="phosphor-uplink"] [class*="separator"],
+body[data-theme="phosphor-uplink"] [class*="toolbar_"],
+body[data-theme="phosphor-uplink"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(255, 179, 71, 0.32) !important;
+  box-shadow: 0 0 7px rgba(255, 179, 71, 0.20);
+}
+
+/* Selected workspace: amber bar + soft glow */
+body[data-theme="phosphor-uplink"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 #ffb347,
+    inset 0 0 22px rgba(255, 179, 71, 0.14);
+}
+
+/* Slower CRT flicker — the P3 phosphor decay characteristic */
+@keyframes phosphor-uplink-flicker {
+  0%, 96%, 100% { opacity: 1; }
+  97%           { opacity: 0.96; }
+  98.5%         { opacity: 0.99; }
+}
+body[data-theme="phosphor-uplink"] [class*="messages_"] {
+  animation: phosphor-uplink-flicker 8s infinite;
+}

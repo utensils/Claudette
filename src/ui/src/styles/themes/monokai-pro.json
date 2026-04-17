@@ -4,9 +4,9 @@
     "id": "monokai-pro",
     "name": "Monokai Pro",
     "author": "Monokai (port)",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "scheme": "dark",
-    "description": "Iconic sunset palette \u2014 coral red, warm yellow, green, cyan against smoky charcoal.",
+    "description": "Monokai Pro Classic \u2014 canonical sunset palette (#ff6188 coral, #ffd866 yellow, #a9dc76 green) on smoky charcoal. Tasteful conic warmth, amber fiber.",
     "stylesheet": "stylesheets/monokai-pro.css",
     "preview": {
       "background": "#2d2a2e",

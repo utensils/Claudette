@@ -4,12 +4,12 @@
     "id": "bunker",
     "name": "Bunker",
     "author": "Claudette",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "scheme": "dark",
-    "description": "Raw concrete, single floodlight, safety orange. Type into a bunker at 3am.",
+    "description": "Raw concrete, safety orange, hard drop-shadows. Brutalist by architectural intent.",
     "stylesheet": "stylesheets/bunker.css",
     "preview": {
-      "background": "#1a1a1a",
+      "background": "#141414",
       "surface": "#2b2b2b",
       "accent": "#ff5b13",
       "text": "#eceae4"
@@ -18,96 +18,83 @@
   "tokens": {
     "color": {
       "color-scheme": "dark",
-
       "app-bg": "#141414",
-      "sidebar-bg": "#1f1f1f",
+      "sidebar-bg": "#1c1c1c",
       "sidebar-border": "#000000",
-      "panel-bg": "#1f1f1f",
+      "panel-bg": "#1c1c1c",
       "surface-bg": "#2b2b2b",
-      "sunken-bg": "#0c0c0c",
-
+      "sunken-bg": "#0a0a0a",
       "text-primary": "#eceae4",
       "text-muted": "#b6b3ac",
       "text-dim": "#868280",
       "text-faint": "#5a5754",
       "text-separator": "#3a3734",
-
       "accent-primary": "#ff5b13",
       "accent-primary-rgb": "255, 91, 19",
       "accent-dim": "#c44209",
-      "accent-bg": "rgba(255, 91, 19, 0.10)",
-      "accent-bg-strong": "rgba(255, 91, 19, 0.22)",
-      "accent-glow": "0 0 0 1px rgba(255, 91, 19, 0.55)",
-
+      "accent-bg": "rgba(255, 91, 19, 0.12)",
+      "accent-bg-strong": "rgba(255, 91, 19, 0.24)",
+      "accent-glow": "0 0 0 2px #ff5b13",
       "hover-bg": "rgba(236, 234, 228, 0.06)",
       "hover-bg-subtle": "rgba(236, 234, 228, 0.03)",
-      "selected-bg": "rgba(255, 91, 19, 0.14)",
+      "selected-bg": "rgba(255, 91, 19, 0.16)",
       "divider": "#000000",
-
       "status-running": "#ff5b13",
       "status-idle": "#868280",
       "status-stopped": "#d72638",
-
       "badge-done": "#cfcab8",
       "badge-plan": "#8a8f7a",
       "badge-ask": "#ffb000",
-
-      "diff-added-bg": "rgba(150, 180, 90, 0.12)",
-      "diff-removed-bg": "rgba(215, 38, 56, 0.14)",
+      "diff-added-bg": "rgba(150, 180, 90, 0.14)",
+      "diff-removed-bg": "rgba(215, 38, 56, 0.16)",
       "diff-added-text": "#b4c97a",
       "diff-removed-text": "#e85a68",
       "diff-hunk-header": "#ff5b13",
       "diff-line-number": "#5a5754",
-
       "chat-user-bg": "rgba(236, 234, 228, 0.03)",
-      "chat-system-bg": "rgba(255, 91, 19, 0.05)",
-      "chat-input-bg": "#0c0c0c",
+      "chat-system-bg": "rgba(255, 91, 19, 0.06)",
+      "chat-input-bg": "#0a0a0a",
       "chat-header-bg": "#1a1a1a",
-
-      "terminal-tab-bg": "#1f1f1f",
+      "terminal-tab-bg": "#1c1c1c",
       "terminal-tab-active-bg": "#2b2b2b",
       "terminal-bg": "#0a0a0a",
       "terminal-fg": "#eceae4",
       "terminal-cursor": "#ff5b13",
       "terminal-selection": "rgba(255, 91, 19, 0.30)",
-
-      "toolbar-active": "rgba(255, 91, 19, 0.18)",
+      "toolbar-active": "rgba(255, 91, 19, 0.20)",
       "toolbar-active-text": "#ff5b13",
-
-      "error-bg": "rgba(215, 38, 56, 0.12)",
-      "error-border": "rgba(215, 38, 56, 0.55)",
-      "error-hover": "rgba(215, 38, 56, 0.20)",
-
-      "overlay-bg": "rgba(0, 0, 0, 0.72)",
-      "overlay-bg-heavy": "rgba(0, 0, 0, 0.90)",
-
-      "canvas-atmosphere": "linear-gradient(172deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 28%, transparent 55%, rgba(0, 0, 0, 0.25) 100%)",
+      "error-bg": "rgba(215, 38, 56, 0.14)",
+      "error-border": "rgba(215, 38, 56, 0.60)",
+      "error-hover": "rgba(215, 38, 56, 0.22)",
+      "overlay-bg": "rgba(0, 0, 0, 0.76)",
+      "overlay-bg-heavy": "rgba(0, 0, 0, 0.92)",
+      "canvas-atmosphere": "linear-gradient(172deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.018) 28%, transparent 55%, rgba(0, 0, 0, 0.32) 100%)",
       "rim-light": "inset 0 1px 0 rgba(255, 255, 255, 0.05)",
       "rim-light-strong": "inset 0 1px 0 rgba(255, 255, 255, 0.09)",
-      "selection-bg": "rgba(255, 91, 19, 0.35)"
+      "selection-bg": "rgba(255, 91, 19, 0.38)"
     },
     "elevation": {
-      "shadow-sm": "0 2px 0 rgba(0, 0, 0, 0.80)",
-      "shadow-md": "0 6px 0 rgba(0, 0, 0, 0.70), 0 12px 24px rgba(0, 0, 0, 0.55)",
-      "shadow-lg": "0 14px 0 rgba(0, 0, 0, 0.70), 0 24px 40px rgba(0, 0, 0, 0.65)",
-      "shadow-card-hover": "0 6px 0 rgba(0, 0, 0, 0.85), 0 0 0 1px #ff5b13",
-      "well-shadow": "inset 0 2px 0 rgba(0, 0, 0, 0.85), inset 0 -1px 0 rgba(255, 255, 255, 0.03)",
-      "composer-ring": "inset 0 0 0 1px #000000, inset 0 1px 0 rgba(255, 255, 255, 0.04)",
-      "composer-ring-focus": "inset 0 0 0 1px #ff5b13, inset 0 1px 0 rgba(255, 91, 19, 0.30)"
+      "shadow-sm": "0 2px 0 #000000",
+      "shadow-md": "0 4px 0 #000000",
+      "shadow-lg": "0 6px 0 #000000",
+      "shadow-card-hover": "0 4px 0 #ff5b13",
+      "well-shadow": "inset 0 3px 0 #000000, inset 0 -1px 0 rgba(255, 255, 255, 0.03)",
+      "composer-ring": "inset 0 0 0 2px #000000, inset 0 1px 0 rgba(255, 255, 255, 0.04)",
+      "composer-ring-focus": "inset 0 0 0 3px #ff5b13"
     },
     "typography": {
       "font-size-sm": "10px",
       "font-size-base": "13px",
       "font-size-md": "14px",
       "font-size-lg": "17px",
-      "font-weight-regular": "400",
-      "font-weight-medium": "500",
+      "font-weight-regular": "500",
+      "font-weight-medium": "600",
       "font-weight-semibold": "700",
       "font-weight-bold": "800",
-      "line-height-tight": "1.15",
-      "line-height-normal": "1.45",
-      "line-height-relaxed": "1.6",
-      "letter-spacing-tight": "-0.015em",
+      "line-height-tight": "1.12",
+      "line-height-normal": "1.42",
+      "line-height-relaxed": "1.58",
+      "letter-spacing-tight": "-0.02em",
       "letter-spacing-wide": "0.14em"
     },
     "radius": {
@@ -125,10 +112,10 @@
       "space-xl": "32px"
     },
     "layout": {
-      "scrollbar-width": "10px",
+      "scrollbar-width": "12px",
       "scrollbar-thumb-bg": "#2b2b2b",
       "scrollbar-thumb-hover-bg": "#ff5b13",
-      "focus-ring": "0 0 0 2px #ff5b13",
+      "focus-ring": "0 0 0 3px #ff5b13",
       "chat-max-width": "100%",
       "turn-gap": "10px",
       "canvas-padding-inline": "24px",
@@ -154,14 +141,14 @@
     },
     "motion": {
       "transition-fast": "0.06s steps(1, end)",
-      "transition-normal": "0.10s cubic-bezier(0.9, 0, 1, 1)",
-      "transition-slow": "0.16s cubic-bezier(0.9, 0, 1, 1)",
+      "transition-normal": "0.08s steps(1, end)",
+      "transition-slow": "0.14s steps(2, end)",
       "transition-instant": "0s",
       "transition-hover": "0s",
-      "transition-emphasis": "0.08s steps(1, end)",
-      "ease-standard": "cubic-bezier(0.9, 0, 1, 1)",
-      "ease-accelerate": "cubic-bezier(1, 0, 1, 1)",
-      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+      "transition-emphasis": "0.06s steps(1, end)",
+      "ease-standard": "steps(1, end)",
+      "ease-accelerate": "steps(1, end)",
+      "ease-decelerate": "steps(1, end)"
     }
   }
 }

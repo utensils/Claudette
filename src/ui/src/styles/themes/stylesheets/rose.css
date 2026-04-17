@@ -1,43 +1,77 @@
-/* Rosé — pastel watercolor mesh + floral SVG silhouette in corner. */
+/* Rosé — Rosé Pine Moon. A candlelit writer's journal: warm vellum atmosphere,
+   hand-traced flourish in the corner, slow unhurried motion. */
 
 body[data-theme="rose"] [class*="messages_"] {
   background-image:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280'><g fill='rgba(235,188,186,0.22)'><circle cx='40' cy='40' r='12'/><circle cx='54' cy='32' r='9'/><circle cx='56' cy='50' r='9'/><circle cx='28' cy='50' r='9'/><circle cx='40' cy='58' r='9'/><circle cx='40' cy='40' r='5' fill='rgba(246,193,119,0.35)'/></g><g fill='rgba(196,167,231,0.18)'><ellipse cx='95' cy='22' rx='18' ry='6' transform='rotate(-30 95 22)'/><ellipse cx='14' cy='90' rx='18' ry='6' transform='rotate(60 14 90)'/></g></svg>"),
-    radial-gradient(50% 40% at 15% -5%, rgba(235, 188, 186, 0.30), transparent 70%),
-    radial-gradient(50% 45% at 90% 10%, rgba(196, 167, 231, 0.26), transparent 72%),
-    radial-gradient(55% 50% at 85% 95%, rgba(246, 193, 119, 0.22), transparent 72%),
-    radial-gradient(60% 50% at 15% 100%, rgba(252, 211, 212, 0.24), transparent 70%),
-    radial-gradient(40% 40% at 50% 50%, rgba(235, 188, 220, 0.10), transparent 75%);
-  background-size: 280px 280px, auto, auto, auto, auto, auto;
-  background-position: left 8px top 8px, 0 0, 0 0, 0 0, 0 0, 0 0;
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-  background-attachment: local, fixed, fixed, fixed, fixed, fixed;
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'><g fill='none' stroke='rgba(234,154,151,0.42)' stroke-width='0.9' stroke-linecap='round'><path d='M28 184 Q 40 160 56 172 Q 68 178 64 192'/><path d='M42 172 Q 52 162 64 168'/><path d='M36 178 L 32 188'/><circle cx='62' cy='186' r='4' fill='rgba(246,193,119,0.55)' stroke='none'/><path d='M22 198 Q 44 196 68 198' stroke='rgba(196,167,231,0.30)'/></g><g fill='rgba(196,167,231,0.20)'><circle cx='168' cy='34' r='1.2'/><circle cx='184' cy='46' r='0.8'/><circle cx='156' cy='48' r='0.7'/></g></svg>"),
+    radial-gradient(55% 40% at 50% -8%, rgba(246, 193, 119, 0.14), transparent 58%),
+    radial-gradient(75% 55% at 50% -4%, rgba(234, 154, 151, 0.12), transparent 68%),
+    radial-gradient(60% 45% at 82% 92%, rgba(196, 167, 231, 0.10), transparent 66%),
+    radial-gradient(150% 100% at 50% 100%, rgba(16, 14, 26, 0.60), transparent 55%);
+  background-size: 220px 220px, auto, auto, auto, auto;
+  background-position: left bottom, 0 0, 0 0, 0 0, 0 0;
+  background-repeat: no-repeat;
+  background-attachment: local, fixed, fixed, fixed, fixed;
 }
 
+/* Candlelit flicker on the composer — Gold + Rose slow breath (4.8s). */
+@keyframes rose-candle-flicker {
+  0%, 100% {
+    box-shadow:
+      var(--composer-ring),
+      0 0 0 6px rgba(196, 167, 231, 0.09),
+      0 10px 26px -10px rgba(246, 193, 119, 0.22);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(246, 193, 119, 0.32),
+      inset 0 1px 0 rgba(255, 228, 226, 0.10),
+      0 0 0 6px rgba(234, 154, 151, 0.10),
+      0 12px 30px -10px rgba(234, 154, 151, 0.26);
+  }
+}
 body[data-theme="rose"] [class*="composer_"] {
-  box-shadow:
-    var(--composer-ring),
-    0 0 0 6px rgba(196, 167, 231, 0.08),
-    0 8px 24px -8px rgba(196, 167, 231, 0.20);
+  animation: rose-candle-flicker 4.8s ease-in-out infinite;
 }
-
 body[data-theme="rose"] [class*="composer_"]:focus-within {
+  animation: none;
   box-shadow:
     var(--composer-ring-focus),
-    0 0 0 8px rgba(235, 188, 186, 0.14),
-    0 12px 32px -10px rgba(196, 167, 231, 0.30);
+    0 0 0 8px rgba(234, 154, 151, 0.12),
+    0 14px 34px -10px rgba(196, 167, 231, 0.32);
 }
 
+/* Handwritten dotted dividers — a pause between paragraphs. */
 body[data-theme="rose"] hr,
 body[data-theme="rose"] [class*="divider"],
 body[data-theme="rose"] [class*="separator"],
 body[data-theme="rose"] [class*="toolbar_"],
 body[data-theme="rose"] [class*="fieldGroup_"] {
-  border-bottom-color: rgba(196, 135, 140, 0.55) !important;
+  border-bottom-color: rgba(234, 154, 151, 0.50) !important;
   border-bottom-style: dotted !important;
   border-bottom-width: 1px !important;
 }
 
+/* Role label — small caps whisper. */
 body[data-theme="rose"] [class*="roleLabel_"] {
-  letter-spacing: 0.02em;
+  letter-spacing: 0.09em;
+  font-variant: small-caps;
+}
+
+/* Selected workspace — a pressed-flower ribbon. */
+body[data-theme="rose"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 3px 0 0 rgba(234, 154, 151, 0.78),
+    inset 0 0 24px rgba(196, 167, 231, 0.14);
+}
+
+/* First-drop-cap on the first paragraph — a journal touch.
+   Scoped under chat markdown so nav and UI chrome stay pristine. */
+body[data-theme="rose"] [class*="turnBody_"] p:first-of-type::first-letter,
+body[data-theme="rose"] [class*="markdown_"] > p:first-of-type::first-letter {
+  font-size: 1.9em;
+  font-weight: 600;
+  color: #f3bcb9;
+  padding-right: 0.08em;
+  line-height: 0.95;
 }

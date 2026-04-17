@@ -1,0 +1,84 @@
+/* Greenhouse — biophilic sanctuary. Golden-hour saffron light pours through
+   greenhouse glass, leaf silhouettes drape the corners, bark-brown shadows. */
+
+body[data-theme="greenhouse"] [class*="messages_"] {
+  background-image:
+    /* Top-right monstera-leaf silhouette in warm olive — the canopy. */
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320' viewBox='0 0 320 320'><g fill='rgba(72,110,80,0.22)'><path d='M262 10 C 290 40, 310 82, 306 132 C 290 124, 272 120, 258 126 C 264 102, 262 78, 250 58 Z'/><path d='M236 24 C 260 50, 272 82, 266 120 C 252 114, 236 112, 224 118 C 228 96, 226 72, 216 54 Z' opacity='0.7'/><path d='M288 70 C 304 88, 312 112, 308 138 L 290 132 C 292 114, 288 96, 280 82 Z' opacity='0.55'/></g><g fill='rgba(232,165,60,0.08)'><circle cx='300' cy='40' r='38'/></g></svg>"),
+    /* Bottom-left fern frond — understory. */
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='220' viewBox='0 0 260 220'><g fill='rgba(72,110,80,0.18)'><path d='M6 212 C 20 188, 40 170, 66 164 C 90 158, 108 164, 120 176 L 118 182 C 100 174, 82 176, 64 186 C 48 194, 32 204, 14 214 Z'/><ellipse cx='32' cy='196' rx='10' ry='3' transform='rotate(-28 32 196)' opacity='0.7'/><ellipse cx='54' cy='184' rx='11' ry='3' transform='rotate(-22 54 184)' opacity='0.7'/><ellipse cx='78' cy='175' rx='12' ry='3' transform='rotate(-18 78 175)' opacity='0.7'/><ellipse cx='100' cy='170' rx='10' ry='3' transform='rotate(-12 100 170)' opacity='0.6'/></g></svg>"),
+    /* Golden-hour sun pouring through upper-right pane. */
+    radial-gradient(58% 45% at 82% -6%, rgba(232, 165, 60, 0.22), transparent 58%),
+    radial-gradient(75% 52% at 82% 10%, rgba(255, 206, 120, 0.11), transparent 70%),
+    /* Mossy floor light from lower-left. */
+    radial-gradient(100% 72% at 14% 112%, rgba(72, 110, 80, 0.13), transparent 60%),
+    /* Dark vignette anchors the floor. */
+    radial-gradient(160% 110% at 50% 42%, transparent 40%, rgba(4, 8, 6, 0.58) 100%);
+  background-size: 320px 320px, 260px 220px, auto, auto, auto, auto;
+  background-position: right -20px top -10px, left -10px bottom -10px, 0 0, 0 0, 0 0, 0 0;
+  background-repeat: no-repeat;
+  background-attachment: local, local, fixed, fixed, fixed, fixed;
+}
+
+/* Greenhouse-glass pane reflection — a faint vertical mullion down the right
+   side of the panel edge, like light catching a glazing bar. */
+body[data-theme="greenhouse"] [class*="panel_"] {
+  box-shadow: inset -1px 0 0 rgba(232, 165, 60, 0.10);
+}
+
+/* Warm bark-brown shadows — never pure black. Layered onto cards. */
+body[data-theme="greenhouse"] [class*="card_"]:hover {
+  box-shadow:
+    0 14px 32px rgba(38, 22, 8, 0.62),
+    0 0 0 1px rgba(232, 165, 60, 0.36),
+    0 0 32px rgba(232, 165, 60, 0.22);
+}
+
+/* Candlelit pulse on focus — saffron breath, warmer than neutral glow. */
+@keyframes greenhouse-lantern-pulse {
+  0%, 100% { box-shadow: var(--composer-ring-focus); }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 193, 90, 0.78),
+      inset 0 1px 0 rgba(255, 224, 160, 0.22),
+      0 0 0 3px rgba(232, 165, 60, 0.18),
+      0 12px 30px rgba(38, 22, 8, 0.62),
+      0 0 50px rgba(255, 193, 90, 0.26);
+  }
+}
+body[data-theme="greenhouse"] [class*="inputArea_"]:focus-within {
+  animation: greenhouse-lantern-pulse 4s ease-in-out infinite;
+}
+
+/* Role label — serifish small-caps feel, ivy letter-spacing. */
+body[data-theme="greenhouse"] [class*="roleLabel_"] {
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  font-size: 0.88em;
+  color: #c1a678;
+}
+
+/* Organic dividers — a faded mossy seam, not a hard rule. */
+body[data-theme="greenhouse"] hr,
+body[data-theme="greenhouse"] [class*="divider"],
+body[data-theme="greenhouse"] [class*="separator"] {
+  border-bottom-color: transparent !important;
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    rgba(127, 179, 138, 0.32) 15%,
+    rgba(232, 165, 60, 0.45) 50%,
+    rgba(127, 179, 138, 0.32) 85%,
+    transparent
+  );
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: bottom;
+}
+
+/* Selected workspace — saffron vine trailing down the edge. */
+body[data-theme="greenhouse"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 3px 0 0 rgba(232, 165, 60, 0.85),
+    inset 0 0 26px rgba(127, 179, 138, 0.14);
+}

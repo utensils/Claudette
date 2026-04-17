@@ -1,46 +1,79 @@
-/* Dracula — purple gradient mesh + moonlit sky halo + pink role underline. */
+/* Dracula — canonical bat-cave. Starfield backdrop, moonlit vignette,
+   color-bar accents that let the full palette (cyan/green/pink/purple) sing. */
 
 body[data-theme="dracula"] [class*="messages_"] {
   background-image:
-    radial-gradient(50% 35% at 15% -8%, rgba(189, 147, 249, 0.22), transparent 65%),
-    radial-gradient(45% 30% at 85% -5%, rgba(255, 121, 198, 0.16), transparent 70%),
-    radial-gradient(60% 45% at 50% 110%, rgba(80, 250, 123, 0.06), transparent 70%),
-    radial-gradient(160% 110% at 50% 45%, transparent 35%, rgba(14, 10, 24, 0.55) 100%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 320'><g fill='%23f8f8f2' opacity='0.22'><circle cx='40' cy='32' r='0.6'/><circle cx='110' cy='18' r='0.4'/><circle cx='180' cy='44' r='0.5'/><circle cx='248' cy='22' r='0.35'/><circle cx='290' cy='60' r='0.55'/><circle cx='70' cy='90' r='0.4'/><circle cx='210' cy='96' r='0.35'/><circle cx='150' cy='140' r='0.3'/></g></svg>");
-  background-size: auto, auto, auto, auto, 320px 320px;
+    radial-gradient(55% 38% at 18% -6%, rgba(189, 147, 249, 0.22), transparent 65%),
+    radial-gradient(48% 34% at 86% -2%, rgba(255, 121, 198, 0.18), transparent 70%),
+    radial-gradient(42% 30% at 50% 108%, rgba(139, 233, 253, 0.14), transparent 70%),
+    radial-gradient(170% 115% at 50% 45%, transparent 35%, rgba(12, 10, 22, 0.60) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><g fill='%23f8f8f2'><circle cx='32' cy='28' r='0.7' opacity='0.55'/><circle cx='92' cy='16' r='0.45' opacity='0.42'/><circle cx='168' cy='38' r='0.55' opacity='0.50'/><circle cx='244' cy='20' r='0.4' opacity='0.38'/><circle cx='310' cy='52' r='0.6' opacity='0.52'/><circle cx='372' cy='30' r='0.45' opacity='0.40'/><circle cx='58' cy='82' r='0.4' opacity='0.45'/><circle cx='142' cy='96' r='0.5' opacity='0.50'/><circle cx='220' cy='74' r='0.35' opacity='0.38'/><circle cx='298' cy='110' r='0.45' opacity='0.45'/><circle cx='356' cy='94' r='0.3' opacity='0.35'/><circle cx='82' cy='160' r='0.45' opacity='0.42'/><circle cx='186' cy='148' r='0.35' opacity='0.38'/><circle cx='258' cy='168' r='0.5' opacity='0.45'/><circle cx='336' cy='176' r='0.4' opacity='0.40'/><circle cx='22' cy='220' r='0.35' opacity='0.38'/><circle cx='120' cy='232' r='0.55' opacity='0.50'/><circle cx='208' cy='248' r='0.4' opacity='0.42'/><circle cx='284' cy='228' r='0.35' opacity='0.38'/><circle cx='368' cy='258' r='0.5' opacity='0.45'/><circle cx='48' cy='300' r='0.4' opacity='0.40'/><circle cx='158' cy='316' r='0.45' opacity='0.42'/><circle cx='240' cy='298' r='0.35' opacity='0.38'/><circle cx='324' cy='332' r='0.55' opacity='0.48'/></g><g fill='%23bd93f9' opacity='0.38'><circle cx='70' cy='62' r='0.7'/><circle cx='230' cy='132' r='0.6'/><circle cx='344' cy='226' r='0.65'/><circle cx='96' cy='270' r='0.6'/></g><g fill='%238be9fd' opacity='0.32'><circle cx='196' cy='74' r='0.55'/><circle cx='308' cy='184' r='0.5'/><circle cx='42' cy='158' r='0.5'/></g><g fill='%23ff79c6' opacity='0.30'><circle cx='132' cy='52' r='0.55'/><circle cx='268' cy='208' r='0.6'/><circle cx='80' cy='356' r='0.5'/></g></svg>");
+  background-size: auto, auto, auto, auto, 400px 400px;
   background-attachment: fixed, fixed, fixed, fixed, local;
 }
 
+/* Color-bar accent on each role label — a tiny 5-stripe pride ribbon
+   that lets the full Dracula palette appear on every turn. */
 body[data-theme="dracula"] [class*="roleLabel_"] {
   position: relative;
-  padding-bottom: 3px;
+  padding-bottom: 4px;
 }
-
 body[data-theme="dracula"] [class*="roleLabel_"]::after {
   content: "";
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 28px;
-  height: 1px;
+  width: 42px;
+  height: 2px;
+  border-radius: 2px;
   background: linear-gradient(
     90deg,
-    rgba(255, 121, 198, 0.85),
-    rgba(189, 147, 249, 0.45),
-    transparent
+    #ff5555 0 20%,
+    #ffb86c 20% 40%,
+    #f1fa8c 40% 55%,
+    #50fa7b 55% 70%,
+    #8be9fd 70% 85%,
+    #bd93f9 85% 100%
   );
+  box-shadow: 0 0 6px rgba(255, 121, 198, 0.35);
 }
 
+/* Playful selected workspace — pink rail + violet bloom. */
 body[data-theme="dracula"] [class*="wsSelected_"] {
   box-shadow:
-    inset 2px 0 0 rgba(255, 121, 198, 0.95),
-    inset 0 0 22px rgba(189, 147, 249, 0.14);
+    inset 3px 0 0 rgba(255, 121, 198, 0.95),
+    inset 0 0 28px rgba(189, 147, 249, 0.18);
 }
 
+/* Composer gets a soft purple wash at the top edge. */
 body[data-theme="dracula"] [class*="composer_"] {
   background-image: linear-gradient(
     180deg,
-    rgba(189, 147, 249, 0.045),
-    transparent 55%
+    rgba(189, 147, 249, 0.07),
+    rgba(255, 121, 198, 0.03) 40%,
+    transparent 60%
   );
+}
+
+/* Moonlit pulse on focus — slow breath between pink and violet. */
+@keyframes dracula-moonlit-pulse {
+  0%, 100% { box-shadow: var(--composer-ring-focus); }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgba(189, 147, 249, 0.95),
+      inset 0 1px 0 rgba(230, 200, 255, 0.26),
+      0 0 0 3px rgba(255, 121, 198, 0.24),
+      0 10px 30px -8px rgba(189, 147, 249, 0.42),
+      0 0 48px rgba(255, 121, 198, 0.18);
+  }
+}
+body[data-theme="dracula"] [class*="inputArea_"]:focus-within {
+  animation: dracula-moonlit-pulse 3.2s ease-in-out infinite;
+}
+
+/* Dotted violet dividers — bat silhouettes on the ceiling. */
+body[data-theme="dracula"] hr,
+body[data-theme="dracula"] [class*="divider"],
+body[data-theme="dracula"] [class*="separator"] {
+  border-bottom-color: rgba(189, 147, 249, 0.40) !important;
 }

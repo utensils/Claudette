@@ -1,18 +1,49 @@
-/* Velvet — narrow theatrical spotlight + diagonal gold pinstripe. Opera curtain drama. */
+/* Velvet — midnight opera. Spotlight cone, crescent moon in the wings, gold pinstripe weave. */
 
 body[data-theme="velvet"] [class*="messages_"] {
+  position: relative;
   background-image:
-    radial-gradient(22% 18% at 50% -4%, rgba(255, 218, 140, 0.32), transparent 70%),
-    radial-gradient(40% 35% at 50% 0%, rgba(212, 184, 106, 0.16), transparent 75%),
-    radial-gradient(140% 110% at 50% 55%, transparent 30%, rgba(2, 2, 10, 0.72) 100%),
+    /* spot beam — hotspot */
+    radial-gradient(18% 14% at 50% -4%, rgba(255, 236, 176, 0.44), transparent 72%),
+    /* spot beam — cone fade */
+    radial-gradient(40% 60% at 50% -8%, rgba(220, 192, 128, 0.14), transparent 70%),
+    /* corner vignette: deepens toward wings */
+    radial-gradient(140% 110% at 50% 55%, transparent 28%, rgba(2, 3, 12, 0.78) 100%),
+    /* diagonal velvet-weave pinstripe */
     repeating-linear-gradient(
-      135deg,
-      rgba(212, 184, 106, 0.04) 0px,
-      rgba(212, 184, 106, 0.04) 1px,
+      128deg,
+      rgba(220, 192, 128, 0.035) 0px,
+      rgba(220, 192, 128, 0.035) 1px,
       transparent 1px,
-      transparent 7px
-    );
+      transparent 8px
+    ),
+    /* moon silhouette tucked top-right */
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600'><defs><radialGradient id='m' cx='50%25' cy='50%25' r='50%25'><stop offset='0%25' stop-color='%23f5e0a0' stop-opacity='0.28'/><stop offset='55%25' stop-color='%23dcc080' stop-opacity='0.10'/><stop offset='100%25' stop-color='%23dcc080' stop-opacity='0'/></radialGradient></defs><circle cx='510' cy='86' r='42' fill='url(%23m)'/><circle cx='524' cy='76' r='36' fill='%230a0c1e'/></svg>");
+  background-size: auto, auto, auto, auto, 600px 600px;
+  background-position: center, center, center, center, top right;
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat, no-repeat;
   background-attachment: fixed;
+}
+
+/* Theatrical spotlight beam — narrow rectangular cone from top center */
+body[data-theme="velvet"] [class*="messages_"]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 220px;
+  height: 60%;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 236, 176, 0.14) 0%,
+    rgba(220, 192, 128, 0.06) 30%,
+    transparent 100%
+  );
+  clip-path: polygon(35% 0%, 65% 0%, 100% 100%, 0% 100%);
+  filter: blur(14px);
+  pointer-events: none;
+  z-index: 0;
 }
 
 body[data-theme="velvet"] hr,
@@ -20,13 +51,16 @@ body[data-theme="velvet"] [class*="divider"],
 body[data-theme="velvet"] [class*="separator"],
 body[data-theme="velvet"] [class*="toolbar_"],
 body[data-theme="velvet"] [class*="fieldGroup_"] {
-  border-bottom-color: rgba(212, 184, 106, 0.38) !important;
+  border-bottom-color: rgba(220, 192, 128, 0.38) !important;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
 }
 
 body[data-theme="velvet"] [class*="roleLabel_"] {
   position: relative;
-  padding-bottom: 3px;
+  padding-bottom: 4px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 10px;
 }
 
 body[data-theme="velvet"] [class*="roleLabel_"]::after {
@@ -34,19 +68,25 @@ body[data-theme="velvet"] [class*="roleLabel_"]::after {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: 22px;
+  width: 28px;
   height: 1px;
   background: linear-gradient(
     90deg,
-    rgba(212, 184, 106, 0.70),
-    rgba(212, 184, 106, 0)
+    rgba(220, 192, 128, 0.75),
+    rgba(220, 192, 128, 0) 100%
   );
 }
 
 body[data-theme="velvet"] [class*="composer_"] {
   background-image: linear-gradient(
     180deg,
-    rgba(212, 184, 106, 0.035),
-    transparent 40%
+    rgba(220, 192, 128, 0.04),
+    transparent 45%
   );
+}
+
+body[data-theme="velvet"] [class*="wsSelected_"] {
+  box-shadow:
+    inset 2px 0 0 rgba(220, 192, 128, 0.70),
+    inset 0 0 0 1px rgba(220, 192, 128, 0.10);
 }

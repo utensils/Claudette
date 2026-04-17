@@ -1,36 +1,64 @@
-/* Catppuccin Mocha — soft pastel mesh + gentle fog, rounded role pills. */
+/* Catppuccin Mocha — four-corner pastel mesh, screen-blended fog, rounded pill labels. */
 
 body[data-theme="catppuccin-mocha"] [class*="messages_"] {
+  position: relative;
   background-image:
-    radial-gradient(45% 32% at 15% 8%, rgba(245, 194, 231, 0.14), transparent 70%),
-    radial-gradient(40% 30% at 85% 12%, rgba(203, 166, 247, 0.14), transparent 72%),
-    radial-gradient(50% 35% at 30% 95%, rgba(137, 180, 250, 0.10), transparent 70%),
-    radial-gradient(45% 30% at 75% 100%, rgba(166, 227, 161, 0.08), transparent 72%),
-    linear-gradient(180deg, rgba(30, 30, 46, 0) 55%, rgba(17, 17, 27, 0.35) 100%);
+    /* four canonical-hex pastel corners */
+    radial-gradient(52% 38% at 12% 8%, rgba(245, 194, 231, 0.18), transparent 70%),
+    radial-gradient(48% 35% at 88% 10%, rgba(203, 166, 247, 0.18), transparent 72%),
+    radial-gradient(55% 40% at 20% 96%, rgba(137, 180, 250, 0.14), transparent 70%),
+    radial-gradient(52% 38% at 82% 100%, rgba(148, 226, 213, 0.12), transparent 72%),
+    /* rosewater warmth pooling at center */
+    radial-gradient(40% 30% at 50% 55%, rgba(245, 224, 220, 0.06), transparent 75%),
+    /* subtle bottom settle */
+    linear-gradient(180deg, rgba(30, 30, 46, 0) 58%, rgba(17, 17, 27, 0.38) 100%);
   background-attachment: fixed;
 }
 
+/* Screen-blended fog ribbons — softens the whole canvas */
 body[data-theme="catppuccin-mocha"] [class*="messages_"]::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(60% 20% at 50% 0%, rgba(205, 214, 244, 0.035), transparent 80%),
-    radial-gradient(70% 18% at 50% 100%, rgba(203, 166, 247, 0.04), transparent 75%);
+    radial-gradient(70% 24% at 50% -2%, rgba(245, 224, 220, 0.045), transparent 80%),
+    radial-gradient(60% 20% at 50% 102%, rgba(203, 166, 247, 0.05), transparent 75%),
+    radial-gradient(45% 18% at 22% 40%, rgba(245, 194, 231, 0.03), transparent 80%),
+    radial-gradient(45% 18% at 78% 60%, rgba(137, 180, 250, 0.03), transparent 80%);
   mix-blend-mode: screen;
+  z-index: 0;
 }
 
+/* Rounded pill labels — a Catppuccin signature mood */
 body[data-theme="catppuccin-mocha"] [class*="roleLabel_"] {
-  padding: 1px 8px;
+  padding: 2px 10px;
   border-radius: 999px;
   background: rgba(203, 166, 247, 0.10);
-  box-shadow: inset 0 0 0 1px rgba(245, 194, 231, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(245, 194, 231, 0.24);
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 body[data-theme="catppuccin-mocha"] [class*="wsSelected_"] {
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow:
-    inset 0 0 0 1px rgba(203, 166, 247, 0.45),
-    inset 0 0 18px rgba(245, 194, 231, 0.10);
+    inset 0 0 0 1px rgba(203, 166, 247, 0.50),
+    inset 0 0 20px rgba(245, 194, 231, 0.12);
+}
+
+body[data-theme="catppuccin-mocha"] hr,
+body[data-theme="catppuccin-mocha"] [class*="divider"],
+body[data-theme="catppuccin-mocha"] [class*="separator"],
+body[data-theme="catppuccin-mocha"] [class*="toolbar_"],
+body[data-theme="catppuccin-mocha"] [class*="fieldGroup_"] {
+  border-bottom-color: rgba(203, 166, 247, 0.22) !important;
+}
+
+body[data-theme="catppuccin-mocha"] [class*="composer_"] {
+  background-image: linear-gradient(
+    180deg,
+    rgba(245, 194, 231, 0.04),
+    transparent 40%
+  );
 }
