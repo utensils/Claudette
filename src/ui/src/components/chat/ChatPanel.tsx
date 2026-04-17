@@ -45,7 +45,6 @@ import { AgentQuestionCard } from "./AgentQuestionCard";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { ChatToolbar } from "./ChatToolbar";
 import { WorkspaceActions } from "./WorkspaceActions";
-import { HeaderMenu } from "./HeaderMenu";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
 import { AttachMenu } from "./AttachMenu";
 import { FileMentionPicker, matchFiles } from "./FileMentionPicker";
@@ -817,32 +816,6 @@ export function ChatPanel() {
         <div className={styles.headerRight}>
           <WorkspaceActions
             worktreePath={ws.worktree_path}
-          />
-          <HeaderMenu
-            label="Permissions"
-            items={[
-              { value: "readonly", label: "Read-only" },
-              { value: "standard", label: "Standard" },
-              { value: "full", label: "Full access" },
-            ]}
-            value={permissionLevel}
-            disabled={isRunning}
-            title="Tool permission level for this workspace"
-            onSelect={async (val) => {
-              if (!selectedWorkspaceId) return;
-              const previous = permissionLevel;
-              const level = val as "readonly" | "standard" | "full";
-              setPermissionLevel(selectedWorkspaceId, level);
-              try {
-                await setAppSetting(
-                  `permission_level:${selectedWorkspaceId}`,
-                  level
-                );
-              } catch (err) {
-                console.error("Failed to persist permission level:", err);
-                setPermissionLevel(selectedWorkspaceId, previous);
-              }
-            }}
           />
           <span
             className={styles.statusBadge}
