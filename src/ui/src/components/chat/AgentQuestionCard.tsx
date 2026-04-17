@@ -4,7 +4,12 @@ import styles from "./AgentQuestionCard.module.css";
 
 interface AgentQuestionCardProps {
   question: AgentQuestion;
-  onRespond: (response: string) => void;
+  /**
+   * Called with answers keyed by question text — matches the CLI's
+   * `mapToolResultToToolResultBlockParam` input shape. Multi-select answers
+   * are comma-separated into a single string per question.
+   */
+  onRespond: (answers: Record<string, string>) => void;
 }
 
 export function AgentQuestionCard({
@@ -31,10 +36,14 @@ export function AgentQuestionCard({
     const isMulti = q.multiSelect ?? false;
     const currentSelections = selections[0] ?? new Set<number>();
 
+    const respondSingle = (answer: string) => {
+      onRespond({ [q.question]: answer });
+    };
+
     const toggleSingle = (optIdx: number) => {
       if (!isMulti) {
         const opt = q.options[optIdx];
-        if (opt) onRespond(opt.label);
+        if (opt) respondSingle(opt.label);
         return;
       }
       setSelections((prev) => {
@@ -83,7 +92,7 @@ export function AgentQuestionCard({
               const chosen = [...currentSelections]
                 .map((idx) => q.options[idx]?.label)
                 .filter(Boolean);
-              if (chosen.length > 0) onRespond(chosen.join(", "));
+              if (chosen.length > 0) respondSingle(chosen.join(", "));
             }}
           >
             Submit answer
@@ -99,7 +108,7 @@ export function AgentQuestionCard({
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 const text = freeform.trim();
-                if (text) onRespond(text);
+                if (text) respondSingle(text);
               }
             }}
             placeholder="Type a response..."
@@ -109,7 +118,7 @@ export function AgentQuestionCard({
             className={styles.submitBtn}
             onClick={() => {
               const text = freeform.trim();
-              if (text) onRespond(text);
+              if (text) respondSingle(text);
             }}
             disabled={!freeform.trim()}
           >
@@ -141,16 +150,16 @@ export function AgentQuestionCard({
   };
 
   const submitAll = (finalAnswers: Record<number, string>) => {
-    const parts: string[] = [];
+    const payload: Record<string, string> = {};
     for (let i = 0; i < total; i++) {
       const qItem = question.questions[i];
       const answer = finalAnswers[i];
       if (answer) {
-        parts.push(`${qItem.question}: ${answer}`);
+        payload[qItem.question] = answer;
       }
     }
-    if (parts.length > 0) {
-      onRespond(parts.join("\n"));
+    if (Object.keys(payload).length > 0) {
+      onRespond(payload);
     }
   };
 

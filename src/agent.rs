@@ -46,6 +46,34 @@ pub enum StreamEvent {
     #[serde(rename = "user")]
     User { message: UserEventMessage },
 
+    /// A permission-prompt control request sent by the CLI when
+    /// `--permission-prompt-tool stdio` is active. Each `can_use_tool` request
+    /// must be answered with a `control_response` keyed by `request_id` —
+    /// see [`PersistentSession::send_control_response`].
+    #[serde(rename = "control_request")]
+    ControlRequest {
+        request_id: String,
+        request: ControlRequestInner,
+    },
+
+    #[serde(other)]
+    Unknown,
+}
+
+/// Inner payload of a `control_request`. We only care about `can_use_tool` for
+/// permission-prompt routing; other subtypes are captured as [`ControlRequestInner::Unknown`]
+/// and forwarded to the frontend for observability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype")]
+pub enum ControlRequestInner {
+    #[serde(rename = "can_use_tool")]
+    CanUseTool {
+        tool_name: String,
+        tool_use_id: String,
+        #[serde(default)]
+        input: serde_json::Value,
+    },
+
     #[serde(other)]
     Unknown,
 }
@@ -251,6 +279,13 @@ pub fn build_claude_args(
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--include-partial-messages".to_string(),
+        // Route permission "ask" decisions through the stream-json control
+        // protocol so the host (Claudette) can collect user answers and return
+        // them via `control_response`. Required for AskUserQuestion /
+        // ExitPlanMode round-trip — their `checkPermissions` short-circuits to
+        // `ask` regardless of --allowedTools or --permission-mode.
+        "--permission-prompt-tool".to_string(),
+        "stdio".to_string(),
     ];
 
     // Check if we should bypass permissions (full access with wildcard)
@@ -925,6 +960,42 @@ impl PersistentSession {
         })
     }
 
+    /// Write a `control_response` line to the CLI's stdin, answering a
+    /// prior `control_request: can_use_tool`. The inner `response` value is
+    /// either a permission-allow (`{ behavior: "allow", updatedInput }`) or
+    /// a permission-deny (`{ behavior: "deny", message }`); see
+    /// `PermissionPromptToolResultSchema` in the upstream CLI.
+    pub async fn send_control_response(
+        &self,
+        request_id: &str,
+        response: serde_json::Value,
+    ) -> Result<(), String> {
+        use tokio::io::AsyncWriteExt;
+        let message = serde_json::json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": request_id,
+                "response": response,
+            },
+        })
+        .to_string();
+        let mut stdin = self.stdin.lock().await;
+        stdin
+            .write_all(message.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write control_response: {e}"))?;
+        stdin
+            .write_all(b"\n")
+            .await
+            .map_err(|e| format!("Failed to write control_response newline: {e}"))?;
+        stdin
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush control_response: {e}"))?;
+        Ok(())
+    }
+
     /// Get the process ID.
     pub fn pid(&self) -> u32 {
         self.pid
@@ -950,6 +1021,9 @@ fn build_persistent_args(
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--include-partial-messages".to_string(),
+        // See build_claude_args for rationale.
+        "--permission-prompt-tool".to_string(),
+        "stdio".to_string(),
     ];
 
     let bypass_permissions = allowed_tools.len() == 1 && allowed_tools[0] == "*";
@@ -2500,5 +2574,82 @@ mod tests {
             probe.is_ok_and(|o| !o.status.success()),
             "process {pid} should no longer exist after graceful stop"
         );
+    }
+
+    // --- control_request parsing + stdio permission prompt flag ---
+
+    #[test]
+    fn build_claude_args_includes_stdio_permission_prompt() {
+        let args = build_claude_args(
+            "sid",
+            "hi",
+            false,
+            &["Read".to_string()],
+            None,
+            &AgentSettings::default(),
+            false,
+        );
+        // Must appear as a pair so the CLI interprets it correctly.
+        let idx = args
+            .iter()
+            .position(|a| a == "--permission-prompt-tool")
+            .expect("--permission-prompt-tool missing");
+        assert_eq!(args.get(idx + 1).map(String::as_str), Some("stdio"));
+    }
+
+    #[test]
+    fn build_persistent_args_includes_stdio_permission_prompt() {
+        let args = build_persistent_args(
+            "sid",
+            false,
+            &["Read".to_string()],
+            None,
+            &AgentSettings::default(),
+        );
+        let idx = args
+            .iter()
+            .position(|a| a == "--permission-prompt-tool")
+            .expect("--permission-prompt-tool missing in persistent args");
+        assert_eq!(args.get(idx + 1).map(String::as_str), Some("stdio"));
+    }
+
+    #[test]
+    fn parse_control_request_can_use_tool() {
+        let line = r#"{"type":"control_request","request_id":"req-1","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","tool_use_id":"toolu_xyz","input":{"questions":[{"question":"Go?","options":[{"label":"yes"},{"label":"no"}]}]}}}"#;
+        let ev = parse_stream_line(line).expect("parse");
+        match ev {
+            StreamEvent::ControlRequest {
+                request_id,
+                request,
+            } => {
+                assert_eq!(request_id, "req-1");
+                match request {
+                    ControlRequestInner::CanUseTool {
+                        tool_name,
+                        tool_use_id,
+                        input,
+                    } => {
+                        assert_eq!(tool_name, "AskUserQuestion");
+                        assert_eq!(tool_use_id, "toolu_xyz");
+                        assert!(input.is_object());
+                    }
+                    _ => panic!("expected CanUseTool"),
+                }
+            }
+            other => panic!("expected ControlRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_control_request_unknown_subtype_is_nonfatal() {
+        let line =
+            r#"{"type":"control_request","request_id":"req-2","request":{"subtype":"mcp_status"}}"#;
+        let ev = parse_stream_line(line).expect("parse");
+        match ev {
+            StreamEvent::ControlRequest { request, .. } => {
+                assert!(matches!(request, ControlRequestInner::Unknown));
+            }
+            other => panic!("expected ControlRequest, got {other:?}"),
+        }
     }
 }

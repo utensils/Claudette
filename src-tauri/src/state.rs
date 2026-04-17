@@ -27,6 +27,19 @@ pub enum AttentionKind {
     Plan,
 }
 
+/// A `control_request: can_use_tool` the CLI is waiting on the host to
+/// resolve via `control_response`. Keyed in `AgentSessionState::pending_permissions`
+/// by tool_use_id so UI callbacks (AgentQuestionCard, PlanApprovalCard) can
+/// resolve them using the tool_use_id they already track.
+#[derive(Debug, Clone)]
+pub struct PendingPermission {
+    pub request_id: String,
+    pub tool_name: String,
+    /// Original tool input sent by the model — used verbatim as the base for
+    /// `updatedInput` when approving (we layer user-collected answers on top).
+    pub original_input: serde_json::Value,
+}
+
 /// Per-workspace agent session state managed on the Rust side.
 pub struct AgentSessionState {
     pub session_id: String,
@@ -56,6 +69,9 @@ pub struct AgentSessionState {
     /// A mismatch on the next turn (e.g. permission level changed, or plan
     /// approval elevates access) forces a teardown + respawn.
     pub session_allowed_tools: Vec<String>,
+    /// Outstanding `can_use_tool` control requests awaiting a `control_response`,
+    /// keyed by tool_use_id. See [`PendingPermission`].
+    pub pending_permissions: HashMap<String, PendingPermission>,
 }
 
 /// Handle to an active PTY process.

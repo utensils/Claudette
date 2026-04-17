@@ -7,7 +7,12 @@ import styles from "./PlanApprovalCard.module.css";
 
 interface PlanApprovalCardProps {
   approval: PlanApproval;
-  onRespond: (response: string) => void;
+  /**
+   * Called with the user's decision. `approved=true` lets the CLI run the
+   * ExitPlanMode tool's `call()` (which writes the plan file and emits the
+   * real tool_result). `approved=false` sends a deny with the given reason.
+   */
+  onRespond: (approved: boolean, reason?: string) => void;
   remoteConnectionId?: string;
 }
 
@@ -93,13 +98,13 @@ export function PlanApprovalCard({
       <div className={styles.actions}>
         <button
           className={styles.approveBtn}
-          onClick={() => onRespond("Plan approved. Proceed with implementation.")}
+          onClick={() => onRespond(true)}
         >
           Approve plan
         </button>
         <button
           className={styles.denyBtn}
-          onClick={() => onRespond("Plan denied. Please revise the approach.")}
+          onClick={() => onRespond(false, "Plan denied. Please revise the approach.")}
         >
           Deny
         </button>

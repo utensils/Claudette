@@ -17,6 +17,8 @@ import {
   sendChatMessage,
   sendRemoteCommand,
   stopAgent,
+  submitAgentAnswer,
+  submitPlanApproval,
   getAppSetting,
   setAppSetting,
   listWorkspaceFiles,
@@ -878,9 +880,15 @@ export function ChatPanel() {
               {pendingQuestion && (
                 <AgentQuestionCard
                   question={pendingQuestion}
-                  onRespond={(response) => {
-                    if (selectedWorkspaceId) clearAgentQuestion(selectedWorkspaceId);
-                    handleSend(response);
+                  onRespond={(answers) => {
+                    if (!selectedWorkspaceId) return;
+                    const wsId = selectedWorkspaceId;
+                    const toolUseId = pendingQuestion.toolUseId;
+                    clearAgentQuestion(wsId);
+                    submitAgentAnswer(wsId, toolUseId, answers).catch((e) => {
+                      console.error("Failed to submit agent answer:", e);
+                      setError(String(e));
+                    });
                   }}
                 />
               )}
@@ -889,9 +897,15 @@ export function ChatPanel() {
                 <PlanApprovalCard
                   approval={pendingPlan}
                   remoteConnectionId={ws?.remote_connection_id ?? undefined}
-                  onRespond={(response) => {
-                    if (selectedWorkspaceId) clearPlanApproval(selectedWorkspaceId);
-                    handleSend(response);
+                  onRespond={(approved, reason) => {
+                    if (!selectedWorkspaceId) return;
+                    const wsId = selectedWorkspaceId;
+                    const toolUseId = pendingPlan.toolUseId;
+                    clearPlanApproval(wsId);
+                    submitPlanApproval(wsId, toolUseId, approved, reason).catch((e) => {
+                      console.error("Failed to submit plan approval:", e);
+                      setError(String(e));
+                    });
                   }}
                 />
               )}

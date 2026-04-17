@@ -355,6 +355,8 @@ fn main() {
             commands::chat::stop_agent,
             commands::chat::reset_agent_session,
             commands::chat::clear_attention,
+            commands::chat::submit_agent_answer,
+            commands::chat::submit_plan_approval,
             commands::chat::list_checkpoints,
             commands::chat::rollback_to_checkpoint,
             commands::chat::clear_conversation,

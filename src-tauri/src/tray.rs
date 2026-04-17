@@ -634,6 +634,7 @@ mod tests {
             mcp_config_dirty: false,
             session_plan_mode: false,
             session_allowed_tools: Vec::new(),
+            pending_permissions: HashMap::new(),
         }
     }
 

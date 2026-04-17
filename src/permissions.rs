@@ -1,3 +1,10 @@
+// AskUserQuestion and ExitPlanMode are the mechanism the agent uses to talk
+// to the user — they are always legitimate regardless of permission level.
+// They are ALSO gated by the CLI's own `requiresUserInteraction` step (which
+// runs before --allowedTools), so their round-trip is driven through the
+// `--permission-prompt-tool stdio` control-request protocol. Listing them
+// here is a correctness policy statement and a guard against future CLI
+// changes that might drop the requiresUserInteraction short-circuit.
 const TOOLS_STANDARD: &[&str] = &[
     "Read",
     "Write",
@@ -6,9 +13,19 @@ const TOOLS_STANDARD: &[&str] = &[
     "Grep",
     "WebSearch",
     "WebFetch",
+    "AskUserQuestion",
+    "ExitPlanMode",
 ];
 
-const TOOLS_READONLY: &[&str] = &["Read", "Glob", "Grep", "WebSearch", "WebFetch"];
+const TOOLS_READONLY: &[&str] = &[
+    "Read",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch",
+    "AskUserQuestion",
+    "ExitPlanMode",
+];
 
 /// Map a permission level name to the tools to pre-approve.
 /// "full" returns the wildcard sentinel `["*"]`, which `build_claude_args`
@@ -51,5 +68,20 @@ mod tests {
     #[test]
     fn unknown_level_defaults_to_readonly() {
         assert_eq!(tools_for_level("unknown"), tools_for_level("readonly"));
+    }
+
+    #[test]
+    fn ask_user_question_is_allowed_at_every_level() {
+        for level in ["readonly", "standard"] {
+            let tools = tools_for_level(level);
+            assert!(
+                tools.contains(&"AskUserQuestion".to_string()),
+                "AskUserQuestion missing at level {level}"
+            );
+            assert!(
+                tools.contains(&"ExitPlanMode".to_string()),
+                "ExitPlanMode missing at level {level}"
+            );
+        }
     }
 }
