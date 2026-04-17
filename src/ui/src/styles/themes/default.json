@@ -80,9 +80,9 @@
       "overlay-bg": "rgba(0, 0, 0, 0.55)",
       "overlay-bg-heavy": "rgba(0, 0, 0, 0.75)",
 
-      "canvas-atmosphere": "radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.03), transparent 60%)",
-      "rim-light": "inset 0 1px 0 rgba(255, 255, 255, 0.04)",
-      "rim-light-strong": "inset 0 1px 0 rgba(255, 255, 255, 0.08)",
+      "canvas-atmosphere": "radial-gradient(110% 75% at 50% -5%, rgba(249, 204, 108, 0.05), transparent 55%), radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.02), transparent 65%)",
+      "rim-light": "inset 0 1px 0 rgba(255, 250, 235, 0.045)",
+      "rim-light-strong": "inset 0 1px 0 rgba(249, 204, 108, 0.14)",
       "selection-bg": "rgba(249, 204, 108, 0.30)"
     },
     "elevation": {

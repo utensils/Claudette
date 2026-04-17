@@ -1,0 +1,141 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "rose",
+    "name": "Rosé",
+    "author": "Claudette",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Dusty rose ink on moonlit vellum — a leather-bound journal for writers and long-form thinkers.",
+    "preview": {
+      "background": "#191724",
+      "surface": "#26233a",
+      "accent": "#ebbcba",
+      "text": "#e0def4"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+
+      "app-bg": "#191724",
+      "sidebar-bg": "#1c1a2a",
+      "sidebar-border": "#2a2740",
+      "panel-bg": "#1f1d2e",
+      "surface-bg": "#26233a",
+      "sunken-bg": "#13111c",
+
+      "text-primary": "#e0def4",
+      "text-muted": "#c4c1dc",
+      "text-dim": "#908caa",
+      "text-faint": "#6e6a86",
+      "text-separator": "#403d58",
+
+      "accent-primary": "#ebbcba",
+      "accent-primary-rgb": "235, 188, 186",
+      "accent-dim": "#c89b9a",
+      "accent-bg": "rgba(235, 188, 186, 0.08)",
+      "accent-bg-strong": "rgba(235, 188, 186, 0.20)",
+      "accent-glow": "0 0 1px rgba(255, 230, 228, 0.55), 0 0 10px rgba(235, 188, 186, 0.45), 0 0 28px rgba(235, 188, 186, 0.20), 0 0 60px rgba(196, 167, 231, 0.08)",
+
+      "hover-bg": "rgba(224, 222, 244, 0.055)",
+      "hover-bg-subtle": "rgba(224, 222, 244, 0.03)",
+      "selected-bg": "rgba(235, 188, 186, 0.13)",
+      "divider": "#2a2740",
+      "selection-bg": "rgba(235, 188, 186, 0.32)",
+
+      "status-running": "#ebbcba",
+      "status-idle": "#908caa",
+      "status-stopped": "#eb6f92",
+
+      "badge-done": "#9ccfd8",
+      "badge-plan": "#c4a7e7",
+      "badge-ask": "#f6c177",
+
+      "diff-added-bg": "rgba(156, 207, 216, 0.12)",
+      "diff-removed-bg": "rgba(235, 111, 146, 0.14)",
+      "diff-added-text": "#a8d8df",
+      "diff-removed-text": "#eb8aa3",
+      "diff-hunk-header": "#c4a7e7",
+      "diff-line-number": "#6e6a86",
+
+      "chat-user-bg": "rgba(224, 222, 244, 0.025)",
+      "chat-system-bg": "rgba(235, 188, 186, 0.06)",
+      "chat-input-bg": "#13111c",
+      "chat-header-bg": "#1c1a2a",
+
+      "terminal-tab-bg": "#1c1a2a",
+      "terminal-tab-active-bg": "#26233a",
+      "terminal-bg": "#100e18",
+      "terminal-fg": "#e0def4",
+      "terminal-cursor": "#ebbcba",
+      "terminal-selection": "rgba(235, 188, 186, 0.28)",
+
+      "toolbar-active": "rgba(235, 188, 186, 0.18)",
+      "toolbar-active-text": "#f2ccca",
+
+      "error-bg": "rgba(235, 111, 146, 0.10)",
+      "error-border": "rgba(235, 111, 146, 0.38)",
+      "error-hover": "rgba(235, 111, 146, 0.16)",
+
+      "overlay-bg": "rgba(12, 10, 20, 0.70)",
+      "overlay-bg-heavy": "rgba(12, 10, 20, 0.88)",
+
+      "canvas-atmosphere": "radial-gradient(85% 55% at 50% -5%, rgba(235, 188, 186, 0.055), transparent 55%), radial-gradient(70% 45% at 50% 0%, rgba(196, 167, 231, 0.035), transparent 70%), radial-gradient(120% 80% at 50% 100%, rgba(12, 10, 20, 0.55), transparent 60%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.92  0 0 0 0 0.87  0 0 0 0 0.96  0 0 0 0.03 0'/></filter><rect width='100%25' height='100%25' filter='url(%23p)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(235, 188, 186, 0.08)",
+      "rim-light-strong": "inset 0 1px 0 rgba(235, 188, 186, 0.15), inset 0 -1px 0 rgba(12, 10, 20, 0.45)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(12, 10, 20, 0.60), 0 0 0 1px rgba(235, 188, 186, 0.04)",
+      "shadow-md": "0 10px 28px -12px rgba(12, 10, 20, 0.78), 0 2px 6px -2px rgba(20, 16, 28, 0.50), 0 0 0 1px rgba(235, 188, 186, 0.05)",
+      "shadow-lg": "0 24px 52px -18px rgba(12, 10, 20, 0.88), 0 8px 16px -6px rgba(20, 16, 28, 0.58), 0 0 0 1px rgba(235, 188, 186, 0.08)",
+      "shadow-card-hover": "0 16px 36px -14px rgba(12, 10, 20, 0.82), 0 4px 10px -2px rgba(20, 16, 28, 0.55), 0 0 0 1px rgba(235, 188, 186, 0.34), 0 0 28px rgba(235, 188, 186, 0.16)",
+      "well-shadow": "inset 0 2px 10px rgba(8, 6, 14, 0.72), inset 0 -1px 0 rgba(224, 222, 244, 0.04), inset 0 0 0 1px rgba(235, 188, 186, 0.05)",
+      "composer-ring": "inset 0 0 0 1px rgba(235, 188, 186, 0.22), inset 0 1px 0 rgba(224, 222, 244, 0.06)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(235, 188, 186, 0.78), inset 0 1px 0 rgba(255, 230, 228, 0.20), 0 0 0 3px rgba(235, 188, 186, 0.16), 0 10px 28px -8px rgba(235, 188, 186, 0.30), 0 0 40px rgba(196, 167, 231, 0.10)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.30",
+      "line-height-normal": "1.62",
+      "line-height-relaxed": "1.78",
+      "letter-spacing-tight": "-0.010em",
+      "letter-spacing-wide": "0.06em"
+    },
+    "radius": {
+      "radius-sm": "6px",
+      "radius-md": "12px",
+      "radius-lg": "18px",
+      "radius-pill": "999px",
+      "border-radius": "12px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "14px",
+      "space-lg": "18px",
+      "space-xl": "26px"
+    },
+    "motion": {
+      "transition-fast": "0.16s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-normal": "0.26s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-slow": "0.40s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-standard": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(235, 188, 186, 0.14)",
+      "scrollbar-thumb-hover-bg": "rgba(235, 188, 186, 0.40)",
+      "focus-ring": "0 0 0 1px rgba(255, 230, 228, 0.48), 0 0 0 3px rgba(235, 188, 186, 0.52), 0 6px 18px rgba(235, 188, 186, 0.22)"
+    }
+  }
+}

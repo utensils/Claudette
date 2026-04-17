@@ -1,0 +1,141 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "gruvbox",
+    "name": "Gruvbox",
+    "author": "Claudette",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Ochre ember on warm sepia — the beloved retro dev palette, rendered on a vintage CRT.",
+    "preview": {
+      "background": "#282828",
+      "surface": "#3c3836",
+      "accent": "#fe8019",
+      "text": "#ebdbb2"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+
+      "app-bg": "#282828",
+      "sidebar-bg": "#2a2725",
+      "sidebar-border": "#3c3836",
+      "panel-bg": "#32302f",
+      "surface-bg": "#3c3836",
+      "sunken-bg": "#1d2021",
+
+      "text-primary": "#ebdbb2",
+      "text-muted": "#bdae93",
+      "text-dim": "#a89984",
+      "text-faint": "#7c6f64",
+      "text-separator": "#504945",
+
+      "accent-primary": "#fe8019",
+      "accent-primary-rgb": "254, 128, 25",
+      "accent-dim": "#d65d0e",
+      "accent-bg": "rgba(254, 128, 25, 0.09)",
+      "accent-bg-strong": "rgba(254, 128, 25, 0.22)",
+      "accent-glow": "0 0 1px rgba(255, 230, 180, 0.60), 0 0 10px rgba(214, 93, 14, 0.50), 0 0 28px rgba(214, 93, 14, 0.22), 0 0 60px rgba(214, 93, 14, 0.09)",
+
+      "hover-bg": "rgba(235, 219, 178, 0.055)",
+      "hover-bg-subtle": "rgba(235, 219, 178, 0.03)",
+      "selected-bg": "rgba(254, 128, 25, 0.14)",
+      "divider": "#3c3836",
+
+      "status-running": "#fe8019",
+      "status-idle": "#a89984",
+      "status-stopped": "#cc241d",
+
+      "badge-done": "#b8bb26",
+      "badge-plan": "#83a598",
+      "badge-ask": "#d79921",
+
+      "diff-added-bg": "rgba(152, 151, 26, 0.14)",
+      "diff-removed-bg": "rgba(204, 36, 29, 0.14)",
+      "diff-added-text": "#b8bb26",
+      "diff-removed-text": "#fb4934",
+      "diff-hunk-header": "#d79921",
+      "diff-line-number": "#7c6f64",
+
+      "chat-user-bg": "rgba(235, 219, 178, 0.028)",
+      "chat-system-bg": "rgba(254, 128, 25, 0.06)",
+      "chat-input-bg": "#1d2021",
+      "chat-header-bg": "#2a2725",
+
+      "terminal-tab-bg": "#2a2725",
+      "terminal-tab-active-bg": "#3c3836",
+      "terminal-bg": "#1d2021",
+      "terminal-fg": "#ebdbb2",
+      "terminal-cursor": "#fe8019",
+      "terminal-selection": "rgba(254, 128, 25, 0.30)",
+
+      "toolbar-active": "rgba(254, 128, 25, 0.18)",
+      "toolbar-active-text": "#fabd2f",
+
+      "error-bg": "rgba(204, 36, 29, 0.10)",
+      "error-border": "rgba(204, 36, 29, 0.40)",
+      "error-hover": "rgba(204, 36, 29, 0.16)",
+
+      "overlay-bg": "rgba(20, 16, 12, 0.68)",
+      "overlay-bg-heavy": "rgba(20, 16, 12, 0.88)",
+
+      "canvas-atmosphere": "radial-gradient(85% 55% at 50% -5%, rgba(254, 128, 25, 0.075), transparent 55%), radial-gradient(70% 45% at 50% 0%, rgba(215, 153, 33, 0.045), transparent 70%), radial-gradient(120% 80% at 50% 100%, rgba(29, 32, 33, 0.55), transparent 60%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.92  0 0 0 0 0.86  0 0 0 0 0.70  0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23p)'/></svg>\")",
+      "rim-light": "inset 0 1px 0 rgba(235, 219, 178, 0.065)",
+      "rim-light-strong": "inset 0 1px 0 rgba(215, 153, 33, 0.20), inset 0 -1px 0 rgba(20, 16, 12, 0.50)",
+      "selection-bg": "rgba(254, 128, 25, 0.34)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(20, 16, 12, 0.60), 0 0 0 1px rgba(254, 128, 25, 0.04)",
+      "shadow-md": "0 10px 28px -12px rgba(20, 16, 12, 0.80), 0 2px 6px -2px rgba(32, 24, 16, 0.50), 0 0 0 1px rgba(254, 128, 25, 0.05)",
+      "shadow-lg": "0 24px 52px -18px rgba(20, 16, 12, 0.90), 0 8px 16px -6px rgba(32, 24, 16, 0.60), 0 0 0 1px rgba(254, 128, 25, 0.08)",
+      "shadow-card-hover": "0 16px 36px -14px rgba(20, 16, 12, 0.85), 0 4px 10px -2px rgba(32, 24, 16, 0.55), 0 0 0 1px rgba(254, 128, 25, 0.36), 0 0 28px rgba(254, 128, 25, 0.18)",
+      "well-shadow": "inset 0 2px 10px rgba(12, 10, 8, 0.72), inset 0 -1px 0 rgba(235, 219, 178, 0.045), inset 0 0 0 1px rgba(254, 128, 25, 0.05)",
+      "composer-ring": "inset 0 0 0 1px rgba(214, 93, 14, 0.20), inset 0 1px 0 rgba(235, 219, 178, 0.06)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(254, 128, 25, 0.80), inset 0 1px 0 rgba(255, 230, 180, 0.20), 0 0 0 3px rgba(254, 128, 25, 0.16), 0 10px 28px -8px rgba(214, 93, 14, 0.32), 0 0 40px rgba(254, 128, 25, 0.10)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.3",
+      "line-height-normal": "1.58",
+      "line-height-relaxed": "1.72",
+      "letter-spacing-tight": "-0.01em",
+      "letter-spacing-wide": "0.05em"
+    },
+    "radius": {
+      "radius-sm": "4px",
+      "radius-md": "8px",
+      "radius-lg": "12px",
+      "radius-pill": "999px",
+      "border-radius": "8px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.14s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-normal": "0.22s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "transition-slow": "0.34s cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-standard": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(254, 128, 25, 0.14)",
+      "scrollbar-thumb-hover-bg": "rgba(254, 128, 25, 0.42)",
+      "focus-ring": "0 0 0 1px rgba(255, 230, 180, 0.50), 0 0 0 3px rgba(254, 128, 25, 0.50), 0 6px 18px rgba(214, 93, 14, 0.25)"
+    }
+  }
+}
