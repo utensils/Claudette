@@ -193,10 +193,12 @@ pub async fn load_scm_detail(
         }
     }
 
-    // Fetch fresh data — run both operations concurrently
+    // Fetch fresh data — run both operations concurrently. Acquire 2
+    // permits so the semaphore reflects the true number of in-flight
+    // CLI invocations (one for list_pull_requests, one for ci_status).
     let _permit = state
         .scm_semaphore
-        .acquire()
+        .acquire_many(2)
         .await
         .map_err(|e| e.to_string())?;
     let registry = state.plugins.read().await;
@@ -441,7 +443,9 @@ async fn poll_workspace_scm(app_state: &AppState, workspace_id: &str) -> Option<
         }
     }
 
-    let _permit = app_state.scm_semaphore.acquire().await.ok()?;
+    // Two permits because tokio::join! below runs two CLI operations
+    // concurrently. One permit per in-flight subprocess.
+    let _permit = app_state.scm_semaphore.acquire_many(2).await.ok()?;
     let registry = app_state.plugins.read().await;
 
     let branch = ctx.workspace.branch_name.clone();

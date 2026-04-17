@@ -53,11 +53,21 @@ export function usePrBannerData(): {
     loadScmDetail(selectedWorkspaceId)
       .then((detail) => {
         setScmDetail(detail);
-        if (detail.pull_request && selectedWorkspaceId) {
+        if (!selectedWorkspaceId) return;
+        if (detail.pull_request) {
           setScmSummary(selectedWorkspaceId, {
             hasPr: true,
             prState: detail.pull_request.state,
             ciState: detail.pull_request.ci_status,
+            lastUpdated: Date.now(),
+          });
+        } else {
+          // PR disappeared (merged/closed) since the last poll — clear
+          // the summary so sidebar badges/banner stop showing the old state.
+          setScmSummary(selectedWorkspaceId, {
+            hasPr: false,
+            prState: null,
+            ciState: null,
             lastUpdated: Date.now(),
           });
         }

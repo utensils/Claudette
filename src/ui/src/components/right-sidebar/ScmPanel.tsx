@@ -24,80 +24,97 @@ export const ScmPanel = memo(function ScmPanel() {
   const setScmDetailLoading = useAppStore((s) => s.setScmDetailLoading);
   const setScmSummary = useAppStore((s) => s.setScmSummary);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const fetchDetail = useCallback(
-    async (workspaceId: string) => {
-      setScmDetailLoading(true);
-      try {
-        const detail = await loadScmDetail(workspaceId);
-        setScmDetail(detail);
-        // Also update summary
-        if (detail.pull_request) {
-          setScmSummary(workspaceId, {
-            hasPr: true,
-            prState: detail.pull_request.state,
-            ciState: detail.pull_request.ci_status,
-            lastUpdated: Date.now(),
-          });
-        } else {
-          setScmSummary(workspaceId, {
-            hasPr: false,
-            prState: null,
-            ciState: null,
-            lastUpdated: Date.now(),
-          });
-        }
-      } catch {
-        // Silently fail — error will show in detail.error
-      } finally {
-        setScmDetailLoading(false);
-      }
-    },
-    [setScmDetail, setScmDetailLoading, setScmSummary]
-  );
-
-  useEffect(() => {
-    if (selectedWorkspaceId) {
-      fetchDetail(selectedWorkspaceId);
-    } else {
-      setScmDetail(null);
-    }
-  }, [selectedWorkspaceId, fetchDetail, setScmDetail]);
-
-  const handleRefresh = useCallback(async () => {
-    if (!selectedWorkspaceId || refreshing) return;
-    setRefreshing(true);
-    try {
-      const detail = await scmRefresh(selectedWorkspaceId);
-      setScmDetail(detail);
-      // Also update summary so sidebar badges stay in sync
+  const updateSummaryFromDetail = useCallback(
+    (workspaceId: string, detail: Awaited<ReturnType<typeof loadScmDetail>>) => {
       if (detail.pull_request) {
-        setScmSummary(selectedWorkspaceId, {
+        setScmSummary(workspaceId, {
           hasPr: true,
           prState: detail.pull_request.state,
           ciState: detail.pull_request.ci_status,
           lastUpdated: Date.now(),
         });
       } else {
-        setScmSummary(selectedWorkspaceId, {
+        setScmSummary(workspaceId, {
           hasPr: false,
           prState: null,
           ciState: null,
           lastUpdated: Date.now(),
         });
       }
-    } catch {
-      // ignore
+    },
+    [setScmSummary],
+  );
+
+  const fetchDetail = useCallback(
+    async (workspaceId: string) => {
+      setScmDetailLoading(true);
+      setLoadError(null);
+      try {
+        const detail = await loadScmDetail(workspaceId);
+        // Guard against workspace-switch race: the user may have moved on
+        // while this request was in flight. Drop the response if so.
+        if (useAppStore.getState().selectedWorkspaceId !== workspaceId) {
+          return;
+        }
+        setScmDetail(detail);
+        updateSummaryFromDetail(workspaceId, detail);
+      } catch (e) {
+        if (useAppStore.getState().selectedWorkspaceId === workspaceId) {
+          setLoadError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        setScmDetailLoading(false);
+      }
+    },
+    [setScmDetail, setScmDetailLoading, updateSummaryFromDetail],
+  );
+
+  useEffect(() => {
+    // Clear stale detail on workspace switch so the UI doesn't flash the
+    // previous workspace's PR/provider while the new fetch is in flight.
+    if (scmDetail && scmDetail.workspace_id !== selectedWorkspaceId) {
+      setScmDetail(null);
+    }
+    if (selectedWorkspaceId) {
+      fetchDetail(selectedWorkspaceId);
+    } else {
+      setScmDetail(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkspaceId]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!selectedWorkspaceId || refreshing) return;
+    setRefreshing(true);
+    setLoadError(null);
+    try {
+      const detail = await scmRefresh(selectedWorkspaceId);
+      if (useAppStore.getState().selectedWorkspaceId !== selectedWorkspaceId) {
+        return;
+      }
+      setScmDetail(detail);
+      updateSummaryFromDetail(selectedWorkspaceId, detail);
+    } catch (e) {
+      if (useAppStore.getState().selectedWorkspaceId === selectedWorkspaceId) {
+        setLoadError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setRefreshing(false);
     }
-  }, [selectedWorkspaceId, refreshing, setScmDetail, setScmSummary]);
+  }, [selectedWorkspaceId, refreshing, setScmDetail, updateSummaryFromDetail]);
 
   if (!selectedWorkspaceId) {
     return <div className={styles.empty}>Select a workspace</div>;
   }
 
-  if (scmDetailLoading && !scmDetail) {
+  // Treat detail from a different workspace as "not yet loaded" to avoid
+  // flashing stale PR/provider info during a workspace switch.
+  const relevantDetail =
+    scmDetail && scmDetail.workspace_id === selectedWorkspaceId ? scmDetail : null;
+
+  if (scmDetailLoading && !relevantDetail) {
     return (
       <div className={styles.empty}>
         <Loader2 size={16} className={styles.spin} />
@@ -106,7 +123,19 @@ export const ScmPanel = memo(function ScmPanel() {
     );
   }
 
-  if (!scmDetail?.provider) {
+  // A failed load is distinct from "provider exists but has no PR" — show
+  // an explicit error rather than the misleading "No SCM provider" copy.
+  if (loadError && !relevantDetail) {
+    return (
+      <div className={styles.empty}>
+        <AlertCircle size={16} />
+        <span>Failed to load SCM data</span>
+        <span className={styles.hint}>{loadError}</span>
+      </div>
+    );
+  }
+
+  if (!relevantDetail?.provider) {
     return (
       <div className={styles.empty}>
         <AlertCircle size={16} />
@@ -121,7 +150,7 @@ export const ScmPanel = memo(function ScmPanel() {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <span className={styles.providerBadge}>{scmDetail.provider}</span>
+        <span className={styles.providerBadge}>{relevantDetail.provider}</span>
         <button
           className={styles.refreshBtn}
           onClick={handleRefresh}
@@ -132,20 +161,20 @@ export const ScmPanel = memo(function ScmPanel() {
         </button>
       </div>
 
-      {scmDetail.error && (
-        <div className={styles.error}>{scmDetail.error}</div>
+      {relevantDetail.error && (
+        <div className={styles.error}>{relevantDetail.error}</div>
       )}
 
-      {scmDetail.pull_request ? (
-        <PrCard pr={scmDetail.pull_request} />
+      {relevantDetail.pull_request ? (
+        <PrCard pr={relevantDetail.pull_request} />
       ) : (
         <div className={styles.noPr}>No pull request for this branch</div>
       )}
 
-      {scmDetail.ci_checks.length > 0 && (
+      {relevantDetail.ci_checks.length > 0 && (
         <div className={styles.checksSection}>
           <div className={styles.sectionTitle}>CI Checks</div>
-          {scmDetail.ci_checks.map((check) => (
+          {relevantDetail.ci_checks.map((check) => (
             <CiCheckRow key={check.name} check={check} />
           ))}
         </div>

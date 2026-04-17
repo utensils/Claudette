@@ -52,6 +52,20 @@ function M.get_pull_request(args)
     }
 end
 
+-- Normalize glab's MR JSON shape to our canonical PullRequest fields.
+local function normalize_mr(data)
+    return {
+        number = data.iid,
+        title = data.title,
+        state = data.state == "opened" and "open" or data.state,
+        url = data.web_url,
+        author = (data.author and data.author.username) or "",
+        branch = data.source_branch or "",
+        base = data.target_branch or "",
+        draft = data.draft or false,
+    }
+end
+
 function M.create_pull_request(args)
     local glab_args = {
         "mr", "create",
@@ -64,14 +78,15 @@ function M.create_pull_request(args)
     if args.draft then
         table.insert(glab_args, "--draft")
     end
-    return glab(glab_args)
+    return normalize_mr(glab(glab_args))
 end
 
 function M.merge_pull_request(args)
-    return glab({
+    local data = glab({
         "mr", "merge", tostring(args.number),
         "--output-format", "json",
     })
+    return normalize_mr(data)
 end
 
 -- Normalize GitLab job status to canonical CiCheckStatus values.

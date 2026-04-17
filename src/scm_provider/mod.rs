@@ -7,10 +7,17 @@ pub mod seed;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use host_api::{HostContext, WorkspaceInfo};
 use manifest::PluginManifest;
 use mlua::LuaSerdeExt;
+
+/// Overall operation timeout. A plugin can make multiple serial
+/// `host.exec` calls (each capped at 30s), but pure-Lua loops have no
+/// inner cap. This bounds the total time a single call_operation can
+/// hang the polling loop or a Tauri command.
+const OPERATION_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 pub struct LoadedPlugin {
@@ -158,7 +165,10 @@ impl PluginRegistry {
         }
 
         let init_path = plugin.dir.join("init.lua");
-        let script = std::fs::read_to_string(&init_path)
+        // Use tokio::fs to avoid blocking the async runtime thread, which
+        // matters in the polling loop where many workspaces may load at once.
+        let script = tokio::fs::read_to_string(&init_path)
+            .await
             .map_err(|e| ScmError::ScriptError(format!("Failed to read init.lua: {e}")))?;
 
         let ctx = HostContext {
@@ -170,43 +180,53 @@ impl PluginRegistry {
 
         let lua = host_api::create_lua_vm(ctx).map_err(|e| ScmError::ScriptError(e.to_string()))?;
 
-        // Load and execute the plugin script to get the module table
-        let module: mlua::Table = lua
-            .load(&script)
-            .set_name(format!("plugins/{plugin_name}/init.lua"))
-            .eval_async()
-            .await
-            .map_err(|e| ScmError::ScriptError(format!("Failed to load plugin: {e}")))?;
+        // Run script load + function call + result conversion under a
+        // single timeout so a misbehaving plugin can't stall the polling
+        // loop indefinitely via pure-Lua loops (host.exec already has its
+        // own per-call timeout; this covers the Lua VM itself).
+        let required_clis = plugin.manifest.required_clis.clone();
+        let plugin_name_owned = plugin_name.to_string();
+        let operation_owned = operation.to_string();
+        let fut = async move {
+            // Load and execute the plugin script to get the module table
+            let module: mlua::Table = lua
+                .load(&script)
+                .set_name(format!("plugins/{plugin_name_owned}/init.lua"))
+                .eval_async()
+                .await
+                .map_err(|e| ScmError::ScriptError(format!("Failed to load plugin: {e}")))?;
 
-        // Get the operation function
-        let func: mlua::Function = module
-            .get(operation)
-            .map_err(|e| ScmError::OperationNotSupported(format!("{operation}: {e}")))?;
+            // Get the operation function
+            let func: mlua::Function = module
+                .get(operation_owned.as_str())
+                .map_err(|e| ScmError::OperationNotSupported(format!("{operation_owned}: {e}")))?;
 
-        // Convert args to Lua value
-        let lua_args = lua
-            .to_value(&args)
-            .map_err(|e| ScmError::ParseError(format!("Failed to convert args: {e}")))?;
+            // Convert args to Lua value
+            let lua_args = lua
+                .to_value(&args)
+                .map_err(|e| ScmError::ParseError(format!("Failed to convert args: {e}")))?;
 
-        // Call the operation
-        let result: mlua::Value = func.call_async(lua_args).await.map_err(|e: mlua::Error| {
-            let msg = e.to_string();
-            // Detect auth errors from CLI tools
-            if msg.contains("auth") || msg.contains("login") || msg.contains("401") {
-                let cli = plugin
-                    .manifest
-                    .required_clis
-                    .first()
-                    .cloned()
-                    .unwrap_or_default();
-                return ScmError::CliAuthError(cli);
-            }
-            ScmError::ScriptError(msg)
-        })?;
+            // Call the operation
+            let result: mlua::Value =
+                func.call_async(lua_args).await.map_err(|e: mlua::Error| {
+                    let msg = e.to_string();
+                    // Detect auth errors from CLI tools
+                    if msg.contains("auth") || msg.contains("login") || msg.contains("401") {
+                        let cli = required_clis.first().cloned().unwrap_or_default();
+                        return ScmError::CliAuthError(cli);
+                    }
+                    ScmError::ScriptError(msg)
+                })?;
 
-        // Convert result to JSON
-        lua.from_value(result)
-            .map_err(|e| ScmError::ParseError(format!("Failed to convert result: {e}")))
+            // Convert result to JSON
+            lua.from_value(result)
+                .map_err(|e| ScmError::ParseError(format!("Failed to convert result: {e}")))
+        };
+
+        match tokio::time::timeout(OPERATION_TIMEOUT, fut).await {
+            Ok(result) => result,
+            Err(_) => Err(ScmError::Timeout),
+        }
     }
 
     /// Get the plugin directory path.
