@@ -323,7 +323,10 @@ pub async fn send_chat_message(
         )
     {
         eprintln!(
-            "[chat] session flags drifted (plan_mode or allowed_tools) — tearing down persistent session for {workspace_id}"
+            "[chat] session flags drifted (plan_mode {} -> {}, allowed_tools changed: {}) — tearing down persistent session for {workspace_id}",
+            session.session_plan_mode,
+            agent_settings.plan_mode,
+            session.session_allowed_tools != allowed_tools,
         );
         let stale_pid = session.persistent_session.as_ref().map(|ps| ps.pid());
         session.persistent_session = None;
