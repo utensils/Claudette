@@ -110,18 +110,18 @@
       "letter-spacing-wide": "0.05em"
     },
     "radius": {
-      "radius-sm": "5px",
-      "radius-md": "11px",
-      "radius-lg": "18px",
+      "radius-sm": "10px",
+      "radius-md": "18px",
+      "radius-lg": "28px",
       "radius-pill": "999px",
-      "border-radius": "11px"
+      "border-radius": "18px"
     },
     "spacing": {
-      "space-xs": "4px",
-      "space-sm": "8px",
-      "space-md": "12px",
-      "space-lg": "16px",
-      "space-xl": "24px"
+      "space-xs": "5px",
+      "space-sm": "10px",
+      "space-md": "16px",
+      "space-lg": "22px",
+      "space-xl": "32px"
     },
     "motion": {
       "transition-fast": "0.12s ease",

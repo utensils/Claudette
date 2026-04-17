@@ -111,10 +111,10 @@
     },
     "radius": {
       "radius-sm": "3px",
-      "radius-md": "5px",
+      "radius-md": "6px",
       "radius-lg": "10px",
       "radius-pill": "999px",
-      "border-radius": "5px"
+      "border-radius": "6px"
     },
     "spacing": {
       "space-xs": "4px",

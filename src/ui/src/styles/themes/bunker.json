@@ -112,16 +112,16 @@
     "radius": {
       "radius-sm": "0px",
       "radius-md": "0px",
-      "radius-lg": "2px",
+      "radius-lg": "0px",
       "radius-pill": "0px",
       "border-radius": "0px"
     },
     "spacing": {
       "space-xs": "4px",
       "space-sm": "8px",
-      "space-md": "12px",
-      "space-lg": "18px",
-      "space-xl": "28px"
+      "space-md": "14px",
+      "space-lg": "20px",
+      "space-xl": "32px"
     },
     "motion": {
       "transition-fast": "0.06s steps(1, end)",
