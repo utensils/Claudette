@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.11.0](https://github.com/utensils/claudette/compare/v0.10.0...v0.11.0) (2026-04-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* Notification command env vars CLAUDETTE_NOTIFICATION_TITLE and CLAUDETTE_NOTIFICATION_BODY are removed, replaced by the 6 standard workspace env vars.
+
+### Features
+
+* add CLAUDETTE_* environment variables to all subprocesses ([#227](https://github.com/utensils/claudette/issues/227)) ([2985a7e](https://github.com/utensils/claudette/commit/2985a7ebdf9db78f3cba60ff26b1062674f7fa70))
+* **chat:** /init and /help native slash commands ([#254](https://github.com/utensils/claudette/issues/254)) ([a3de6e0](https://github.com/utensils/claudette/commit/a3de6e0d03572a6e93908d57b60bdd4edd0d78f1))
+* **chat:** add /config, /usage, /extra-usage, /release-notes, /version commands ([#252](https://github.com/utensils/claudette/issues/252)) ([b0bd90f](https://github.com/utensils/claudette/commit/b0bd90fc042dba2921ae8d8d10e7cebd3ba30a0a))
+* **chat:** add /review, /security-review, /pr-comments native slash commands ([#250](https://github.com/utensils/claudette/issues/250)) ([2fd8aa4](https://github.com/utensils/claudette/commit/2fd8aa43867d5a96eff9fef8034181fe3618a4b2))
+* **chat:** add native /clear, /plan, /model, /permissions, /status ([#251](https://github.com/utensils/claudette/issues/251)) ([7e7ccca](https://github.com/utensils/claudette/commit/7e7cccafec53d2827bea6264e98634676f9fdfde))
+* **chat:** native slash command framework with aliases and kinds ([#248](https://github.com/utensils/claudette/issues/248)) ([77f7b13](https://github.com/utensils/claudette/commit/77f7b13b901544090eb74a2691213530bad4a4cc))
+* **chat:** remove access dropdown from header ([#256](https://github.com/utensils/claudette/issues/256)) ([457459f](https://github.com/utensils/claudette/commit/457459fb41a8d1a4c2a85acb128025a33cf763c6))
+* discover and import existing git worktrees when adding repos ([#253](https://github.com/utensils/claudette/issues/253)) ([89b73ba](https://github.com/utensils/claudette/commit/89b73baf17b120f109289ccfba70f536056487f3))
+* **mcp:** add MCP server supervision with persistent sessions and connectors UI ([#194](https://github.com/utensils/claudette/issues/194)) ([dbc80e1](https://github.com/utensils/claudette/commit/dbc80e12b9b628b28df03ec1407a2aa5097ffabc))
+* **plugins:** add Claude Code plugin management ([#234](https://github.com/utensils/claudette/issues/234)) ([56b580e](https://github.com/utensils/claudette/commit/56b580e64921129337d9e26d85304e6f26837eec))
+* **sidebar:** add remote filter and fix remote section spacing ([#228](https://github.com/utensils/claudette/issues/228)) ([38e3894](https://github.com/utensils/claudette/commit/38e389434112ba2207a90fe096e752259d85922e))
+* **sidebar:** replace workspace filter buttons with compact dropdown menu ([#229](https://github.com/utensils/claudette/issues/229)) ([5b1c0c6](https://github.com/utensils/claudette/commit/5b1c0c6faf21423499b16d7682b915d1e8f07d5d))
+* stepwise agent question wizard for multi-question flows ([#200](https://github.com/utensils/claudette/issues/200)) ([01f7b1b](https://github.com/utensils/claudette/commit/01f7b1b4e2e2a8cc2ad728ecdf7236c5b1a2663a))
+* **tray:** light, dark, and color icon variants with user preference ([#214](https://github.com/utensils/claudette/issues/214)) ([593cfdf](https://github.com/utensils/claudette/commit/593cfdf586b9c2bc88618a59dae9750a542c2002))
+* **ui:** add Claude Opus 4.7 to model selectors ([#240](https://github.com/utensils/claudette/issues/240)) ([083ecae](https://github.com/utensils/claudette/commit/083ecae7aaa2bf1716b9817c4c284cf3ee493a1a))
+* **ui:** Brink theme, WCAG theme fixes, font customization, and zoom shortcuts ([#215](https://github.com/utensils/claudette/issues/215)) ([#218](https://github.com/utensils/claudette/issues/218)) ([bc2cdd4](https://github.com/utensils/claudette/commit/bc2cdd45e3888ff2604ef2fffa3cc20c994ff386))
+* **ui:** move dashboard button to sidebar and remove chat header left padding ([b1e6833](https://github.com/utensils/claudette/commit/b1e6833ec830b0cc11e70007eed40e4c84516c0a))
+
+
+### Bug Fixes
+
+* add macOS updater artifacts and check-for-updates button ([#202](https://github.com/utensils/claudette/issues/202)) ([a7e6ab3](https://github.com/utensils/claudette/commit/a7e6ab3d81f3833a04be95a2c039f9adf00f56a0))
+* **chat:** default completed turns to collapsed ([#205](https://github.com/utensils/claudette/issues/205)) ([bb4ca63](https://github.com/utensils/claudette/commit/bb4ca6323a7642ddd439d2a7525c158019913ada))
+* **chat:** keep WorkspaceActions dropdown enabled during agent runs ([#220](https://github.com/utensils/claudette/issues/220)) ([5587fc4](https://github.com/utensils/claudette/commit/5587fc46512222d7803df9f8938f9608ff9bd6d0)), closes [#219](https://github.com/utensils/claudette/issues/219)
+* **chat:** open links in system browser instead of navigating webview ([#221](https://github.com/utensils/claudette/issues/221)) ([a2d220e](https://github.com/utensils/claudette/commit/a2d220ea076f72dc2fb7fb95ad62536d7de985c1))
+* **chat:** tone down completed progress bar brightness ([#222](https://github.com/utensils/claudette/issues/222)) ([2717d66](https://github.com/utensils/claudette/commit/2717d66c6467165f3dd7f46001218b2b102aa0bd)), closes [#183](https://github.com/utensils/claudette/issues/183)
+* **ci:** stage flake.nix before git pull --rebase in Nix hash workflow ([#203](https://github.com/utensils/claudette/issues/203)) ([8eed425](https://github.com/utensils/claudette/commit/8eed4259591a1b330cfa2913442279cf2b8be7b2))
+* **ci:** use PAT for Nix hash workflow to bypass branch ruleset ([#209](https://github.com/utensils/claudette/issues/209)) ([9d85f85](https://github.com/utensils/claudette/commit/9d85f85f79d2307976e1152fd12400c11ebc9852))
+* **ci:** use PR with auto-merge for Nix FOD hash updates ([#206](https://github.com/utensils/claudette/issues/206)) ([c3714ed](https://github.com/utensils/claudette/commit/c3714ed434c322345fd93506a6adf409d3e18fad))
+* **debug:** correct agent status reporting in debug skill ([#233](https://github.com/utensils/claudette/issues/233)) ([618df3c](https://github.com/utensils/claudette/commit/618df3cd18532fc6122cf5a411c60b9b65f92aa5))
+* **env:** enrich PATH for subprocesses launched from Finder ([#230](https://github.com/utensils/claudette/issues/230)) ([25d8136](https://github.com/utensils/claudette/commit/25d81362c9fd49995461b930e6a466556f7202d7))
+* **git:** fetch remote before worktree creation and add setup script auto-run ([#224](https://github.com/utensils/claudette/issues/224)) ([1d400ec](https://github.com/utensils/claudette/commit/1d400ec7c09bc67f679dbfe2824d70dac03b05a3))
+* kill embedded server process on app exit to prevent port conflicts ([#204](https://github.com/utensils/claudette/issues/204)) ([44e433f](https://github.com/utensils/claudette/commit/44e433fe5bbfec283f85b588928120a60ae4f55a))
+* **mcp:** defer MCP config restart to next turn boundary ([#232](https://github.com/utensils/claudette/issues/232)) ([cd0184f](https://github.com/utensils/claudette/commit/cd0184f1cdc50a01f883704ce9c6e154e9f20ac5))
+* **terminal:** overhaul lifecycle, keybindings, and focus flow ([#212](https://github.com/utensils/claudette/issues/212)) ([a900bb9](https://github.com/utensils/claudette/commit/a900bb9ab2a25595504237e084c5453511837a40))
+* **terminal:** prevent command concatenation in workspace panel display ([#225](https://github.com/utensils/claudette/issues/225)) ([12f1d53](https://github.com/utensils/claudette/commit/12f1d538acf1b5584951b8027ef67b3cf73f8ec6))
+* **terminal:** set TERM=xterm-256color in PTY environment ([#223](https://github.com/utensils/claudette/issues/223)) ([e8ff747](https://github.com/utensils/claudette/commit/e8ff7476cbd60aed82a483652a231a7380c07c7a))
+* **ui:** keep workspace mounted when settings are open ([#236](https://github.com/utensils/claudette/issues/236)) ([562c427](https://github.com/utensils/claudette/commit/562c427c206933e41c8dfd30c14126be3a72689a))
+* **ui:** remove MCP status indicator from sidebar ([#258](https://github.com/utensils/claudette/issues/258)) ([44b3011](https://github.com/utensils/claudette/commit/44b3011bce26880e383b9e8ff08ee8ca95536cfd))
+
 ## [0.10.0](https://github.com/utensils/claudette/compare/v0.9.0...v0.10.0) (2026-04-15)
 
 
