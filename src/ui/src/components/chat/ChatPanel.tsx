@@ -1,7 +1,7 @@
 import React, { createContext, memo, useContext, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import Markdown from "react-markdown";
 import { preprocessContent, MARKDOWN_COMPONENTS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../utils/markdown";
-import { FileText, GitBranch, Octagon, Plus, RotateCcw, Send, X } from "lucide-react";
+import { FileText, GitBranch, Plus, RotateCcw, Send, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
 import {
@@ -2047,7 +2047,7 @@ function ChatInputArea({
             onClick={() => setAttachMenuOpen((v) => !v)}
             title="Add files or connectors"
           >
-            <Plus size={16} />
+            <Plus size={14} />
           </button>
           {attachMenuOpen && (
             <AttachMenu
@@ -2072,7 +2072,7 @@ function ChatInputArea({
           title={isRunning ? "Stop agent" : "Send message"}
           aria-label={isRunning ? "Stop agent" : "Send message"}
         >
-          {isRunning ? <Octagon size={16} /> : <Send size={16} />}
+          {isRunning ? <span className={styles.stopSquare} /> : <Send size={14} />}
         </button>
       </div>
     </div>

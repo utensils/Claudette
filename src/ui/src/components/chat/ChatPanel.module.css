@@ -922,10 +922,10 @@
   background: var(--accent-primary);
   border: 1px solid var(--accent-primary);
   color: var(--app-bg);
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   margin-left: auto;
   flex-shrink: 0;
@@ -947,20 +947,32 @@
   cursor: not-allowed;
 }
 
-.sendBtnStop {
-  background: var(--status-stopped);
-  border-color: var(--status-stopped);
-  color: var(--app-bg);
+/* Stop state — drop button chrome and show only a small red square. */
+.sendBtnStop,
+.sendBtnStop:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
 }
 
-.sendBtnStop:hover:not(:disabled) {
-  background: var(--status-stopped);
-  border-color: var(--status-stopped);
+.sendBtnStop:hover:not(:disabled) .stopSquare {
   filter: brightness(1.1);
 }
 
-.sendBtnStop:active:not(:disabled) {
-  filter: brightness(0.95);
+.sendBtnStop:active:not(:disabled) .stopSquare {
+  filter: brightness(0.9);
+}
+
+.stopSquare {
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: var(--status-stopped);
+  animation: stopPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stopPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 /* -- Attachment UI -- */
@@ -1021,14 +1033,14 @@
   border: 1px solid var(--divider);
   color: var(--text-muted);
   cursor: pointer;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   margin-right: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 6px;
   flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
