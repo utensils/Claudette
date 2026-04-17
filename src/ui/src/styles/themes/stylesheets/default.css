@@ -1,31 +1,4 @@
-/* Default — Ristretto amber on rosewood: linen cross-hatch, wax-seal selection, warm vignette. */
-
-body[data-theme="default"] [class*="messages_"] {
-  background-image:
-    /* linen cross-hatch: two thin 60deg weaves */
-    repeating-linear-gradient(
-      60deg,
-      rgba(249, 204, 108, 0.022) 0px,
-      rgba(249, 204, 108, 0.022) 1px,
-      transparent 1px,
-      transparent 5px
-    ),
-    repeating-linear-gradient(
-      -60deg,
-      rgba(243, 141, 112, 0.02) 0px,
-      rgba(243, 141, 112, 0.02) 1px,
-      transparent 1px,
-      transparent 5px
-    ),
-    /* warm ember at the top */
-    radial-gradient(90% 55% at 50% -6%, rgba(249, 204, 108, 0.08), transparent 62%),
-    /* rosewood vignette floor */
-    radial-gradient(120% 80% at 50% 100%, rgba(20, 14, 14, 0.55), transparent 60%),
-    /* parchment fiber */
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><filter id='d'><feTurbulence type='fractalNoise' baseFrequency='0.68' numOctaves='2' stitchTiles='stitch' seed='9'/><feColorMatrix values='0 0 0 0 0.96  0 0 0 0 0.78  0 0 0 0 0.60  0 0 0 0.055 0'/></filter><rect width='100%25' height='100%25' filter='url(%23d)'/></svg>");
-  background-size: auto, auto, auto, auto, 180px 180px;
-  background-attachment: fixed, fixed, fixed, fixed, local;
-}
+/* Default — Ristretto amber on rosewood: warm ember wash and wax-seal selection. */
 
 /* Wax-seal: the selected workspace gets a filled ember disc on the leading edge. */
 body[data-theme="default"] [class*="wsSelected_"] {

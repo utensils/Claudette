@@ -1,29 +1,9 @@
-/* Tokyo Night — overhead storm clouds, city-glow horizon, neon seam at the edge. */
-
-body[data-theme="tokyo-night"] [class*="messages_"] {
-  position: relative;
-  background-image:
-    /* storm cloud ceiling */
-    linear-gradient(180deg, rgba(15, 16, 25, 0.74) 0%, rgba(26, 27, 38, 0) 38%),
-    radial-gradient(100% 32% at 50% -4%, rgba(36, 40, 59, 0.88), transparent 70%),
-    radial-gradient(70% 24% at 25% -2%, rgba(187, 154, 247, 0.12), transparent 75%),
-    radial-gradient(80% 30% at 75% -2%, rgba(122, 162, 247, 0.14), transparent 75%),
-    /* city-glow horizon */
-    radial-gradient(95% 35% at 50% 100%, rgba(122, 162, 247, 0.18), transparent 65%),
-    radial-gradient(60% 22% at 25% 105%, rgba(247, 118, 142, 0.10), transparent 75%),
-    radial-gradient(60% 22% at 75% 105%, rgba(125, 207, 255, 0.14), transparent 75%),
-    /* faint vertical rain-scanlines */
-    repeating-linear-gradient(
-      180deg,
-      rgba(125, 207, 255, 0.014) 0px,
-      rgba(125, 207, 255, 0.014) 1px,
-      transparent 1px,
-      transparent 5px
-    );
-  background-attachment: fixed;
-}
+/* Tokyo Night — storm clouds, city-glow horizon, neon seam at the edge. */
 
 /* Neon horizon seam — a thin rainbow wire at the bottom of the canvas */
+body[data-theme="tokyo-night"] [class*="messages_"] {
+  position: relative;
+}
 body[data-theme="tokyo-night"] [class*="messages_"]::before {
   content: "";
   position: absolute;

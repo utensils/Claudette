@@ -1,18 +1,4 @@
-/* Rosé — Rosé Pine Moon. A candlelit writer's journal: warm vellum atmosphere,
-   hand-traced flourish in the corner, slow unhurried motion. */
-
-body[data-theme="rose"] [class*="messages_"] {
-  background-image:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'><g fill='none' stroke='rgba(234,154,151,0.42)' stroke-width='0.9' stroke-linecap='round'><path d='M28 184 Q 40 160 56 172 Q 68 178 64 192'/><path d='M42 172 Q 52 162 64 168'/><path d='M36 178 L 32 188'/><circle cx='62' cy='186' r='4' fill='rgba(246,193,119,0.55)' stroke='none'/><path d='M22 198 Q 44 196 68 198' stroke='rgba(196,167,231,0.30)'/></g><g fill='rgba(196,167,231,0.20)'><circle cx='168' cy='34' r='1.2'/><circle cx='184' cy='46' r='0.8'/><circle cx='156' cy='48' r='0.7'/></g></svg>"),
-    radial-gradient(55% 40% at 50% -8%, rgba(246, 193, 119, 0.14), transparent 58%),
-    radial-gradient(75% 55% at 50% -4%, rgba(234, 154, 151, 0.12), transparent 68%),
-    radial-gradient(60% 45% at 82% 92%, rgba(196, 167, 231, 0.10), transparent 66%),
-    radial-gradient(150% 100% at 50% 100%, rgba(16, 14, 26, 0.60), transparent 55%);
-  background-size: 220px 220px, auto, auto, auto, auto;
-  background-position: left bottom, 0 0, 0 0, 0 0, 0 0;
-  background-repeat: no-repeat;
-  background-attachment: local, fixed, fixed, fixed, fixed;
-}
+/* Rosé — Rosé Pine Moon. Candlelit writer's journal: small caps, dotted dividers, drop-cap. */
 
 /* Candlelit flicker on the composer — Gold + Rose slow breath (4.8s). */
 @keyframes rose-candle-flicker {
@@ -65,8 +51,7 @@ body[data-theme="rose"] [class*="wsSelected_"] {
     inset 0 0 24px rgba(196, 167, 231, 0.14);
 }
 
-/* First-drop-cap on the first paragraph — a journal touch.
-   Scoped under chat markdown so nav and UI chrome stay pristine. */
+/* First-drop-cap on the first paragraph — a journal touch. */
 body[data-theme="rose"] [class*="turnBody_"] p:first-of-type::first-letter,
 body[data-theme="rose"] [class*="markdown_"] > p:first-of-type::first-letter {
   font-size: 1.9em;

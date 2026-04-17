@@ -1,16 +1,4 @@
-/* Dracula — canonical bat-cave. Starfield backdrop, moonlit vignette,
-   color-bar accents that let the full palette (cyan/green/pink/purple) sing. */
-
-body[data-theme="dracula"] [class*="messages_"] {
-  background-image:
-    radial-gradient(55% 38% at 18% -6%, rgba(189, 147, 249, 0.22), transparent 65%),
-    radial-gradient(48% 34% at 86% -2%, rgba(255, 121, 198, 0.18), transparent 70%),
-    radial-gradient(42% 30% at 50% 108%, rgba(139, 233, 253, 0.14), transparent 70%),
-    radial-gradient(170% 115% at 50% 45%, transparent 35%, rgba(12, 10, 22, 0.60) 100%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><g fill='%23f8f8f2'><circle cx='32' cy='28' r='0.7' opacity='0.55'/><circle cx='92' cy='16' r='0.45' opacity='0.42'/><circle cx='168' cy='38' r='0.55' opacity='0.50'/><circle cx='244' cy='20' r='0.4' opacity='0.38'/><circle cx='310' cy='52' r='0.6' opacity='0.52'/><circle cx='372' cy='30' r='0.45' opacity='0.40'/><circle cx='58' cy='82' r='0.4' opacity='0.45'/><circle cx='142' cy='96' r='0.5' opacity='0.50'/><circle cx='220' cy='74' r='0.35' opacity='0.38'/><circle cx='298' cy='110' r='0.45' opacity='0.45'/><circle cx='356' cy='94' r='0.3' opacity='0.35'/><circle cx='82' cy='160' r='0.45' opacity='0.42'/><circle cx='186' cy='148' r='0.35' opacity='0.38'/><circle cx='258' cy='168' r='0.5' opacity='0.45'/><circle cx='336' cy='176' r='0.4' opacity='0.40'/><circle cx='22' cy='220' r='0.35' opacity='0.38'/><circle cx='120' cy='232' r='0.55' opacity='0.50'/><circle cx='208' cy='248' r='0.4' opacity='0.42'/><circle cx='284' cy='228' r='0.35' opacity='0.38'/><circle cx='368' cy='258' r='0.5' opacity='0.45'/><circle cx='48' cy='300' r='0.4' opacity='0.40'/><circle cx='158' cy='316' r='0.45' opacity='0.42'/><circle cx='240' cy='298' r='0.35' opacity='0.38'/><circle cx='324' cy='332' r='0.55' opacity='0.48'/></g><g fill='%23bd93f9' opacity='0.38'><circle cx='70' cy='62' r='0.7'/><circle cx='230' cy='132' r='0.6'/><circle cx='344' cy='226' r='0.65'/><circle cx='96' cy='270' r='0.6'/></g><g fill='%238be9fd' opacity='0.32'><circle cx='196' cy='74' r='0.55'/><circle cx='308' cy='184' r='0.5'/><circle cx='42' cy='158' r='0.5'/></g><g fill='%23ff79c6' opacity='0.30'><circle cx='132' cy='52' r='0.55'/><circle cx='268' cy='208' r='0.6'/><circle cx='80' cy='356' r='0.5'/></g></svg>");
-  background-size: auto, auto, auto, auto, 400px 400px;
-  background-attachment: fixed, fixed, fixed, fixed, local;
-}
+/* Dracula — canonical bat-cave. Playful pink/violet rails and a moonlit pulse. */
 
 /* Color-bar accent on each role label — a tiny 5-stripe pride ribbon
    that lets the full Dracula palette appear on every turn. */
@@ -71,7 +59,6 @@ body[data-theme="dracula"] [class*="inputArea_"]:focus-within {
   animation: dracula-moonlit-pulse 3.2s ease-in-out infinite;
 }
 
-/* Dotted violet dividers — bat silhouettes on the ceiling. */
 body[data-theme="dracula"] hr,
 body[data-theme="dracula"] [class*="divider"],
 body[data-theme="dracula"] [class*="separator"] {

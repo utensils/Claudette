@@ -68,7 +68,7 @@
       "error-hover": "rgba(255, 92, 61, 0.18)",
       "overlay-bg": "rgba(4, 7, 10, 0.74)",
       "overlay-bg-heavy": "rgba(4, 7, 10, 0.90)",
-      "canvas-atmosphere": "repeating-linear-gradient(to bottom, rgba(255, 179, 71, 0.075) 0px, rgba(255, 179, 71, 0.075) 1px, transparent 1px, transparent 3px), radial-gradient(ellipse 120% 70% at 50% -10%, rgba(255, 179, 71, 0.12), transparent 58%), radial-gradient(140% 90% at 50% 120%, rgba(90, 50, 10, 0.22), transparent 62%), radial-gradient(ellipse 160% 140% at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.55) 100%)",
+      "canvas-atmosphere": "radial-gradient(ellipse 120% 70% at 50% -10%, rgba(255, 179, 71, 0.14), transparent 58%), radial-gradient(140% 90% at 50% 120%, rgba(90, 50, 10, 0.22), transparent 62%), radial-gradient(ellipse 160% 140% at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.55) 100%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1.0  0 0 0 0 0.70  0 0 0 0 0.28  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23p)'/></svg>\")",
       "rim-light": "inset 0 1px 0 rgba(255, 179, 71, 0.08)",
       "rim-light-strong": "inset 0 1px 0 rgba(255, 179, 71, 0.16)",
       "selection-bg": "rgba(255, 179, 71, 0.32)"

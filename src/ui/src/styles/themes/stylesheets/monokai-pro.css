@@ -1,24 +1,4 @@
-/* Monokai Pro Classic — tasteful sunset conic, amber fiber, dual-line emphasis. */
-
-body[data-theme="monokai-pro"] [class*="messages_"] {
-  background-image:
-    /* soft conic sunset: coral → yellow → green, quieter than the original harsh wedge */
-    conic-gradient(
-      from 205deg at 82% -6%,
-      rgba(255, 97, 136, 0.10),
-      rgba(255, 216, 102, 0.07) 22%,
-      rgba(169, 220, 118, 0.045) 44%,
-      transparent 68%
-    ),
-    /* left-shoulder coral bloom */
-    radial-gradient(58% 42% at 14% -8%, rgba(255, 97, 136, 0.045), transparent 62%),
-    /* smoky floor vignette */
-    radial-gradient(120% 90% at 50% 100%, rgba(18, 16, 18, 0.65), transparent 55%),
-    /* amber fiber noise */
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='2' stitchTiles='stitch' seed='19'/><feColorMatrix values='0 0 0 0 0.99  0 0 0 0 0.85  0 0 0 0 0.40  0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23m)'/></svg>");
-  background-size: auto, auto, auto, 200px 200px;
-  background-attachment: fixed, fixed, fixed, local;
-}
+/* Monokai Pro Classic — dual-line emphasis on selection, amber mono labels. */
 
 body[data-theme="monokai-pro"] [class*="roleLabel_"] {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

@@ -1,42 +1,4 @@
-/* Gruvbox Hard — worn notebook: ruled-line paper, ochre fiber, ink-stained edges. */
-
-body[data-theme="gruvbox"] [class*="messages_"] {
-  background-image:
-    /* horizontal rule every 28px — notebook ruling, very faint */
-    repeating-linear-gradient(
-      0deg,
-      transparent 0px,
-      transparent 27px,
-      rgba(254, 128, 25, 0.045) 27px,
-      rgba(254, 128, 25, 0.045) 28px
-    ),
-    /* faint diagonal fiber */
-    repeating-linear-gradient(
-      45deg,
-      rgba(250, 189, 47, 0.028) 0px,
-      rgba(250, 189, 47, 0.028) 1px,
-      transparent 1px,
-      transparent 7px
-    ),
-    radial-gradient(100% 70% at 50% 0%, rgba(254, 128, 25, 0.08), transparent 70%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.68' numOctaves='3' stitchTiles='stitch' seed='11'/><feColorMatrix values='0 0 0 0 0.95  0 0 0 0 0.66  0 0 0 0 0.22  0 0 0 0.09 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
-  background-size: auto, auto, auto, 200px 200px;
-  background-attachment: fixed, fixed, fixed, local;
-}
-
-/* Dog-ear fold in bottom-left corner — a worn-notebook signature. */
-body[data-theme="gruvbox"] [class*="messages_"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 46px;
-  height: 46px;
-  pointer-events: none;
-  background:
-    linear-gradient(45deg, rgba(250, 189, 47, 0.18) 0%, rgba(254, 128, 25, 0.10) 40%, transparent 50%);
-  opacity: 0.8;
-}
+/* Gruvbox Hard — worn notebook: ochre fiber, ink-stained edges. */
 
 body[data-theme="gruvbox"] [class*="wsSelected_"] {
   box-shadow: inset 0 -2px 0 rgba(254, 128, 25, 0.75), inset 2px 0 0 rgba(250, 189, 47, 0.30);

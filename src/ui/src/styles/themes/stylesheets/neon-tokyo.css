@@ -1,81 +1,9 @@
-/* Neon Tokyo — maximalist cyberpunk HUD. Prominent scanlines, visible CRT grid,
-   chromatic-aberration labels, stacked neon bloom on focus, marquee shimmer. */
+/* Neon Tokyo — cyberpunk neon bloom. Magenta rail, stacked glow on focus. */
 
-/* CRT scanlines (10%+) + vertical raster + magenta top haze + cyan underglow. */
-body[data-theme="neon-tokyo"] [class*="messages_"] {
-  background-image:
-    repeating-linear-gradient(
-      to bottom,
-      rgba(255, 46, 136, 0.12) 0px,
-      rgba(255, 46, 136, 0.12) 1px,
-      transparent 1px,
-      transparent 3px
-    ),
-    repeating-linear-gradient(
-      to right,
-      rgba(0, 229, 255, 0.08) 0px,
-      rgba(0, 229, 255, 0.08) 1px,
-      transparent 1px,
-      transparent 4px
-    ),
-    radial-gradient(80% 60% at 50% 100%, rgba(255, 46, 136, 0.14), transparent 70%),
-    radial-gradient(65% 45% at 50% 0%, rgba(0, 229, 255, 0.10), transparent 75%),
-    linear-gradient(180deg, rgba(179, 136, 255, 0.05), transparent 40%);
-  background-attachment: fixed;
-  position: relative;
-}
-
-/* Moving scanline sweep — a single bright line drifting down every 9s. */
-body[data-theme="neon-tokyo"] [class*="messages_"]::before {
-  content: "";
-  position: absolute;
-  left: 0; right: 0;
-  height: 2px;
-  top: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(0, 229, 255, 0.22) 30%,
-    rgba(255, 46, 136, 0.34) 50%,
-    rgba(0, 229, 255, 0.22) 70%,
-    transparent
-  );
-  filter: blur(0.5px);
-  pointer-events: none;
-  animation: neon-scanline-sweep 9s linear infinite;
-  z-index: 1;
-}
-@keyframes neon-scanline-sweep {
-  0%   { transform: translateY(-4px); opacity: 0; }
-  5%   { opacity: 1; }
-  95%  { opacity: 1; }
-  100% { transform: translateY(100vh); opacity: 0; }
-}
-
-/* Sidebar — dense 18px HUD grid. */
-body[data-theme="neon-tokyo"] [class*="sidebar_"] {
-  background-image:
-    linear-gradient(rgba(255, 46, 136, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 229, 255, 0.05) 1px, transparent 1px);
-  background-size: 18px 18px, 18px 18px;
-  background-position: 0 0, 0 0;
-}
-
-/* Chromatic aberration on every label — the signature Blade Runner shift. */
 body[data-theme="neon-tokyo"] [class*="roleLabel_"] {
-  text-shadow:
-    -1px 0 0 rgba(255, 46, 136, 0.78),
-    1px 0 0 rgba(0, 229, 255, 0.68),
-    0 0 10px rgba(255, 46, 136, 0.45);
+  text-shadow: 0 0 10px rgba(255, 46, 136, 0.40);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-body[data-theme="neon-tokyo"] [class*="title_"] {
-  text-shadow:
-    -1px 0 0 rgba(255, 46, 136, 0.62),
-    1px 0 0 rgba(0, 229, 255, 0.52),
-    0 0 14px rgba(255, 46, 136, 0.32);
-  letter-spacing: 0.06em;
 }
 
 /* Dashed magenta dividers with cyan under-bloom. */
@@ -121,7 +49,7 @@ body[data-theme="neon-tokyo"] [class*="inputArea_"]:focus-within {
   animation: neon-composer-bloom 1.8s ease-in-out infinite;
 }
 
-/* Accent-primary text pulses a subtle flicker (very short, very rare). */
+/* Accent-primary badge pulses a subtle flicker (very short, very rare). */
 @keyframes neon-flicker {
   0%, 97%, 100% { opacity: 1; }
   98% { opacity: 0.72; }

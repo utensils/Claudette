@@ -1,46 +1,16 @@
-/* Uplink 1984 — CRT phosphor green with heavy scanlines, barrel vignette, hot caret. */
-
-body[data-theme="uplink-1984"] [class*="messages_"] {
-  background-image:
-    repeating-linear-gradient(
-      to bottom,
-      rgba(0, 255, 179, 0.085) 0px,
-      rgba(0, 255, 179, 0.085) 1px,
-      transparent 1px,
-      transparent 3px
-    ),
-    radial-gradient(120% 80% at 50% 0%, rgba(0, 255, 179, 0.10), transparent 60%),
-    radial-gradient(140% 90% at 50% 120%, rgba(0, 90, 70, 0.20), transparent 60%),
-    radial-gradient(ellipse 160% 140% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.60) 100%);
-  background-attachment: fixed;
-}
-
-body[data-theme="uplink-1984"] [class*="sidebar_"] {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 255, 179, 0.065) 0px,
-    rgba(0, 255, 179, 0.065) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-}
+/* Uplink 1984 — CRT phosphor green, hot chromatic caret, subtle flicker. */
 
 /* Phosphor text glow on role labels + uppercase terminal feel */
 body[data-theme="uplink-1984"] [class*="roleLabel_"] {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: #00ffb3;
-  text-shadow:
-    0 0 2px rgba(230, 255, 240, 0.75),
-    0 0 6px rgba(0, 255, 179, 0.65),
-    0 0 14px rgba(0, 255, 179, 0.30);
+  text-shadow: 0 0 8px rgba(0, 255, 179, 0.45);
 }
 
 body[data-theme="uplink-1984"] [class*="title_"] {
   color: #c8f5e4;
-  text-shadow:
-    0 0 1px rgba(230, 255, 240, 0.60),
-    0 0 5px rgba(0, 255, 179, 0.30);
+  text-shadow: 0 0 5px rgba(0, 255, 179, 0.28);
 }
 
 /* Chevron prompt — hot-white core on green */
@@ -49,9 +19,7 @@ body[data-theme="uplink-1984"] [class*="role_User"] [class*="roleLabel"]::before
   color: #e6fff0;
   font-weight: 700;
   margin-right: 6px;
-  text-shadow:
-    0 0 2px rgba(230, 255, 240, 0.90),
-    0 0 8px rgba(0, 255, 179, 0.70);
+  text-shadow: 0 0 8px rgba(0, 255, 179, 0.60);
 }
 
 /* Hot chromatic caret — white core inside green phosphor */

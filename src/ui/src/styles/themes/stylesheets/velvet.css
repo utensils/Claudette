@@ -1,31 +1,9 @@
-/* Velvet — midnight opera. Spotlight cone, crescent moon in the wings, gold pinstripe weave. */
-
-body[data-theme="velvet"] [class*="messages_"] {
-  position: relative;
-  background-image:
-    /* spot beam — hotspot */
-    radial-gradient(18% 14% at 50% -4%, rgba(255, 236, 176, 0.44), transparent 72%),
-    /* spot beam — cone fade */
-    radial-gradient(40% 60% at 50% -8%, rgba(220, 192, 128, 0.14), transparent 70%),
-    /* corner vignette: deepens toward wings */
-    radial-gradient(140% 110% at 50% 55%, transparent 28%, rgba(2, 3, 12, 0.78) 100%),
-    /* diagonal velvet-weave pinstripe */
-    repeating-linear-gradient(
-      128deg,
-      rgba(220, 192, 128, 0.035) 0px,
-      rgba(220, 192, 128, 0.035) 1px,
-      transparent 1px,
-      transparent 8px
-    ),
-    /* moon silhouette tucked top-right */
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600'><defs><radialGradient id='m' cx='50%25' cy='50%25' r='50%25'><stop offset='0%25' stop-color='%23f5e0a0' stop-opacity='0.28'/><stop offset='55%25' stop-color='%23dcc080' stop-opacity='0.10'/><stop offset='100%25' stop-color='%23dcc080' stop-opacity='0'/></radialGradient></defs><circle cx='510' cy='86' r='42' fill='url(%23m)'/><circle cx='524' cy='76' r='36' fill='%230a0c1e'/></svg>");
-  background-size: auto, auto, auto, auto, 600px 600px;
-  background-position: center, center, center, center, top right;
-  background-repeat: no-repeat, no-repeat, no-repeat, repeat, no-repeat;
-  background-attachment: fixed;
-}
+/* Velvet — midnight opera. Spotlight cone, gold role underlines. */
 
 /* Theatrical spotlight beam — narrow rectangular cone from top center */
+body[data-theme="velvet"] [class*="messages_"] {
+  position: relative;
+}
 body[data-theme="velvet"] [class*="messages_"]::before {
   content: "";
   position: absolute;

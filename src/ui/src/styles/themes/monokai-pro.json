@@ -68,7 +68,7 @@
       "error-hover": "rgba(255, 97, 136, 0.16)",
       "overlay-bg": "rgba(18, 16, 18, 0.68)",
       "overlay-bg-heavy": "rgba(18, 16, 18, 0.88)",
-      "canvas-atmosphere": "conic-gradient(from 210deg at 80% 0%, rgba(255, 97, 136, 0.11), rgba(255, 216, 102, 0.08) 25%, rgba(169, 220, 118, 0.05) 45%, transparent 70%), radial-gradient(120% 90% at 50% 100%, rgba(18, 16, 18, 0.65), transparent 55%), linear-gradient(180deg, rgba(45, 42, 46, 0) 0%, rgba(25, 22, 24, 0.35) 100%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='0.80' numOctaves='2' stitchTiles='stitch' seed='13'/><feColorMatrix values='0 0 0 0 0.99  0 0 0 0 0.85  0 0 0 0 0.40  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23m)'/></svg>\")",
+      "canvas-atmosphere": "radial-gradient(70% 45% at 82% -4%, rgba(255, 97, 136, 0.12), transparent 60%), radial-gradient(60% 40% at 20% 0%, rgba(255, 216, 102, 0.07), transparent 68%), radial-gradient(120% 90% at 50% 100%, rgba(18, 16, 18, 0.65), transparent 55%), url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='0.80' numOctaves='2' stitchTiles='stitch' seed='13'/><feColorMatrix values='0 0 0 0 0.99  0 0 0 0 0.85  0 0 0 0 0.40  0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23m)'/></svg>\")",
       "rim-light": "inset 0 1px 0 rgba(252, 252, 250, 0.06)",
       "rim-light-strong": "inset 0 1px 0 rgba(255, 216, 102, 0.18), inset 0 -1px 0 rgba(18, 16, 18, 0.45)",
       "selection-bg": "rgba(255, 97, 136, 0.34)"

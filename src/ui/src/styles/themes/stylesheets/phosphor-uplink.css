@@ -1,57 +1,25 @@
-/* Phosphor Uplink — P3 amber CRT, slower decay than green sibling, heavy scanlines. */
-
-body[data-theme="phosphor-uplink"] [class*="messages_"] {
-  background-image:
-    repeating-linear-gradient(
-      to bottom,
-      rgba(255, 179, 71, 0.075) 0px,
-      rgba(255, 179, 71, 0.075) 1px,
-      transparent 1px,
-      transparent 3px
-    ),
-    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(255, 179, 71, 0.14), transparent 58%),
-    radial-gradient(140% 90% at 50% 120%, rgba(90, 50, 10, 0.24), transparent 62%),
-    radial-gradient(ellipse 160% 140% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.58) 100%);
-  background-attachment: fixed;
-}
-
-body[data-theme="phosphor-uplink"] [class*="sidebar_"] {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(255, 179, 71, 0.055) 0px,
-    rgba(255, 179, 71, 0.055) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-}
+/* Phosphor Uplink — P3 amber CRT, slower phosphor decay. */
 
 /* Amber phosphor glow — uppercase, wide tracking */
 body[data-theme="phosphor-uplink"] [class*="roleLabel_"] {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: #ffb347;
-  text-shadow:
-    0 0 2px rgba(255, 240, 200, 0.80),
-    0 0 8px rgba(255, 179, 71, 0.65),
-    0 0 16px rgba(255, 179, 71, 0.32);
+  text-shadow: 0 0 8px rgba(255, 179, 71, 0.45);
 }
 
 body[data-theme="phosphor-uplink"] [class*="title_"] {
   color: #e8d9bf;
-  text-shadow:
-    0 0 1px rgba(255, 240, 200, 0.60),
-    0 0 6px rgba(255, 179, 71, 0.32);
+  text-shadow: 0 0 6px rgba(255, 179, 71, 0.28);
 }
 
-/* Warm-white chevron on amber — slower afterglow via longer transition */
+/* Warm-white chevron on amber — slower afterglow */
 body[data-theme="phosphor-uplink"] [class*="role_User"] [class*="roleLabel"]::before {
   content: ">";
   color: #fff0c8;
   font-weight: 700;
   margin-right: 6px;
-  text-shadow:
-    0 0 2px rgba(255, 240, 200, 0.95),
-    0 0 10px rgba(255, 179, 71, 0.70);
+  text-shadow: 0 0 8px rgba(255, 179, 71, 0.60);
 }
 
 body[data-theme="phosphor-uplink"] textarea,

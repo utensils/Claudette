@@ -1,30 +1,6 @@
 /* Codex 1.0 — OpenAI Codex CLI (2026) tribute: ink canvas, mint horizon,
    and a 2s shimmer sweep borrowed from codex-rs/tui/src/shimmer.rs. */
 
-body[data-theme="codex"] [class*="messages_"] {
-  background-image:
-    linear-gradient(180deg, rgba(16, 163, 127, 0.065) 0%, rgba(16, 163, 127, 0.02) 30%, transparent 58%),
-    linear-gradient(180deg, transparent 60%, rgba(123, 161, 217, 0.04) 90%, rgba(7, 7, 8, 0.55) 100%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 320'><g opacity='0.045' stroke='%2310a37f' stroke-width='0.5' fill='none'><path d='M0 80 L320 80'/><path d='M0 160 L320 160'/><path d='M0 240 L320 240'/></g></svg>");
-  background-size: auto, auto, 320px 320px;
-  background-attachment: fixed, fixed, local;
-  box-shadow: inset 0 0 80px rgba(7, 7, 8, 0.45);
-}
-
-/* Signature: a single bright mint horizon line near the top edge — echoes
-   the ratatui status-bar dense-line aesthetic of Codex CLI. */
-body[data-theme="codex"] [class*="messages_"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 1px;
-  height: 1px;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent 0%, rgba(61, 220, 151, 0.0) 10%, rgba(61, 220, 151, 0.55) 50%, rgba(61, 220, 151, 0.0) 90%, transparent 100%);
-  z-index: 1;
-}
-
 body[data-theme="codex"] hr,
 body[data-theme="codex"] [class*="divider"],
 body[data-theme="codex"] [class*="separator"],
