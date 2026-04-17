@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.12.0](https://github.com/utensils/claudette/compare/v0.11.0...v0.12.0) (2026-04-17)
+
+
+### Features
+
+* **ui:** add "More" disclosure for older models in picker ([#255](https://github.com/utensils/claudette/issues/255)) ([ee90681](https://github.com/utensils/claudette/commit/ee90681ff9d27ffcd061161aadd32ac9eeb1f10f))
+* **ui:** simplify chat header and unify send/stop button ([#266](https://github.com/utensils/claudette/issues/266)) ([a301ca4](https://github.com/utensils/claudette/commit/a301ca49b6e86d6637f7fc8080690debe1231427))
+* **ui:** use sidebar status icons on dashboard cards ([#265](https://github.com/utensils/claudette/issues/265)) ([9f98997](https://github.com/utensils/claudette/commit/9f989975380a9454f7d780e37871160232d7159c))
+
+
+### Bug Fixes
+
+* **agent:** respawn persistent session when plan_mode or allowedTools drift ([#264](https://github.com/utensils/claudette/issues/264)) ([4dc7c31](https://github.com/utensils/claudette/commit/4dc7c31dcfbfec61508684c1a88ae73a073c68e1))
+* **sidebar:** prevent double-click race conditions on archive/restore ([#270](https://github.com/utensils/claudette/issues/270)) ([93368a8](https://github.com/utensils/claudette/commit/93368a87705fe111fd33662cdec4645606d60d06))
+* **terminal:** prevent command buffer clearing before extraction ([#272](https://github.com/utensils/claudette/issues/272)) ([5bcc6f4](https://github.com/utensils/claudette/commit/5bcc6f45a23144922a3818ca7c367088c88ce520))
+* **ui:** apply default plan mode regardless of thinking/fast defaults ([#267](https://github.com/utensils/claudette/issues/267)) ([f1adb5f](https://github.com/utensils/claudette/commit/f1adb5fccebf2dd233b36dc63e378210207407e7))
+* **ui:** make chat toolbar chips respect UI font size ([#262](https://github.com/utensils/claudette/issues/262)) ([2038903](https://github.com/utensils/claudette/commit/203890377083248524c76792731aacd14f7c6a72))
+* **ui:** redistribute Rosé Pine colors across the full palette ([#263](https://github.com/utensils/claudette/issues/263)) ([dd602f4](https://github.com/utensils/claudette/commit/dd602f494fbb2d8715ebc951d774e111d2831a6a))
+
 ## [0.11.0](https://github.com/utensils/claudette/compare/v0.10.0...v0.11.0) (2026-04-17)
 
 
