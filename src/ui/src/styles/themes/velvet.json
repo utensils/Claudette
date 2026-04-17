@@ -1,0 +1,141 @@
+{
+  "$schema": "./theme.schema.json",
+  "manifest": {
+    "id": "velvet",
+    "name": "Velvet",
+    "author": "James Brink",
+    "version": "1.0.0",
+    "scheme": "dark",
+    "description": "Champagne and ink — a midnight-opera theme of indigo velvet and low-lit gilt.",
+    "preview": {
+      "background": "#0c0f1f",
+      "surface": "#1a1e38",
+      "accent": "#d4b86a",
+      "text": "#ece7d9"
+    }
+  },
+  "tokens": {
+    "color": {
+      "color-scheme": "dark",
+
+      "app-bg": "#0c0f1f",
+      "sidebar-bg": "#11152a",
+      "sidebar-border": "#1d2140",
+      "panel-bg": "#141831",
+      "surface-bg": "#1a1e38",
+      "sunken-bg": "#070917",
+
+      "text-primary": "#ece7d9",
+      "text-muted": "#c4bfb2",
+      "text-dim": "#8f8a7d",
+      "text-faint": "#625d6f",
+      "text-separator": "#2a2e48",
+
+      "accent-primary": "#d4b86a",
+      "accent-primary-rgb": "212, 184, 106",
+      "accent-dim": "#a4904f",
+      "accent-bg": "rgba(212, 184, 106, 0.08)",
+      "accent-bg-strong": "rgba(212, 184, 106, 0.16)",
+      "accent-glow": "0 0 10px rgba(212, 184, 106, 0.22)",
+
+      "hover-bg": "rgba(255, 250, 235, 0.05)",
+      "hover-bg-subtle": "rgba(255, 250, 235, 0.03)",
+      "selected-bg": "rgba(212, 184, 106, 0.10)",
+      "divider": "#1d2140",
+
+      "status-running": "#d4b86a",
+      "status-idle": "#8f8a7d",
+      "status-stopped": "#8c3a4a",
+
+      "badge-done": "#7a9f8a",
+      "badge-plan": "#b0a598",
+      "badge-ask": "#c9a96a",
+
+      "diff-added-bg": "rgba(143, 176, 140, 0.12)",
+      "diff-removed-bg": "rgba(140, 58, 74, 0.14)",
+      "diff-added-text": "#9fbd9a",
+      "diff-removed-text": "#b65a6c",
+      "diff-hunk-header": "#c9a96a",
+      "diff-line-number": "#625d6f",
+
+      "chat-user-bg": "rgba(236, 231, 217, 0.025)",
+      "chat-system-bg": "rgba(212, 184, 106, 0.04)",
+      "chat-input-bg": "#070917",
+      "chat-header-bg": "#11152a",
+
+      "terminal-tab-bg": "#11152a",
+      "terminal-tab-active-bg": "#1a1e38",
+      "terminal-bg": "#070917",
+      "terminal-fg": "#ece7d9",
+      "terminal-cursor": "#d4b86a",
+      "terminal-selection": "rgba(212, 184, 106, 0.20)",
+
+      "toolbar-active": "rgba(212, 184, 106, 0.14)",
+      "toolbar-active-text": "#d4b86a",
+
+      "error-bg": "rgba(140, 58, 74, 0.12)",
+      "error-border": "rgba(140, 58, 74, 0.38)",
+      "error-hover": "rgba(140, 58, 74, 0.18)",
+
+      "overlay-bg": "rgba(5, 6, 14, 0.62)",
+      "overlay-bg-heavy": "rgba(5, 6, 14, 0.82)",
+
+      "canvas-atmosphere": "radial-gradient(130% 90% at 50% 0%, rgba(212, 184, 106, 0.035), transparent 65%)",
+      "rim-light": "inset 0 1px 0 rgba(255, 250, 235, 0.035)",
+      "rim-light-strong": "inset 0 1px 0 rgba(255, 250, 235, 0.06)",
+      "selection-bg": "rgba(212, 184, 106, 0.28)"
+    },
+    "elevation": {
+      "shadow-sm": "0 1px 2px rgba(0, 0, 0, 0.45)",
+      "shadow-md": "0 6px 18px rgba(0, 0, 0, 0.55)",
+      "shadow-lg": "0 16px 40px rgba(0, 0, 0, 0.65)",
+      "shadow-card-hover": "0 10px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 184, 106, 0.18)",
+      "well-shadow": "inset 0 2px 8px rgba(0, 0, 0, 0.55)",
+      "composer-ring": "inset 0 0 0 1px rgba(255, 250, 235, 0.05)",
+      "composer-ring-focus": "inset 0 0 0 1px rgba(212, 184, 106, 0.40)"
+    },
+    "typography": {
+      "font-size-sm": "11px",
+      "font-size-base": "13px",
+      "font-size-md": "14px",
+      "font-size-lg": "16px",
+      "font-weight-regular": "400",
+      "font-weight-medium": "500",
+      "font-weight-semibold": "600",
+      "font-weight-bold": "700",
+      "line-height-tight": "1.3",
+      "line-height-normal": "1.55",
+      "line-height-relaxed": "1.7",
+      "letter-spacing-tight": "-0.01em",
+      "letter-spacing-wide": "0.05em"
+    },
+    "radius": {
+      "radius-sm": "3px",
+      "radius-md": "6px",
+      "radius-lg": "12px",
+      "radius-pill": "999px",
+      "border-radius": "6px"
+    },
+    "spacing": {
+      "space-xs": "4px",
+      "space-sm": "8px",
+      "space-md": "12px",
+      "space-lg": "16px",
+      "space-xl": "24px"
+    },
+    "motion": {
+      "transition-fast": "0.14s ease",
+      "transition-normal": "0.24s ease",
+      "transition-slow": "0.36s ease",
+      "ease-standard": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "ease-accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-decelerate": "cubic-bezier(0, 0, 0.2, 1)"
+    },
+    "layout": {
+      "scrollbar-width": "8px",
+      "scrollbar-thumb-bg": "rgba(255, 250, 235, 0.06)",
+      "scrollbar-thumb-hover-bg": "rgba(212, 184, 106, 0.22)",
+      "focus-ring": "0 0 0 2px rgba(212, 184, 106, 0.45)"
+    }
+  }
+}

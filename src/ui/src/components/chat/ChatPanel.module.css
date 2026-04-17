@@ -157,8 +157,6 @@
   font-size: 32px;
   font-weight: 200;
   color: rgba(var(--accent-primary-rgb), 0.35);
-  font-family: var(--font-display);
-  font-style: italic;
   letter-spacing: -0.04em;
 }
 

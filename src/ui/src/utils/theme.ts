@@ -120,10 +120,10 @@ const THEMEABLE_TOKENS = new Set<string>([
   "composer-ring-focus",
 
   // Typography scale (note: font *families* are intentionally NOT themable —
-  // they come from the app's `--font-sans` / `--font-mono` / `--font-display`
-  // defaults and from the user's Appearance settings. Themes should adhere
-  // to the app's typographic voice; if a theme file declares one of those
-  // tokens it's silently ignored with a console warning.)
+  // they come from the app's `--font-sans` / `--font-mono` defaults and
+  // from the user's Appearance settings. Themes should adhere to the app's
+  // typographic voice; if a theme file declares one of those tokens it's
+  // silently ignored with a console warning.)
   "font-size-sm",
   "font-size-base",
   "font-size-md",

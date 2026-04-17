@@ -157,7 +157,7 @@ Typographic **scale** only — sizes, weights, line-heights, letter-spacing. Fon
 | `line-height-tight` / `-normal` / `-relaxed` | 1.3 / 1.55 / 1.7 | |
 | `letter-spacing-tight` / `-wide` | -0.01em / 0.05em | |
 
-> ⚠️ Declaring `font-sans`, `font-mono`, or `font-display` in a theme has no effect — they're outside the allowlist. A console warning flags ignored tokens.
+> ⚠️ Declaring `font-sans` or `font-mono` in a theme has no effect — they're outside the allowlist. A console warning flags ignored tokens.
 
 ### `radius`
 

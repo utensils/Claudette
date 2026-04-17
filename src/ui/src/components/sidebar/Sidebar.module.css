@@ -15,16 +15,12 @@
   padding-top: 38px;
 }
 
-/* Editorial eyebrow — the one place we let the display serif sing.
-   Small, italic, low-saturation. Sets the "atelier" tone. */
 .title {
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 400;
-  font-style: italic;
-  text-transform: none;
-  color: var(--text-muted);
-  letter-spacing: 0.005em;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
 }
 
 .headerActions {
