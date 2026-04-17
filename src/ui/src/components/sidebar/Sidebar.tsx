@@ -79,14 +79,23 @@ export const Sidebar = memo(function Sidebar() {
   const creatingRef = useRef(false);
   const archivingRef = useRef<Set<string>>(new Set());
   const restoringRef = useRef<Set<string>>(new Set());
+  const [creatingWorkspace, setCreatingWorkspace] = useState<{ repoId: string } | null>(null);
 
   const handleCreateWorkspace = useCallback(async (repoId: string) => {
     if (creatingRef.current) return;
     creatingRef.current = true;
+
+    // Show optimistic loading workspace
+    setCreatingWorkspace({ repoId });
+
     try {
       const generated = await generateWorkspaceName();
       // Always skip setup initially — we'll prompt for confirmation if needed.
       const result = await createWorkspace(repoId, generated.slug, true);
+
+      // Remove optimistic workspace
+      setCreatingWorkspace(null);
+
       addWorkspace(result.workspace);
       selectWorkspace(result.workspace.id);
       if (generated.message) {
@@ -149,6 +158,7 @@ export const Sidebar = memo(function Sidebar() {
       }
     } catch (e) {
       console.error("Failed to create workspace:", e);
+      setCreatingWorkspace(null);
     } finally {
       creatingRef.current = false;
     }
@@ -576,6 +586,19 @@ export const Sidebar = memo(function Sidebar() {
                   </div>
                   );
                 })}
+              {/* Show loading workspace while creating */}
+              {!collapsed && creatingWorkspace && creatingWorkspace.repoId === repo.id && (
+                <div className={`${styles.wsItem} ${styles.wsItemLoading}`}>
+                  <span className={styles.statusSpinner} aria-hidden="true">
+                    {spinnerChar}
+                  </span>
+                  <div className={styles.wsInfo}>
+                    <span className={styles.wsName} style={{ opacity: 0.5 }}>
+                      Creating workspace...
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
