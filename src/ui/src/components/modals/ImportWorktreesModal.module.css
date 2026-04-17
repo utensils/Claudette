@@ -52,7 +52,7 @@
 
 .nameInput {
   background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-sm);
   padding: 2px 6px;
   color: var(--text-primary);

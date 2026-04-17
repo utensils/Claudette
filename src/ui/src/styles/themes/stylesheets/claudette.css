@@ -3,15 +3,15 @@
 body[data-theme="claudette"] [class*="messages_"] {
   background-image:
     radial-gradient(45% 30% at 50% -5%, rgba(245, 150, 90, 0.22), transparent 70%),
-    radial-gradient(80% 50% at 50% -10%, rgba(217, 119, 87, 0.12), transparent 75%),
+    radial-gradient(80% 50% at 50% -10%, rgba(215, 119, 87, 0.12), transparent 75%),
     radial-gradient(120% 90% at 50% 50%, transparent 40%, rgba(28, 12, 6, 0.55) 100%),
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 240'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3' stitchTiles='stitch' seed='7'/><feColorMatrix values='0 0 0 0 0.98  0 0 0 0 0.88  0 0 0 0 0.74  0 0 0 0.10 0'/></filter><rect width='100%25' height='100%25' filter='url(%23f)'/><g opacity='0.08' stroke='%23d97757' stroke-width='0.35' fill='none'><path d='M0 40 Q 80 55 160 42 T 320 48'/><path d='M0 110 Q 90 125 175 115 T 340 120'/><path d='M0 180 Q 70 192 150 182 T 320 190'/></g></svg>");
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 240'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3' stitchTiles='stitch' seed='7'/><feColorMatrix values='0 0 0 0 0.98  0 0 0 0 0.88  0 0 0 0 0.74  0 0 0 0.10 0'/></filter><rect width='100%25' height='100%25' filter='url(%23f)'/><g opacity='0.08' stroke='%23d77757' stroke-width='0.35' fill='none'><path d='M0 40 Q 80 55 160 42 T 320 48'/><path d='M0 110 Q 90 125 175 115 T 340 120'/><path d='M0 180 Q 70 192 150 182 T 320 190'/></g></svg>");
   background-size: auto, auto, auto, 240px 240px;
   background-attachment: fixed, fixed, fixed, local;
 }
 
 body[data-theme="claudette"] [class*="panel_"] {
-  box-shadow: inset 1px 0 0 rgba(217, 119, 87, 0.08);
+  box-shadow: inset 1px 0 0 rgba(215, 119, 87, 0.08);
 }
 
 body[data-theme="claudette"] [class*="wsSelected_"] {
@@ -24,7 +24,7 @@ body[data-theme="claudette"] [class*="separator"],
 body[data-theme="claudette"] [class*="toolbar_"],
 body[data-theme="claudette"] [class*="fieldGroup_"] {
   border-bottom-color: rgba(234, 210, 178, 0.45) !important;
-  box-shadow: 0 1px 0 rgba(217, 119, 87, 0.14);
+  box-shadow: 0 1px 0 rgba(215, 119, 87, 0.14);
 }
 
 body[data-theme="claudette"] [class*="wsSelected_"]::after {
@@ -37,9 +37,54 @@ body[data-theme="claudette"] [class*="wsSelected_"]::after {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(217, 119, 87, 0.55),
+    rgba(215, 119, 87, 0.55),
     rgba(234, 189, 117, 0.30),
     transparent
   );
   pointer-events: none;
+}
+
+/* --- Claude Code fidelity: CLI-inspired effects --- */
+
+/* Firelight pooling at chat canvas corners — ember spill from the terminal. */
+body[data-theme="claudette"] [class*="messages_"] {
+  box-shadow: inset 0 0 60px rgba(215, 119, 87, 0.06),
+    inset 0 0 140px rgba(10, 8, 6, 0.35);
+}
+
+/* Composer focus border: shimmer pulse between accent and accent-shimmer —
+   mirrors the Claude CLI spinner/border shimmer rhythm (~1.4s). */
+@keyframes claudette-border-shimmer {
+  0%, 100% { box-shadow: var(--composer-ring, inset 0 0 0 1px rgba(215, 119, 87, 0.80)),
+    0 0 0 3px rgba(215, 119, 87, 0.16), 0 0 28px rgba(215, 119, 87, 0.22); }
+  50%      { box-shadow: inset 0 0 0 1px rgba(235, 159, 127, 0.95),
+    0 0 0 3px rgba(235, 159, 127, 0.22), 0 0 34px rgba(235, 159, 127, 0.30); }
+}
+body[data-theme="claudette"] [class*="inputArea_"]:focus-within {
+  animation: claudette-border-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Blinking caret on the composer — terminal rhythm (1.1s, square pulse). */
+@keyframes claudette-caret-blink {
+  0%, 55%  { opacity: 1; }
+  56%, 100% { opacity: 0.25; }
+}
+body[data-theme="claudette"] [class*="input_"]:focus {
+  caret-color: #eb9f7f;
+  animation: claudette-caret-blink 1.1s steps(1, end) infinite;
+}
+
+/* Terminal-style prompt glyph on user turn role label — a chevron ember. */
+body[data-theme="claudette"] [class*="role_User"] [class*="roleLabel"]::before {
+  content: ">";
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  color: #eb9f7f;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  text-shadow: 0 0 6px rgba(215, 119, 87, 0.55);
 }

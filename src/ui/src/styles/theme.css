@@ -205,6 +205,57 @@
   --sidebar-item-padding-y: 6px;
   --sidebar-item-gap: 2px;
   --canvas-padding-inline: 32px;
+
+  /* ── Border widths ── brutalist themes (Bunker) can push these up
+     for chunky 2–3px divisions; editorial themes keep hairlines. */
+  --border-thin: 1px;
+  --border-medium: 2px;
+  --border-thick: 3px;
+
+  /* ── Icon sizes ── scaled together per theme character. Tight HUDs
+     (Tokyo, Linear) shrink; luxury themes (Claudette, Solar) grow. */
+  --icon-xs: 10px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 18px;
+  --dot-size: 8px;
+
+  /* ── Control heights ── button, input, tab rows. Flagship themes
+     go roomy; dense terminals (Phosphor, Uplink) compress. */
+  --control-height-sm: 24px;
+  --control-height-md: 32px;
+  --control-height-lg: 38px;
+  --toggle-track-width: 36px;
+  --toggle-track-height: 20px;
+  --toggle-thumb-size: 16px;
+
+  /* ── Component paddings ── canonical padding pairs. */
+  --control-padding-x: 12px;
+  --control-padding-y: 6px;
+  --chip-padding-x: 6px;
+  --chip-padding-y: 2px;
+  --card-padding: 16px;
+  --menu-padding: 4px;
+  --menu-item-padding-x: 14px;
+  --menu-item-padding-y: 8px;
+
+  /* ── Popover / modal dimensions ── */
+  --popover-width: 520px;
+  --popover-max-height: 400px;
+  --modal-width: 420px;
+
+  /* ── Z-index scale ── normalized layer order. */
+  --z-sticky: 1;
+  --z-raised: 10;
+  --z-dropdown: 50;
+  --z-overlay: 99;
+  --z-modal: 100;
+
+  /* ── Extra motion tiers ── Bunker snap (`0s`), fast hover feedback,
+     slow emphasis reveals. */
+  --transition-instant: 0s;
+  --transition-hover: 0.15s ease;
+  --transition-emphasis: 0.5s ease;
 }
 
 * {

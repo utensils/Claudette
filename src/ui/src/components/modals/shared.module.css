@@ -12,7 +12,7 @@
 .input {
   width: 100%;
   background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 8px 12px;
   color: var(--text-primary);
@@ -54,7 +54,7 @@
 
 .btn {
   background: var(--selected-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   color: var(--text-primary);
   padding: 6px 16px;
   border-radius: var(--radius-md);

@@ -4,7 +4,7 @@
   gap: 12px;
   padding: 8px 16px;
   background: var(--accent-bg);
-  border-bottom: 1px solid var(--sidebar-border);
+  border-bottom: var(--border-thin, 1px) solid var(--sidebar-border);
   animation: slideDown 0.2s ease;
 }
 
@@ -26,7 +26,7 @@
 
 .btn {
   background: var(--selected-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   color: var(--text-primary);
   padding: 4px 12px;
   border-radius: var(--radius-sm);

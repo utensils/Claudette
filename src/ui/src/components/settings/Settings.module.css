@@ -12,7 +12,7 @@
   left: 0;
   right: 0;
   height: 38px;
-  z-index: 1;
+  z-index: var(--z-sticky, 1);
 }
 
 /* ── Settings sidebar ── */
@@ -20,7 +20,7 @@
 .sidebar {
   width: 220px;
   flex-shrink: 0;
-  border-right: 1px solid var(--divider);
+  border-right: var(--border-thin, 1px) solid var(--divider);
   padding: 16px 0;
   display: flex;
   flex-direction: column;
@@ -120,7 +120,7 @@
   align-items: flex-start;
   gap: 32px;
   padding: 20px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: var(--border-thin, 1px) solid var(--divider);
 }
 
 .settingInfo {
@@ -148,7 +148,7 @@
 
 .input {
   background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 6px 12px;
   color: var(--text-primary);
@@ -199,10 +199,10 @@
   max-height: 280px;
   overflow-y: auto;
   background: var(--sidebar-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
-  z-index: 50;
+  z-index: var(--z-dropdown, 50);
   padding: 4px;
 }
 
@@ -242,12 +242,12 @@
 
 .toggle {
   position: relative;
-  width: 44px;
-  height: 24px;
+  width: calc(var(--toggle-track-width, 36px) + 8px);
+  height: var(--control-height-sm, 24px);
   border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background var(--transition-normal, 0.2s);
   background: var(--divider);
   padding: 0;
 }
@@ -260,11 +260,11 @@
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 20px;
-  height: 20px;
+  width: calc(var(--control-height-sm, 24px) - 4px);
+  height: calc(var(--control-height-sm, 24px) - 4px);
   border-radius: 50%;
   background: var(--sidebar-bg);
-  transition: transform 0.2s;
+  transition: transform var(--transition-normal, 0.2s);
 }
 
 .toggle[data-checked="true"] .toggleKnob {
@@ -282,14 +282,14 @@
   align-items: center;
   justify-content: center;
   background: var(--selected-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   color: var(--text-primary);
   padding: 6px 12px;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 13px;
   line-height: 1.2;
-  min-height: 34px;
+  min-height: var(--control-height-lg, 34px);
   white-space: nowrap;
 }
 
@@ -318,7 +318,7 @@
 
 .fieldGroup {
   padding: 20px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: var(--border-thin, 1px) solid var(--divider);
 }
 
 .fieldLabel {
@@ -372,7 +372,7 @@
 }
 
 .pluginStatCard {
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 14px 16px;
   background:
@@ -404,7 +404,7 @@
 
 .pluginInlineNote {
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 22%, var(--divider));
+  border: var(--border-thin, 1px) solid color-mix(in srgb, var(--accent-primary) 22%, var(--divider));
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--accent-bg) 44%, transparent);
   color: var(--text-dim);
@@ -426,7 +426,7 @@
 }
 
 .pluginCard {
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--sidebar-bg) 78%, transparent);
   overflow: hidden;
@@ -486,7 +486,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 22%, var(--divider));
+  border: var(--border-thin, 1px) solid color-mix(in srgb, var(--accent-primary) 22%, var(--divider));
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent-bg) 36%, transparent);
   color: var(--text-primary);
@@ -550,7 +550,7 @@
 }
 
 .pluginConfigPanel {
-  border-top: 1px solid var(--divider);
+  border-top: var(--border-thin, 1px) solid var(--divider);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -558,7 +558,7 @@
 }
 
 .pluginConfigSection {
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 14px;
   background: color-mix(in srgb, var(--app-bg) 75%, transparent);
@@ -621,7 +621,7 @@
 
 .readOnlyPre {
   background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-sm);
   padding: 6px 8px;
   font-size: 12px;
@@ -650,7 +650,7 @@
 
 .btnDanger {
   background: var(--selected-bg);
-  border: 1px solid var(--status-stopped);
+  border: var(--border-thin, 1px) solid var(--status-stopped);
   color: var(--status-stopped);
   padding: 6px 16px;
   border-radius: var(--radius-md);
@@ -685,7 +685,7 @@
   justify-content: center;
   border-radius: var(--radius-md);
   background: var(--selected-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
@@ -703,7 +703,7 @@
   color: var(--text-primary);
   background: none;
   border: none;
-  border-bottom: 1px solid transparent;
+  border-bottom: var(--border-thin, 1px) solid transparent;
   outline: none;
   padding: 0 0 2px;
   flex: 1;
@@ -725,11 +725,11 @@
   margin-top: 4px;
   width: 280px;
   background: var(--sidebar-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  z-index: 10;
+  z-index: var(--z-raised, 10);
 }
 
 /* ── Radio buttons ── */
@@ -772,7 +772,7 @@
 
 .usageCard {
   padding: 16px 0;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: var(--border-thin, 1px) solid var(--divider);
 }
 
 .usageCardHeader {
@@ -962,7 +962,7 @@
   font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--sidebar-border);
+  border: var(--border-thin, 1px) solid var(--sidebar-border);
   background: none;
   color: var(--text-primary);
   cursor: pointer;
@@ -987,7 +987,7 @@
 
 .mcpGroupLabel:not(:first-child) {
   margin-top: 8px;
-  border-top: 1px solid var(--divider);
+  border-top: var(--border-thin, 1px) solid var(--divider);
   padding-top: 12px;
 }
 

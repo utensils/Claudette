@@ -5,8 +5,8 @@
     rgba(var(--accent-primary-rgb), 0.06) 0%,
     rgba(var(--accent-primary-rgb), 0.02) 100%
   );
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.15);
-  border-left: 3px solid var(--accent-primary);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.15);
+  border-left: var(--border-thick, 3px) solid var(--accent-primary);
   border-radius: 0 10px 10px 0;
   padding: 18px 20px;
   margin: 12px 0;
@@ -102,7 +102,7 @@
   gap: 2px;
   padding: 10px 14px;
   background: var(--hover-bg-subtle);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   cursor: pointer;
   text-align: left;
@@ -140,7 +140,7 @@
   margin-bottom: 14px;
   padding: 10px 14px;
   background: rgba(var(--accent-primary-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.25);
   border-radius: var(--radius-md);
   color: var(--accent-primary);
   font-size: 13px;
@@ -180,7 +180,7 @@
 .freeformInput {
   flex: 1;
   background: var(--hover-bg-subtle);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 10px 14px;
   color: var(--text-primary);
@@ -204,7 +204,7 @@
 
 .submitBtn {
   background: transparent;
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.25);
   color: var(--accent-dim);
   padding: 10px 16px;
   border-radius: var(--radius-md);
@@ -238,7 +238,7 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.25);
   color: var(--accent-primary);
   background: rgba(var(--accent-primary-rgb), 0.08);
   transition: background var(--transition-fast), opacity var(--transition-fast);

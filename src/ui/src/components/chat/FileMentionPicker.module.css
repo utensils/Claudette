@@ -5,10 +5,10 @@
   right: 0;
   margin-bottom: 4px;
   background: var(--sidebar-bg);
-  border: 1px solid var(--sidebar-border);
+  border: var(--border-thin, 1px) solid var(--sidebar-border);
   border-radius: var(--radius-md);
   padding: 4px;
-  z-index: 100;
+  z-index: var(--z-modal, 100);
   max-height: 400px;
   overflow-y: auto;
   box-shadow: var(--shadow-lg);

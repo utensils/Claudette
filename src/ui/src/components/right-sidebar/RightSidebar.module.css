@@ -6,7 +6,7 @@
 
 .tabBar {
   display: flex;
-  border-bottom: 1px solid var(--sidebar-border);
+  border-bottom: var(--border-thin, 1px) solid var(--sidebar-border);
   flex-shrink: 0;
 }
 
@@ -19,7 +19,7 @@
   padding: 6px 8px;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: var(--border-medium, 2px) solid transparent;
   color: var(--text-dim);
   font-size: 11px;
   font-weight: 600;
@@ -53,7 +53,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--sidebar-border);
+  border-bottom: var(--border-thin, 1px) solid var(--sidebar-border);
 }
 
 .title {
@@ -71,7 +71,7 @@
 
 .modeBtn {
   background: none;
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   color: var(--text-dim);
   padding: 1px 6px;
   border-radius: var(--radius-sm);

@@ -18,7 +18,7 @@
   justify-content: center;
   border-radius: var(--radius-md);
   background: var(--selected-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   flex-shrink: 0;
 }
 
@@ -50,7 +50,7 @@
 .search {
   width: 100%;
   background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 6px 10px;
   color: var(--text-primary);
@@ -68,7 +68,7 @@
   gap: 2px;
   max-height: 180px;
   overflow-y: auto;
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 4px;
   background: var(--chat-input-bg);
@@ -80,7 +80,7 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid transparent;
+  border: var(--border-thin, 1px) solid transparent;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--text-muted);

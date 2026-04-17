@@ -6,16 +6,16 @@
   display: flex;
   justify-content: center;
   padding-top: 80px;
-  z-index: 100;
+  z-index: var(--z-modal, 100);
   animation: fadeIn 0.1s ease;
 }
 
 .card {
   background: var(--app-bg);
-  border: 1px solid var(--sidebar-border);
+  border: var(--border-thin, 1px) solid var(--sidebar-border);
   border-radius: var(--radius-md);
-  width: 520px;
-  max-height: 400px;
+  width: var(--popover-width, 520px);
+  max-height: var(--popover-max-height, 400px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -27,7 +27,7 @@
   width: 100%;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: var(--border-thin, 1px) solid var(--divider);
   padding: 14px 18px;
   color: var(--text-primary);
   font-size: 14px;

@@ -11,7 +11,7 @@
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border: 1px solid transparent;
+  border: var(--border-thin, 1px) solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-dim);
@@ -24,7 +24,7 @@
 
 /* Chip content fades out as the badge fades in */
 .chip > :not(:global(.shortcut-badge)) {
-  transition: opacity 0.5s ease;
+  transition: opacity var(--transition-emphasis, 0.5s ease);
 }
 .chip:has(:global(.shortcut-badge-visible)) > :not(:global(.shortcut-badge)) {
   opacity: 0;

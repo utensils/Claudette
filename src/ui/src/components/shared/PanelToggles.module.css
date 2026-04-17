@@ -6,7 +6,7 @@
 
 .toggle {
   background: none;
-  border: 1px solid transparent;
+  border: var(--border-thin, 1px) solid transparent;
   color: var(--text-dim);
   padding: 4px;
   border-radius: var(--radius-md);
@@ -34,7 +34,7 @@
 
 /* Crossfade icon out as badge fades in */
 .toggle > svg {
-  transition: opacity 0.5s ease;
+  transition: opacity var(--transition-emphasis, 0.5s ease);
 }
 .toggle:has(:global(.shortcut-badge-visible)) > svg {
   opacity: 0;

@@ -6,16 +6,16 @@
   display: flex;
   justify-content: center;
   padding-top: 72px;
-  z-index: 100;
+  z-index: var(--z-modal, 100);
   animation: fadeIn 0.1s ease;
 }
 
 .card {
   background: var(--app-bg);
-  border: 1px solid var(--sidebar-border);
+  border: var(--border-thin, 1px) solid var(--sidebar-border);
   border-radius: var(--radius-md);
-  width: 580px;
-  max-height: 480px;
+  width: calc(var(--popover-width, 520px) + 60px);
+  max-height: calc(var(--popover-max-height, 400px) + 80px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -29,7 +29,7 @@
   align-items: center;
   gap: 10px;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: var(--border-thin, 1px) solid var(--divider);
 }
 
 .inputIcon {
@@ -57,7 +57,7 @@
   align-items: center;
   justify-content: center;
   background: none;
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   color: var(--text-muted);
   cursor: pointer;
@@ -77,7 +77,7 @@
   font-weight: 600;
   color: var(--accent-primary);
   background: rgba(var(--accent-primary-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.2);
   border-radius: var(--radius-sm);
   padding: 2px 8px;
   flex-shrink: 0;
@@ -148,8 +148,8 @@
 .resultIcon {
   color: var(--text-dim);
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: var(--icon-lg, 18px);
+  height: var(--icon-lg, 18px);
   transition: color var(--transition-fast);
 }
 
@@ -194,18 +194,18 @@
   font-family: var(--font-mono);
   color: var(--text-muted);
   background: var(--hover-bg-subtle);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-sm);
   line-height: 1.4;
 }
 
 /* Theme color swatch */
 .themeSwatch {
-  width: 14px;
-  height: 14px;
+  width: var(--icon-sm, 14px);
+  height: var(--icon-sm, 14px);
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
 }
 
 /* Footer hint bar */
@@ -214,7 +214,7 @@
   align-items: center;
   gap: 16px;
   padding: 8px 18px;
-  border-top: 1px solid var(--divider);
+  border-top: var(--border-thin, 1px) solid var(--divider);
   font-size: 11px;
   color: var(--text-faint);
 }

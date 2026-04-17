@@ -6,15 +6,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: var(--z-modal, 100);
   animation: fadeIn 0.15s ease;
 }
 
 .card {
   background: var(--app-bg);
-  border: 1px solid var(--sidebar-border);
+  border: var(--border-thin, 1px) solid var(--sidebar-border);
   border-radius: var(--radius-md);
-  width: 420px;
+  width: var(--modal-width, 420px);
   max-height: 80vh;
   overflow-y: auto;
   box-shadow: var(--shadow-lg);

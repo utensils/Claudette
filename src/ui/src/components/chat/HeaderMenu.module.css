@@ -7,7 +7,7 @@
   align-items: center;
   gap: 4px;
   background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   color: var(--text-muted);
   font-size: 11px;
@@ -43,10 +43,10 @@
   right: 0;
   min-width: 140px;
   background: var(--sidebar-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   padding: 4px;
-  z-index: 50;
+  z-index: var(--z-dropdown, 50);
   box-shadow: var(--shadow-md);
   animation: menuIn 0.1s ease;
 }

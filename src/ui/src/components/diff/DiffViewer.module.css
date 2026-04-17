@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--sidebar-border);
+  border-bottom: var(--border-thin, 1px) solid var(--sidebar-border);
   background: var(--chat-header-bg);
 }
 
@@ -71,8 +71,8 @@
   color: var(--diff-hunk-header);
   padding: 4px 12px;
   font-size: 12px;
-  border-top: 1px solid rgba(var(--accent-primary-rgb), 0.08);
-  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.08);
+  border-top: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.08);
+  border-bottom: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.08);
 }
 
 .line {
@@ -97,7 +97,7 @@
   color: var(--diff-line-number);
   flex-shrink: 0;
   user-select: none;
-  border-right: 1px solid var(--divider);
+  border-right: var(--border-thin, 1px) solid var(--divider);
 }
 
 .linePrefix {
@@ -146,7 +146,7 @@
 }
 
 .sbsCell + .sbsCell {
-  border-left: 1px solid var(--divider);
+  border-left: var(--border-thin, 1px) solid var(--divider);
 }
 
 .sbsEmpty {

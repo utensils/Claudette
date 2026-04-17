@@ -67,7 +67,12 @@
         "radius": { "$ref": "#/$defs/radiusTokens" },
         "spacing": { "$ref": "#/$defs/spacingTokens" },
         "motion": { "$ref": "#/$defs/motionTokens" },
-        "layout": { "$ref": "#/$defs/layoutTokens" }
+        "layout": { "$ref": "#/$defs/layoutTokens" },
+        "border": { "$ref": "#/$defs/borderTokens" },
+        "icon": { "$ref": "#/$defs/iconTokens" },
+        "control": { "$ref": "#/$defs/controlTokens" },
+        "component": { "$ref": "#/$defs/componentTokens" },
+        "zIndex": { "$ref": "#/$defs/zIndexTokens" }
       }
     },
     "colorTokens": {
@@ -206,12 +211,80 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "transition-fast":   { "type": "string" },
-        "transition-normal": { "type": "string" },
-        "transition-slow":   { "type": "string" },
-        "ease-standard":     { "type": "string" },
-        "ease-accelerate":   { "type": "string" },
-        "ease-decelerate":   { "type": "string" }
+        "transition-fast":     { "type": "string" },
+        "transition-normal":   { "type": "string" },
+        "transition-slow":     { "type": "string" },
+        "transition-instant":  { "type": "string", "description": "Motion-free tier — use `0s` for brutalist/snap themes." },
+        "transition-hover":    { "type": "string", "description": "Quick hover/press feedback. Defaults to `0.15s ease`." },
+        "transition-emphasis": { "type": "string", "description": "Slow fade-in for attention reveals (shortcut badges, toolbar appear). Defaults to `0.5s ease`." },
+        "ease-standard":       { "type": "string" },
+        "ease-accelerate":     { "type": "string" },
+        "ease-decelerate":     { "type": "string" }
+      }
+    },
+    "borderTokens": {
+      "type": "object",
+      "description": "Border widths. Brutalist themes (Bunker) can push these up for chunky divisions; editorial themes keep hairlines.",
+      "additionalProperties": false,
+      "properties": {
+        "border-thin":   { "type": "string", "description": "Default divider / card border width. Defaults to `1px`." },
+        "border-medium": { "type": "string", "description": "Active-tab underline, emphasis edges. Defaults to `2px`." },
+        "border-thick":  { "type": "string", "description": "Strong accent edges on plan/question/attention cards. Defaults to `3px`." }
+      }
+    },
+    "iconTokens": {
+      "type": "object",
+      "description": "Icon sizing scale. Adjust per theme for density (tight HUDs shrink, luxury themes grow).",
+      "additionalProperties": false,
+      "properties": {
+        "icon-xs":   { "type": "string", "description": "Tiny indicators / inline dots. Defaults to `10px`." },
+        "icon-sm":   { "type": "string", "description": "Inline action icons. Defaults to `14px`." },
+        "icon-md":   { "type": "string", "description": "Toolbar / menu icons. Defaults to `16px`." },
+        "icon-lg":   { "type": "string", "description": "Prominent icons (command items, avatars). Defaults to `18px`." },
+        "dot-size":  { "type": "string", "description": "Status / presence dots. Defaults to `8px`." }
+      }
+    },
+    "controlTokens": {
+      "type": "object",
+      "description": "Heights for buttons, inputs, toggles. Drives the overall density feel.",
+      "additionalProperties": false,
+      "properties": {
+        "control-height-sm":    { "type": "string", "description": "Compact controls (small chips, sliders). Defaults to `24px`." },
+        "control-height-md":    { "type": "string", "description": "Default button / toolbar row height. Defaults to `32px`." },
+        "control-height-lg":    { "type": "string", "description": "Prominent inputs, primary buttons. Defaults to `38px`." },
+        "toggle-track-width":   { "type": "string", "description": "Switch track width. Defaults to `36px`." },
+        "toggle-track-height":  { "type": "string", "description": "Switch track height. Defaults to `20px`." },
+        "toggle-thumb-size":    { "type": "string", "description": "Switch thumb diameter. Defaults to `16px`." }
+      }
+    },
+    "componentTokens": {
+      "type": "object",
+      "description": "Canonical padding pairs and dimensions for shared components (popovers, modals, menu items).",
+      "additionalProperties": false,
+      "properties": {
+        "control-padding-x":    { "type": "string", "description": "Horizontal padding inside default controls. Defaults to `12px`." },
+        "control-padding-y":    { "type": "string", "description": "Vertical padding inside default controls. Defaults to `6px`." },
+        "chip-padding-x":       { "type": "string", "description": "Horizontal padding for chips/pills. Defaults to `6px`." },
+        "chip-padding-y":       { "type": "string", "description": "Vertical padding for chips/pills. Defaults to `2px`." },
+        "card-padding":         { "type": "string", "description": "Inner padding for cards, modal bodies. Defaults to `16px`." },
+        "menu-padding":         { "type": "string", "description": "Outer padding inside popover/menu containers. Defaults to `4px`." },
+        "menu-item-padding-x":  { "type": "string", "description": "Horizontal padding on menu rows. Defaults to `14px`." },
+        "menu-item-padding-y":  { "type": "string", "description": "Vertical padding on menu rows. Defaults to `8px`." },
+        "popover-width":        { "type": "string", "description": "Default popover width (fuzzy finder, command palette). Defaults to `520px`." },
+        "popover-max-height":   { "type": "string", "description": "Max height of a popover list. Defaults to `400px`." },
+        "modal-width":          { "type": "string", "description": "Default modal shell width. Defaults to `420px`." }
+      }
+    },
+    "zIndexTokens": {
+      "type": "object",
+      "description": "Normalized z-index scale. Keep to this order: sticky < raised < dropdown < overlay < modal.",
+      "additionalProperties": false,
+      "properties": {
+        "z-sticky":   { "type": "string", "description": "Sticky in-flow elements. Defaults to `1`." },
+        "z-raised":   { "type": "string", "description": "Above peers (resize handles, scroll pills). Defaults to `10`." },
+        "z-dropdown": { "type": "string", "description": "Menus, disclosures. Defaults to `50`." },
+        "z-overlay":  { "type": "string", "description": "Modal backdrops. Defaults to `99`." },
+        "z-modal":    { "type": "string", "description": "Modal / popover content. Defaults to `100`." }
       }
     },
     "layoutTokens": {

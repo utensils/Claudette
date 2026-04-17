@@ -90,4 +90,4 @@ export const BUILTIN_THEMES: ThemeDefinition[] = [
   phosphorUplinkTheme as ThemeDefinition,
 ].map(withStylesheet);
 
-export const DEFAULT_THEME_ID = "default";
+export const DEFAULT_THEME_ID = "claudette";

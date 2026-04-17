@@ -1,7 +1,7 @@
 .handle {
   position: relative;
   background: transparent;
-  z-index: 10;
+  z-index: var(--z-raised, 10);
   transition: background var(--transition-fast);
 }
 

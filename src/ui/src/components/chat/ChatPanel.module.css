@@ -16,7 +16,7 @@
   padding: 12px 22px;
   background: transparent;
   position: relative;
-  z-index: 2;
+  z-index: calc(var(--z-sticky, 1) + 1);
 }
 
 .headerLeft {
@@ -107,7 +107,7 @@
 
 .stopBtn {
   background: none;
-  border: 1px solid var(--status-stopped);
+  border: var(--border-thin, 1px) solid var(--status-stopped);
   color: var(--status-stopped);
   padding: 2px 10px;
   border-radius: var(--radius-sm);
@@ -165,7 +165,7 @@
 
 .errorBanner {
   background: var(--error-bg);
-  border: 1px solid var(--error-border);
+  border: var(--border-thin, 1px) solid var(--error-border);
   border-radius: var(--radius-md);
   padding: 10px 14px;
   font-size: 13px;
@@ -289,8 +289,8 @@
 .roleLabel::before {
   content: "";
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: calc(var(--dot-size, 8px) * 0.75);
+  height: calc(var(--dot-size, 8px) * 0.75);
   border-radius: 50%;
   background: rgba(var(--accent-primary-rgb), 0.4);
   flex-shrink: 0;
@@ -319,7 +319,7 @@
   color: var(--text-primary);
   margin: 20px 0 10px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  border-bottom: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.15);
 }
 
 .content h2 {
@@ -363,8 +363,8 @@
 .content pre {
   position: relative;
   background: var(--chat-input-bg) !important;
-  border: 1px solid var(--divider);
-  border-top: 2px solid rgba(var(--accent-primary-rgb), 0.2);
+  border: var(--border-thin, 1px) solid var(--divider);
+  border-top: var(--border-medium, 2px) solid rgba(var(--accent-primary-rgb), 0.2);
   border-radius: var(--radius-md);
   padding: 14px 16px;
   overflow: hidden;
@@ -471,7 +471,7 @@
 .content a {
   color: var(--accent-primary);
   text-decoration: none;
-  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  border-bottom: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.25);
   transition: border-color var(--transition-fast);
 }
 
@@ -498,8 +498,8 @@
     rgba(var(--accent-primary-rgb), 0.07) 0%,
     rgba(var(--accent-primary-rgb), 0.03) 100%
   );
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.12);
-  border-left: 3px solid var(--accent-primary);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.12);
+  border-left: var(--border-thick, 3px) solid var(--accent-primary);
   border-radius: 0 8px 8px 0;
   padding: 14px 18px;
   margin: 16px 0;
@@ -528,7 +528,7 @@
   text-transform: uppercase;
   padding-bottom: 8px;
   margin: 0 0 10px;
-  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+  border-bottom: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.2);
 }
 
 .content :global(.cc-callout-icon) {
@@ -541,18 +541,18 @@
   color: var(--accent-primary);
   margin: 16px 0 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.2);
+  border-bottom: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.2);
 }
 
 .content :global(hr.cc-callout-rule) {
   border: none;
-  border-top: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  border-top: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.15);
   margin: 8px 0 16px;
 }
 
 /* Blockquotes — subtle card with left accent */
 .content blockquote {
-  border-left: 2px solid var(--text-faint);
+  border-left: var(--border-medium, 2px) solid var(--text-faint);
   background: var(--hover-bg-subtle);
   border-radius: 0 6px 6px 0;
   margin: 10px 0;
@@ -571,7 +571,7 @@
   margin: 12px 0;
   font-size: 13px;
   width: 100%;
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   overflow: hidden;
 }
@@ -585,13 +585,13 @@
   letter-spacing: 0.03em;
   padding: 8px 12px;
   text-align: left;
-  border-bottom: 1px solid rgba(var(--accent-primary-rgb), 0.12);
+  border-bottom: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.12);
 }
 
 .content td {
   padding: 7px 12px;
   text-align: left;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: var(--border-thin, 1px) solid var(--divider);
 }
 
 .content tr:nth-child(even) td {
@@ -640,7 +640,7 @@
   animation: fadeIn 0.2s ease;
   background: rgba(var(--accent-primary-rgb), 0.03);
   border-radius: var(--radius-md);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.06);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.06);
   margin-top: 4px;
 }
 
@@ -668,7 +668,7 @@
 }
 
 .turnSummary {
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   margin: 4px 0;
   cursor: pointer;
@@ -702,7 +702,7 @@
 }
 
 .turnActivities {
-  border-top: 1px solid var(--divider);
+  border-top: var(--border-thin, 1px) solid var(--divider);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -749,7 +749,7 @@
   height: 100%;
   background: var(--accent-dim);
   border-radius: var(--radius-sm);
-  transition: width 0.4s ease;
+  transition: width var(--transition-slow, 0.4s ease);
 }
 
 .taskProgressDone {
@@ -764,7 +764,7 @@
 }
 
 .toolActivity {
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   overflow: hidden;
   transition: border-color var(--transition-fast);
@@ -833,7 +833,7 @@
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
-  border-top: 1px solid var(--divider);
+  border-top: var(--border-thin, 1px) solid var(--divider);
   background: var(--chat-input-bg);
   line-height: 1.5;
 }
@@ -849,7 +849,7 @@
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.4;
-  border-top: 1px solid var(--divider);
+  border-top: var(--border-thin, 1px) solid var(--divider);
   background: var(--chat-input-bg);
 }
 
@@ -861,7 +861,7 @@
   padding: 6px 12px;
   margin: 4px 0;
   background: rgba(var(--accent-primary-rgb), 0.06);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.15);
   border-radius: var(--radius-md);
   font-size: 12px;
   color: var(--text-muted);
@@ -1001,7 +1001,7 @@
    The disabled state is the "empty" state, filled only when intentful. */
 .sendBtn {
   background: rgba(var(--accent-primary-rgb), 0.12);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
+  border: var(--border-thin, 1px) solid rgba(var(--accent-primary-rgb), 0.25);
   color: var(--accent-primary);
   padding: 6px 14px;
   border-radius: var(--radius-md);
@@ -1056,7 +1056,7 @@
   height: 64px;
   border-radius: var(--radius-md);
   overflow: hidden;
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   flex-shrink: 0;
 }
 
@@ -1090,7 +1090,7 @@
 
 .attachBtn {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: var(--border-thin, 1px) solid rgba(255, 255, 255, 0.06);
   color: var(--text-dim);
   cursor: pointer;
   width: 26px;
@@ -1102,7 +1102,9 @@
   justify-content: center;
   border-radius: var(--radius-md);
   flex-shrink: 0;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--transition-hover, 0.15s ease),
+    color var(--transition-hover, 0.15s ease),
+    border-color var(--transition-hover, 0.15s ease);
 }
 
 .attachBtn:hover {
@@ -1130,7 +1132,7 @@
   max-width: 300px;
   max-height: 300px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   object-fit: contain;
   cursor: pointer;
 }
@@ -1141,7 +1143,7 @@
   gap: 6px;
   padding: 6px 12px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
   font-size: 13px;

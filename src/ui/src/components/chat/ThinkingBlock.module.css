@@ -1,5 +1,5 @@
 .container {
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-md);
   margin: 4px 0;
   overflow: hidden;
@@ -57,7 +57,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.6;
-  border-top: 1px solid var(--divider);
+  border-top: var(--border-thin, 1px) solid var(--divider);
   background: var(--chat-input-bg);
   font-style: italic;
   opacity: 0.85;

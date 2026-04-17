@@ -1,7 +1,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 99;
+  z-index: var(--z-overlay, 99);
 }
 
 .menu {
@@ -11,10 +11,10 @@
   margin-bottom: 6px;
   min-width: 260px;
   background: var(--sidebar-bg);
-  border: 1px solid var(--sidebar-border);
+  border: var(--border-thin, 1px) solid var(--sidebar-border);
   border-radius: var(--radius-md);
   padding: 4px;
-  z-index: 100;
+  z-index: var(--z-modal, 100);
   box-shadow: var(--shadow-lg);
   animation: scaleIn 0.12s ease;
 }

@@ -10,7 +10,7 @@
   justify-content: space-between;
   padding: 10px 20px;
   background: var(--chat-header-bg);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: var(--border-thin, 1px) solid var(--divider);
   flex-shrink: 0;
 }
 
@@ -47,8 +47,8 @@
 /* Workspace card */
 .card {
   background: var(--hover-bg-subtle);
-  border: 1px solid var(--divider);
-  border-left: 3px solid var(--status-idle);
+  border: var(--border-thin, 1px) solid var(--divider);
+  border-left: var(--border-thick, 3px) solid var(--status-idle);
   border-radius: var(--radius-md);
   padding: 14px 16px;
   cursor: pointer;
@@ -228,7 +228,7 @@
 .hintKey {
   display: inline-block;
   background: var(--hover-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-sm);
   padding: 1px 6px;
   font-size: 11px;

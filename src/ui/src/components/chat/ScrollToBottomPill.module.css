@@ -1,13 +1,13 @@
 .pill {
   align-self: center;
-  z-index: 10;
+  z-index: var(--z-raised, 10);
   margin: 4px 0;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
   background: var(--chat-input-bg);
-  border: 1px solid var(--divider);
+  border: var(--border-thin, 1px) solid var(--divider);
   border-radius: var(--radius-lg);
   color: var(--accent-primary);
   font-size: 12px;

@@ -175,14 +175,80 @@ Typographic **scale** only — sizes, weights, line-heights, letter-spacing. Fon
 
 ### `motion`
 
-| Token | Default |
-|---|---|
-| `transition-fast` | `0.12s ease` |
-| `transition-normal` | `0.2s ease` |
-| `transition-slow` | `0.3s ease` |
-| `ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` |
-| `ease-accelerate` | `cubic-bezier(0.4, 0, 1, 1)` |
-| `ease-decelerate` | `cubic-bezier(0, 0, 0.2, 1)` |
+| Token | Default | Use |
+|---|---|---|
+| `transition-fast` | `0.12s ease` | Snappy color transitions. |
+| `transition-normal` | `0.2s ease` | Default state changes. |
+| `transition-slow` | `0.3s ease` | Width / layout animations. |
+| `transition-instant` | `0s` | Motion-free — brutalist themes snap without animation. |
+| `transition-hover` | `0.15s ease` | Quick hover / press feedback. Applied to buttons, chat attach button, sidebar items. |
+| `transition-emphasis` | `0.5s ease` | Slow emphasis reveals (shortcut badges, toolbar appear). |
+| `ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | |
+| `ease-accelerate` | `cubic-bezier(0.4, 0, 1, 1)` | |
+| `ease-decelerate` | `cubic-bezier(0, 0, 0.2, 1)` | |
+
+### `border` — edge language
+
+Brutalist themes (Bunker) push these higher for chunky divisions; editorial themes keep hairlines. Applied via `var(--border-thin, 1px)` across ~50 component sites so a single value cascades everywhere.
+
+| Token | Default | Use |
+|---|---|---|
+| `border-thin` | `1px` | Default divider / card border width. |
+| `border-medium` | `2px` | Active-tab underline, emphasis edges, blockquote rule. |
+| `border-thick` | `3px` | Strong accent edges on plan / question / attention cards. |
+
+### `icon` — icon sizing scale
+
+Tune density per theme — tight HUDs (Neon Tokyo, Phosphor) shrink; luxury themes (Claudette, Solar) grow.
+
+| Token | Default | Use |
+|---|---|---|
+| `icon-xs` | `10px` | Tiny indicators / inline dots. |
+| `icon-sm` | `14px` | Inline action icons. |
+| `icon-md` | `16px` | Toolbar / menu icons. |
+| `icon-lg` | `18px` | Prominent icons (command items, avatars). |
+| `dot-size` | `8px` | Status / presence dots. |
+
+### `control` — button, input, toggle heights
+
+Drives the overall density feel.
+
+| Token | Default | Use |
+|---|---|---|
+| `control-height-sm` | `24px` | Compact controls (toggles, chips). |
+| `control-height-md` | `32px` | Default button / toolbar row height. |
+| `control-height-lg` | `38px` | Prominent inputs, primary buttons. |
+| `toggle-track-width` | `36px` | Switch track width. |
+| `toggle-track-height` | `20px` | Switch track height. |
+| `toggle-thumb-size` | `16px` | Switch thumb diameter. |
+
+### `component` — canonical padding pairs and popover/modal dimensions
+
+| Token | Default | Use |
+|---|---|---|
+| `control-padding-x` | `12px` | Horizontal padding inside default controls. |
+| `control-padding-y` | `6px` | Vertical padding inside default controls. |
+| `chip-padding-x` | `6px` | Horizontal padding for chips/pills. |
+| `chip-padding-y` | `2px` | Vertical padding for chips/pills. |
+| `card-padding` | `16px` | Inner padding for cards, modal bodies. |
+| `menu-padding` | `4px` | Outer padding inside popover/menu containers. |
+| `menu-item-padding-x` | `14px` | Horizontal padding on menu rows. |
+| `menu-item-padding-y` | `8px` | Vertical padding on menu rows. |
+| `popover-width` | `520px` | Default popover width (fuzzy finder). |
+| `popover-max-height` | `400px` | Max height of a popover list. |
+| `modal-width` | `420px` | Default modal shell width. |
+
+### `zIndex` — normalized layer order
+
+Keep to this order: sticky < raised < dropdown < overlay < modal. Do not use raw values in component CSS.
+
+| Token | Default | Use |
+|---|---|---|
+| `z-sticky` | `1` | Sticky in-flow elements. |
+| `z-raised` | `10` | Above peers (resize handles, scroll pills). |
+| `z-dropdown` | `50` | Menus, disclosures. |
+| `z-overlay` | `99` | Modal backdrops. |
+| `z-modal` | `100` | Modal / popover content. |
 
 ### `layout`
 

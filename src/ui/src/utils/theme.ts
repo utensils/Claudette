@@ -182,6 +182,53 @@ const THEMEABLE_TOKENS = new Set<string>([
   "sidebar-item-padding-y",
   "sidebar-item-gap",
   "canvas-padding-inline",
+
+  // Border widths — brutalist themes push these higher; editorial keeps hairlines
+  "border-thin",
+  "border-medium",
+  "border-thick",
+
+  // Icon sizes — tune density per theme character
+  "icon-xs",
+  "icon-sm",
+  "icon-md",
+  "icon-lg",
+  "dot-size",
+
+  // Control heights — buttons, inputs, toolbar rows
+  "control-height-sm",
+  "control-height-md",
+  "control-height-lg",
+  "toggle-track-width",
+  "toggle-track-height",
+  "toggle-thumb-size",
+
+  // Component paddings — canonical pairs
+  "control-padding-x",
+  "control-padding-y",
+  "chip-padding-x",
+  "chip-padding-y",
+  "card-padding",
+  "menu-padding",
+  "menu-item-padding-x",
+  "menu-item-padding-y",
+
+  // Popover/modal sizes
+  "popover-width",
+  "popover-max-height",
+  "modal-width",
+
+  // Z-index scale
+  "z-sticky",
+  "z-raised",
+  "z-dropdown",
+  "z-overlay",
+  "z-modal",
+
+  // Extra motion tiers (instant = Bunker snap, hover = quick feedback, emphasis = slow reveal)
+  "transition-instant",
+  "transition-hover",
+  "transition-emphasis",
 ]);
 
 /**
