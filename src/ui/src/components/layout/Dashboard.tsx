@@ -1,6 +1,7 @@
 import { memo, useMemo, useEffect, useState } from "react";
-import { GitBranch, Layers, Globe } from "lucide-react";
+import { GitBranch, Layers, Globe, BadgeCheck, BadgeInfo, BadgeQuestionMark } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import { useSpinnerFrame } from "../../hooks/useSpinnerFrame";
 import { RepoIcon } from "../shared/RepoIcon";
 import { PanelToggles } from "../shared/PanelToggles";
 import styles from "./Dashboard.module.css";
@@ -53,6 +54,8 @@ const WorkspaceCard = memo(function WorkspaceCard({
   baseBranch,
   lastMsg,
   remoteName,
+  badge,
+  spinnerChar,
   onClick,
   index,
 }: {
@@ -61,6 +64,8 @@ const WorkspaceCard = memo(function WorkspaceCard({
   baseBranch: string | undefined;
   lastMsg: { role: string; content: string } | undefined;
   remoteName: string | undefined;
+  badge: "ask" | "plan" | "done" | null;
+  spinnerChar: string;
   onClick: (id: string | null) => void;
   index: number;
 }) {
@@ -113,10 +118,28 @@ const WorkspaceCard = memo(function WorkspaceCard({
           <span className={styles.statusLabel} style={{ color: statusColor }}>
             {statusText}
           </span>
-          <span
-            className={`${styles.statusDot} ${isRunning ? styles.statusDotRunning : ""}`}
-            style={{ background: statusColor }}
-          />
+          {badge === "done" ? (
+            <span className={styles.badgeDone} title="Completed" aria-label="Completed" role="img">
+              <BadgeCheck size={12} />
+            </span>
+          ) : badge === "plan" ? (
+            <span className={styles.badgePlan} title="Plan approval needed" aria-label="Plan approval needed" role="img">
+              <BadgeInfo size={12} />
+            </span>
+          ) : badge === "ask" ? (
+            <span className={styles.badgeAsk} title="Question requires attention" aria-label="Question requires attention" role="img">
+              <BadgeQuestionMark size={12} />
+            </span>
+          ) : isRunning ? (
+            <span className={styles.statusSpinner} aria-hidden="true">
+              {spinnerChar}
+            </span>
+          ) : (
+            <span
+              className={styles.statusDot}
+              style={{ background: statusColor }}
+            />
+          )}
         </span>
       </div>
       <div className={styles.branchLine}>
@@ -158,6 +181,9 @@ export function Dashboard() {
   const defaultBranches = useAppStore((s) => s.defaultBranches);
   const remoteConnections = useAppStore((s) => s.remoteConnections);
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
+  const agentQuestions = useAppStore((s) => s.agentQuestions);
+  const planApprovals = useAppStore((s) => s.planApprovals);
+  const unreadCompletions = useAppStore((s) => s.unreadCompletions);
 
   const repoMap = useMemo(
     () => new Map(repositories.map((r) => [r.id, r])),
@@ -170,6 +196,12 @@ export function Dashboard() {
   );
 
   const activeWorkspaces = workspaces.filter((ws) => ws.status === "Active");
+
+  const anyRunning = useMemo(
+    () => activeWorkspaces.some((ws) => ws.agent_status === "Running"),
+    [activeWorkspaces],
+  );
+  const spinnerChar = useSpinnerFrame(anyRunning);
 
   if (activeWorkspaces.length === 0) {
     return (
@@ -210,6 +242,11 @@ export function Dashboard() {
       <div className={styles.grid}>
         {activeWorkspaces.map((ws, i) => {
           const repo = repoMap.get(ws.repository_id);
+          const badge: "ask" | "plan" | "done" | null =
+            agentQuestions[ws.id] ? "ask" :
+            planApprovals[ws.id] ? "plan" :
+            unreadCompletions.has(ws.id) && ws.agent_status !== "Running" ? "done" :
+            null;
           return (
             <WorkspaceCard
               key={ws.id}
@@ -218,6 +255,8 @@ export function Dashboard() {
               baseBranch={repo ? defaultBranches[repo.id] : undefined}
               lastMsg={lastMessages[ws.id]}
               remoteName={ws.remote_connection_id ? remoteNameMap.get(ws.remote_connection_id) : undefined}
+              badge={badge}
+              spinnerChar={spinnerChar}
               onClick={selectWorkspace}
               index={i}
             />

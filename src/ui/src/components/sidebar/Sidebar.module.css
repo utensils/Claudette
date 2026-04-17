@@ -370,15 +370,6 @@
   font-weight: 700;
 }
 
-@keyframes pulse-badge {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
 .wsBranch {
   font-size: 11px;
   color: var(--text-dim);

@@ -132,8 +132,37 @@
   flex-shrink: 0;
 }
 
-.statusDotRunning {
-  animation: pulse-dot 2s ease-in-out infinite;
+.statusSpinner {
+  font-size: 12px;
+  width: 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  color: var(--accent-primary);
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 3px rgba(var(--accent-primary-rgb), 0.4));
+  line-height: 1;
+}
+
+.badgeDone,
+.badgePlan,
+.badgeAsk {
+  width: 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  justify-content: center;
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+.badgeDone {
+  color: var(--badge-done);
+}
+
+.badgePlan {
+  color: var(--badge-plan);
+}
+
+.badgeAsk {
+  color: var(--badge-ask);
 }
 
 .statusLabel {
