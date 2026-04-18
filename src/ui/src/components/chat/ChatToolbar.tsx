@@ -6,6 +6,7 @@ import { ModelSelector, MODELS } from "./ModelSelector";
 import { EffortSelector, EFFORT_LEVELS } from "./EffortSelector";
 import { isFastSupported, isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed } from "./modelCapabilities";
 import { applySelectedModel } from "./applySelectedModel";
+import { applyPlanModeMountDefault } from "./applyPlanModeMountDefault";
 import styles from "./ChatToolbar.module.css";
 
 interface ChatToolbarProps {
@@ -66,13 +67,7 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
       const effectiveThinking = thinking === "true" || (!thinking && defThinking === "true");
       setFastMode(workspaceId, effectiveFast);
       setThinkingEnabled(workspaceId, effectiveThinking);
-      // Plan mode is not persisted per-workspace (in-memory only). Apply the
-      // global default only when the store has no runtime value yet — a
-      // remount mid-flow (e.g. workspace swap-and-return, remote reconnect)
-      // must not clobber an agent-driven clear of planMode.
-      if (useAppStore.getState().planMode[workspaceId] === undefined) {
-        setPlanMode(workspaceId, defPlan === "true");
-      }
+      applyPlanModeMountDefault(workspaceId, defPlan === "true");
       // Normalize effort against the loaded model to prevent stale values.
       const effectiveEffort = effort ?? defEffort;
       if (effectiveEffort) {
@@ -91,7 +86,7 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
     }
     load();
     return () => { cancelled = true; };
-  }, [workspaceId, setSelectedModel, setFastMode, setThinkingEnabled, setPlanMode, setEffortLevel, setShowThinkingBlocks, setChromeEnabled]);
+  }, [workspaceId, setSelectedModel, setFastMode, setThinkingEnabled, setEffortLevel, setShowThinkingBlocks, setChromeEnabled]);
 
   const handleModelSelect = useCallback(
     async (model: string) => {
