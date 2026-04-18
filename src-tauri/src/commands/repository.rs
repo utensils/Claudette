@@ -159,7 +159,10 @@ pub async fn remove_repository(
     }
 
     // Cascade delete handles workspaces, chat messages, terminal tabs.
-    db.delete_repository(&id).map_err(|e| e.to_string())?;
+    // We materialize per-workspace metric summaries first so lifetime
+    // stats survive the cascade.
+    db.delete_repository_with_summaries(&id)
+        .map_err(|e| e.to_string())?;
 
     crate::tray::rebuild_tray(&app);
 

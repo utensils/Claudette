@@ -47,8 +47,15 @@ fn main() {
         .join("claudette");
     let db_path = data_dir.join("claudette.db");
 
-    // Ensure DB exists and migrations are applied.
-    let _ = Database::open(&db_path);
+    // Ensure DB exists and migrations are applied. Stamp the install date on
+    // first-ever startup so lifetime stats ("days using Claudette") have an
+    // anchor. Errors here are non-fatal — downstream code re-opens the DB.
+    if let Ok(db) = Database::open(&db_path)
+        && db.get_app_setting("install_date").ok().flatten().is_none()
+    {
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = db.set_app_setting("install_date", &now);
+    }
 
     // Load worktree base dir from settings, or use default.
     let worktree_base_dir = {

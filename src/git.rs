@@ -375,6 +375,76 @@ pub async fn current_branch(repo_path: &str) -> Result<String, GitError> {
     Ok(branch)
 }
 
+/// A commit observed in a worktree, with line-change stats.
+///
+/// Parsed from `git log --pretty=format:"%H|%aI" --numstat`.
+#[derive(Debug, Clone)]
+pub struct CommitInfo {
+    pub hash: String,
+    pub committed_at: String,
+    pub additions: i64,
+    pub deletions: i64,
+    pub files_changed: i64,
+}
+
+/// List commits in a worktree authored since `since_iso` (ISO-8601 UTC),
+/// with per-commit aggregated additions/deletions/files_changed from numstat.
+///
+/// Used for post-turn metric scraping in the agent lifecycle. Binary files
+/// (numstat emits "-\t-\t") contribute 0 additions/deletions but still count
+/// toward `files_changed`.
+pub async fn commits_since(
+    worktree_path: &str,
+    since_iso: &str,
+) -> Result<Vec<CommitInfo>, GitError> {
+    let raw = run_git(
+        worktree_path,
+        &[
+            "log",
+            &format!("--since={since_iso}"),
+            "--pretty=format:COMMIT|%H|%aI",
+            "--numstat",
+        ],
+    )
+    .await?;
+
+    let mut commits: Vec<CommitInfo> = Vec::new();
+    let mut current: Option<CommitInfo> = None;
+
+    for line in raw.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("COMMIT|") {
+            if let Some(c) = current.take() {
+                commits.push(c);
+            }
+            let mut parts = rest.splitn(2, '|');
+            let hash = parts.next().unwrap_or_default().to_string();
+            let committed_at = parts.next().unwrap_or_default().to_string();
+            current = Some(CommitInfo {
+                hash,
+                committed_at,
+                additions: 0,
+                deletions: 0,
+                files_changed: 0,
+            });
+        } else if let Some(c) = current.as_mut() {
+            // numstat line: "<added>\t<deleted>\t<path>", binary files use "-".
+            let mut cols = line.split('\t');
+            let adds = cols.next().unwrap_or("0");
+            let dels = cols.next().unwrap_or("0");
+            c.additions += adds.parse::<i64>().unwrap_or(0);
+            c.deletions += dels.parse::<i64>().unwrap_or(0);
+            c.files_changed += 1;
+        }
+    }
+    if let Some(c) = current {
+        commits.push(c);
+    }
+    Ok(commits)
+}
+
 /// Information about a single git worktree, parsed from `git worktree list --porcelain`.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorktreeInfo {
@@ -883,5 +953,51 @@ mod tests {
         // not error.
         let result = list_worktrees(bare_path).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_commits_since_captures_new_commits_with_numstat() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Note the time BEFORE making new commits.
+        let since = run_git(path, &["log", "-1", "--pretty=format:%aI"])
+            .await
+            .unwrap();
+
+        // Two new commits: one adds lines, one deletes.
+        let f1 = dir.path().join("a.txt");
+        std::fs::write(&f1, "one\ntwo\nthree\n").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "add a.txt"]).await.unwrap();
+
+        std::fs::write(&f1, "one\n").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "shrink a.txt"])
+            .await
+            .unwrap();
+
+        let commits = commits_since(path, &since).await.unwrap();
+        // --since is inclusive by timestamp, so the initial commit might or
+        // might not appear depending on second resolution. Assert we got at
+        // least the two new ones with numstat populated.
+        assert!(commits.len() >= 2);
+        let total_adds: i64 = commits.iter().map(|c| c.additions).sum();
+        let total_dels: i64 = commits.iter().map(|c| c.deletions).sum();
+        assert!(total_adds >= 3, "expected >=3 additions, got {total_adds}");
+        assert!(total_dels >= 2, "expected >=2 deletions, got {total_dels}");
+        for c in &commits {
+            assert!(!c.hash.is_empty());
+            assert!(!c.committed_at.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_commits_since_empty_when_nothing_new() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        // Use a future timestamp so no commits qualify.
+        let commits = commits_since(path, "2099-01-01T00:00:00Z").await.unwrap();
+        assert!(commits.is_empty());
     }
 }

@@ -599,6 +599,19 @@ pub async fn send_chat_message(
         let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
         session.active_pid = Some(spawned_pid);
         let _ = db.save_agent_session(&workspace_id, &session.session_id, session.turn_count);
+        // Metrics: register session on first turn (idempotent via INSERT OR
+        // IGNORE), then bump turn_count + last_message_at. Runs for every
+        // turn so resumed-from-DB sessions get their row lazily created too.
+        let _ = db.insert_agent_session(&session.session_id, &workspace_id, &ws.repository_id);
+        let _ = db.update_agent_session_turn(&session.session_id, session.turn_count);
+        if db
+            .get_app_setting("first_session_at")
+            .ok()
+            .flatten()
+            .is_none()
+        {
+            let _ = db.set_app_setting("first_session_at", &now_iso());
+        }
     }
     drop(agents);
 
@@ -861,12 +874,19 @@ pub async fn send_chat_message(
             if let AgentEvent::ProcessExited(_code) = &event {
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
+                // Snapshot session_id before any mutation so metrics hooks
+                // below can reference the session we just finished.
+                let ended_session_id: Option<String> =
+                    agents.get(&ws_id).map(|s| s.session_id.clone());
                 if !got_init {
                     // Failed to initialize — clear the entire session so the
                     // next attempt starts fresh instead of trying --resume.
                     agents.remove(&ws_id);
                     if let Ok(db) = Database::open(&db_path) {
                         let _ = db.clear_agent_session(&ws_id);
+                        if let Some(ref sid) = ended_session_id {
+                            let _ = db.end_agent_session(sid, false);
+                        }
                     }
                 } else if let Some(session) = agents.get_mut(&ws_id)
                     && session.active_pid == Some(spawned_pid)
@@ -877,6 +897,47 @@ pub async fn send_chat_message(
                     // Process died — clear persistent session so the next turn
                     // spawns a fresh one.
                     session.persistent_session = None;
+                }
+                // Metrics: scrape git for any new commits since this session
+                // started and append them (idempotent on commit_hash). Runs
+                // after the stream has fully exited so it never blocks user
+                // output. Note: ProcessExited is NOT session end — the user
+                // may resume on the next turn and produce more commits; the
+                // session row is only closed via rollback/clear/archive or
+                // when init fails (handled above via end_agent_session).
+                if got_init
+                    && let Some(sid) = ended_session_id.as_deref()
+                    && let Ok(db) = Database::open(&db_path)
+                {
+                    let started_at: Option<String> =
+                        db.get_agent_session_started_at(sid).ok().flatten();
+                    if let Some(since) = started_at {
+                        match claudette::git::commits_since(&wt_path, &since).await {
+                            Ok(new_commits) if !new_commits.is_empty() => {
+                                let models: Vec<claudette::model::AgentCommit> = new_commits
+                                    .into_iter()
+                                    .map(|c| claudette::model::AgentCommit {
+                                        commit_hash: c.hash,
+                                        workspace_id: Some(ws_id.clone()),
+                                        repository_id: repo_id_for_mcp.clone(),
+                                        session_id: Some(sid.to_string()),
+                                        additions: c.additions,
+                                        deletions: c.deletions,
+                                        files_changed: c.files_changed,
+                                        committed_at: c.committed_at,
+                                    })
+                                    .collect();
+                                let _ = db.insert_agent_commits_batch(
+                                    &ws_id,
+                                    &repo_id_for_mcp,
+                                    Some(sid),
+                                    &models,
+                                );
+                            }
+                            Ok(_) => {}
+                            Err(e) => eprintln!("[metrics] commits_since failed: {e}"),
+                        }
+                    }
                 }
                 // Play notification sound + run command if the window is not focused.
                 // This runs on the Rust side so it works even when the webview
@@ -1108,20 +1169,22 @@ pub async fn stop_agent(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // Drain pending permissions and snapshot the cleanup state synchronously
-    // under the lock; deny sends + the kill happen after we release it.
-    let (to_deny_stop, pid_to_kill) = {
+    // under the lock; deny sends, the kill, and the DB session-end happen
+    // after we release it.
+    let (to_deny_stop, pid_to_kill, ended_sid) = {
         let mut agents = state.agents.write().await;
         match agents.get_mut(&workspace_id) {
             Some(session) => {
                 let drained = drain_pending_permissions(session);
+                let ended_sid = Some(session.session_id.clone());
                 // Clear persistent session and reset session state so the next
                 // turn starts completely fresh (not --resume with a stale ID).
                 session.persistent_session = None;
                 session.turn_count = 0;
                 session.session_id = String::new();
-                (drained, session.active_pid.take())
+                (drained, session.active_pid.take(), ended_sid)
             }
-            None => (None, None),
+            None => (None, None, None),
         }
     };
 
@@ -1135,6 +1198,9 @@ pub async fn stop_agent(
     // Clear persisted session from DB too.
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     let _ = db.clear_agent_session(&workspace_id);
+    if let Some(sid) = ended_sid.as_deref().filter(|s| !s.is_empty()) {
+        let _ = db.end_agent_session(sid, true);
+    }
 
     crate::tray::rebuild_tray(&app);
 
@@ -1164,14 +1230,15 @@ pub async fn reset_agent_session(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Drain pending permissions under the lock; deny sends happen after release.
-    let to_deny_reset = {
+    // Drain pending permissions under the lock, then remove the session and
+    // capture its id; deny sends + the DB session-end happen after release.
+    let (to_deny_reset, ended_sid) = {
         let mut agents = state.agents.write().await;
         let drained = agents
             .get_mut(&workspace_id)
             .and_then(drain_pending_permissions);
-        agents.remove(&workspace_id);
-        drained
+        let ended_sid = agents.remove(&workspace_id).map(|s| s.session_id);
+        (drained, ended_sid)
     };
 
     if let Some((ref ps, drained)) = to_deny_reset {
@@ -1182,6 +1249,9 @@ pub async fn reset_agent_session(
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     db.clear_agent_session(&workspace_id)
         .map_err(|e| e.to_string())?;
+    if let Some(sid) = ended_sid.as_deref().filter(|s| !s.is_empty()) {
+        let _ = db.end_agent_session(sid, true);
+    }
 
     crate::tray::rebuild_tray(&app);
     Ok(())
@@ -1260,9 +1330,12 @@ pub async fn rollback_to_checkpoint(
         .map_err(|e| e.to_string())?;
 
     // Reset agent session so the next turn starts fresh.
-    {
+    let ended_sid = {
         let mut agents = state.agents.write().await;
-        agents.remove(&workspace_id);
+        agents.remove(&workspace_id).map(|s| s.session_id)
+    };
+    if let Some(sid) = ended_sid.as_deref() {
+        let _ = db.end_agent_session(sid, true);
     }
     db.clear_agent_session(&workspace_id)
         .map_err(|e| e.to_string())?;
@@ -1327,9 +1400,12 @@ pub async fn clear_conversation(
         .map_err(|e| e.to_string())?;
 
     // Reset agent session.
-    {
+    let ended_sid = {
         let mut agents = state.agents.write().await;
-        agents.remove(&workspace_id);
+        agents.remove(&workspace_id).map(|s| s.session_id)
+    };
+    if let Some(sid) = ended_sid.as_deref() {
+        let _ = db.end_agent_session(sid, true);
     }
     db.clear_agent_session(&workspace_id)
         .map_err(|e| e.to_string())?;
