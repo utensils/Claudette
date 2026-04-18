@@ -47,6 +47,11 @@
   --diff-hunk-header: rgb(100, 160, 240);
   --diff-line-number: rgb(85, 85, 100);
 
+  /* Metrics — paired with --accent-primary for additions/deletions, success/fail
+     dots, and any chart series needing a negative counterpoint. */
+  --metric-negative: rgb(200, 72, 72);
+  --metric-negative-soft: rgb(200, 110, 110);
+
   /* Chat */
   --chat-user-bg: rgba(255, 255, 255, 0.05);
   --chat-system-bg: rgba(255, 255, 255, 0.03);

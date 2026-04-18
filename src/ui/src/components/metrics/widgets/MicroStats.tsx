@@ -42,7 +42,7 @@ export function MicroStats({ workspaceId }: MicroStatsProps) {
   return (
     <div className={styles.microChip}>
       {parts.map((p, i) => (
-        <span key={i} style={{ display: "inline-flex", gap: 6 }}>
+        <span key={i} className={styles.microPart}>
           {p}
           {i < parts.length - 1 ? (
             <span className={styles.microSep}>·</span>

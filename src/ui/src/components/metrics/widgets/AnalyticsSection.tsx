@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import styles from "../metrics.module.css";
 import { RepoLeaderboard } from "./RepoLeaderboard";
 import { SessionHeatmap } from "./SessionHeatmap";
@@ -11,11 +12,15 @@ export function AnalyticsSection() {
 
   return (
     <div className={styles.analyticsSection}>
-      <div className={styles.analyticsHeader} onClick={() => setOpen(!open)}>
-        <span className={styles.analyticsTitle}>
-          {open ? "▾" : "▸"} Analytics
-        </span>
-      </div>
+      <button
+        type="button"
+        className={styles.analyticsHeader}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span className={styles.analyticsTitle}>Analytics</span>
+      </button>
       {open ? (
         <>
           <div className={styles.analyticsGrid}>

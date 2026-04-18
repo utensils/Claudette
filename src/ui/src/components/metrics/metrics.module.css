@@ -88,9 +88,18 @@
 .analyticsHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
   user-select: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-faint);
+  font-family: inherit;
+}
+
+.analyticsHeader:hover {
+  color: var(--text-muted);
 }
 
 .analyticsTitle {
@@ -178,6 +187,12 @@
   overflow: visible;
 }
 
+.svgFixed {
+  display: block;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
 .axis {
   stroke: var(--divider);
   stroke-dasharray: 2 3;
@@ -201,7 +216,7 @@
 }
 
 .barMuted {
-  fill: rgb(200, 72, 72);
+  fill: var(--metric-negative);
 }
 
 .barTrack {
@@ -237,7 +252,7 @@
 }
 
 .dotFail {
-  fill: rgb(200, 72, 72);
+  fill: var(--metric-negative);
 }
 
 .dotPending {
@@ -263,11 +278,69 @@
 }
 
 .microDel {
-  color: rgb(200, 110, 110);
+  color: var(--metric-negative-soft);
 }
 
 .microSep {
   color: var(--text-dim);
+}
+
+.microPart {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* Vertical row stack used in the analytics panels (leaderboard, slash). */
+.rowList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Inline icon prefix for repo names. */
+.repoIcon {
+  margin-right: 6px;
+}
+
+/* Inline progress bars (slash command share, histogram bars) ------------- */
+
+.progressTrack {
+  position: relative;
+  background: var(--divider);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressTrackThin {
+  height: 8px;
+}
+
+.progressTrackThick {
+  height: 10px;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: 2px;
+  opacity: 0.85;
+  transition: width 400ms ease-out;
+  /* Width is supplied as an inline `--p` custom property by the caller. */
+  width: var(--p, 0%);
+}
+
+.progressFillFaint {
+  opacity: 0.15;
+}
+
+/* Tile value color variants ---------------------------------------------- */
+
+.tileValuePositive {
+  color: var(--accent-primary);
+}
+
+.tileValueNegative {
+  color: var(--metric-negative-soft);
 }
 
 /* Row components --------------------------------------------------------- */

@@ -19,7 +19,7 @@ export function Ring({ value, label, size = 56, stroke = 5 }: RingProps) {
 
   return (
     <svg
-      className={styles.svg}
+      className={styles.svgFixed}
       viewBox={`0 0 ${size} ${size}`}
       width={size}
       height={size}

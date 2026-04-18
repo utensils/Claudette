@@ -17,20 +17,14 @@ export function ChurnBar() {
     <div className={styles.tile}>
       <span className={styles.tileLabel}>Churn · 7d</span>
       <div className={styles.tileRow}>
-        <span
-          className={styles.tileValue}
-          style={{ color: "var(--accent-primary)" }}
-        >
+        <span className={`${styles.tileValue} ${styles.tileValuePositive}`}>
           +{format(adds)}
         </span>
-        <span
-          className={styles.tileValue}
-          style={{ color: "rgb(200, 110, 110)" }}
-        >
+        <span className={`${styles.tileValue} ${styles.tileValueNegative}`}>
           −{format(dels)}
         </span>
       </div>
-      <div style={{ marginTop: 6 }}>
+      <div className={styles.tileChart}>
         <HBar additions={adds} deletions={dels} />
       </div>
     </div>

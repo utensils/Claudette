@@ -3460,4 +3460,65 @@ mod tests {
             0
         );
     }
+
+    #[test]
+    fn test_delete_repository_materializes_summary_for_each_workspace() {
+        let db = setup_db_with_workspace();
+        db.insert_workspace(&make_workspace("w2", "r1", "feature"))
+            .unwrap();
+
+        // Seed both workspaces with a session + a commit so the per-workspace
+        // aggregates are non-trivially distinct.
+        for (sid, wid, turns, adds) in [("s1", "w1", 4, 12), ("s2", "w2", 9, 30)] {
+            db.insert_agent_session(sid, wid, "r1").unwrap();
+            db.update_agent_session_turn(sid, turns).unwrap();
+            db.end_agent_session(sid, true).unwrap();
+            let commit = crate::model::AgentCommit {
+                commit_hash: format!("hash-{wid}"),
+                workspace_id: Some(wid.into()),
+                repository_id: "r1".into(),
+                session_id: Some(sid.into()),
+                additions: adds,
+                deletions: 1,
+                files_changed: 1,
+                committed_at: "2026-04-17T12:00:00Z".into(),
+            };
+            db.insert_agent_commits_batch(wid, "r1", Some(sid), &[commit])
+                .unwrap();
+        }
+
+        db.delete_repository_with_summaries("r1").unwrap();
+
+        // Repository + both workspaces gone, raw metric rows cascaded away.
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM repositories"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM workspaces"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_sessions"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_commits"), 0);
+        // One frozen summary per pre-existing workspace.
+        assert_eq!(
+            count_rows(&db, "SELECT COUNT(*) FROM deleted_workspace_summaries"),
+            2
+        );
+        // Per-workspace aggregates are preserved distinctly (not co-mingled).
+        let (turns_w1, adds_w1): (i64, i64) = db
+            .conn
+            .query_row(
+                "SELECT total_turns, total_additions FROM deleted_workspace_summaries
+                 WHERE workspace_id = 'w1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let (turns_w2, adds_w2): (i64, i64) = db
+            .conn
+            .query_row(
+                "SELECT total_turns, total_additions FROM deleted_workspace_summaries
+                 WHERE workspace_id = 'w2'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((turns_w1, adds_w1), (4, 12));
+        assert_eq!((turns_w2, adds_w2), (9, 30));
+    }
 }

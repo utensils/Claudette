@@ -1006,4 +1006,37 @@ mod tests {
         let commits = commits_since(path, "2099-01-01T00:00:00Z").await.unwrap();
         assert!(commits.is_empty());
     }
+
+    #[tokio::test]
+    async fn test_commits_since_handles_binary_files() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        let since = run_git(path, &["log", "-1", "--pretty=format:%aI"])
+            .await
+            .unwrap();
+
+        // Commit a binary file (contains null bytes) — git --numstat emits
+        // "-\t-\t<path>" for these, which must parse as 0 adds / 0 dels but
+        // still bump files_changed.
+        let bin = dir.path().join("data.bin");
+        std::fs::write(&bin, [0u8, 1, 2, 3, 0, 5, 6, 0, 255]).unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "add binary"])
+            .await
+            .unwrap();
+        let bin_hash = run_git(path, &["rev-parse", "HEAD"]).await.unwrap();
+
+        let commits = commits_since(path, &since).await.unwrap();
+        let bin_commit = commits
+            .iter()
+            .find(|c| c.hash == bin_hash)
+            .expect("binary commit should appear in results");
+        assert_eq!(bin_commit.additions, 0, "binary file adds must be 0");
+        assert_eq!(bin_commit.deletions, 0, "binary file dels must be 0");
+        assert_eq!(
+            bin_commit.files_changed, 1,
+            "binary file must still count toward files_changed"
+        );
+    }
 }

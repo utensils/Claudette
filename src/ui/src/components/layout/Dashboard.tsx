@@ -1,5 +1,5 @@
 import { memo, useMemo, useEffect, useState } from "react";
-import { GitBranch, Layers, Globe, BadgeCheck, BadgeInfo, BadgeQuestionMark } from "lucide-react";
+import { GitBranch, Layers, Globe, BadgeCheck, BadgeInfo, BadgeQuestionMark, ChevronDown, ChevronRight } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { useSpinnerFrame } from "../../hooks/useSpinnerFrame";
 import { RepoIcon } from "../shared/RepoIcon";
@@ -198,6 +198,8 @@ export function Dashboard() {
     (s) => s.fetchWorkspaceMetricsBatch
   );
 
+  const [workspacesOpen, setWorkspacesOpen] = useState(true);
+
   const repoMap = useMemo(
     () => new Map(repositories.map((r) => [r.id, r])),
     [repositories]
@@ -295,38 +297,48 @@ export function Dashboard() {
   return (
     <div className={styles.dashboard}>
       <div className={styles.toolbar} data-tauri-drag-region>
-        <div className={styles.header}>
+        <button
+          type="button"
+          className={styles.headerToggle}
+          onClick={() => setWorkspacesOpen((v) => !v)}
+          aria-expanded={workspacesOpen}
+        >
+          <span className={styles.headerChevron}>
+            {workspacesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
           Active Workspaces
           {runningCount > 0 && (
             <span className={styles.headerCount}>
               {runningCount} running
             </span>
           )}
-        </div>
+        </button>
         <PanelToggles />
       </div>
       <div className={styles.scrollBody}>
-      <StatsStrip />
-      <div className={styles.grid}>
-        {sortedWorkspaces.map(({ ws, badge }, i) => {
-          const repo = repoMap.get(ws.repository_id);
-          return (
-            <WorkspaceCard
-              key={ws.id}
-              ws={ws}
-              repo={repo}
-              baseBranch={repo ? defaultBranches[repo.id] : undefined}
-              lastMsg={lastMessages[ws.id]}
-              remoteName={ws.remote_connection_id ? remoteNameMap.get(ws.remote_connection_id) : undefined}
-              badge={badge}
-              spinnerChar={ws.agent_status === "Running" ? spinnerChar : ""}
-              onClick={selectWorkspace}
-              index={i}
-            />
-          );
-        })}
-      </div>
-      <AnalyticsSection />
+        <StatsStrip />
+        {workspacesOpen && (
+          <div className={styles.grid}>
+            {sortedWorkspaces.map(({ ws, badge }, i) => {
+              const repo = repoMap.get(ws.repository_id);
+              return (
+                <WorkspaceCard
+                  key={ws.id}
+                  ws={ws}
+                  repo={repo}
+                  baseBranch={repo ? defaultBranches[repo.id] : undefined}
+                  lastMsg={lastMessages[ws.id]}
+                  remoteName={ws.remote_connection_id ? remoteNameMap.get(ws.remote_connection_id) : undefined}
+                  badge={badge}
+                  spinnerChar={ws.agent_status === "Running" ? spinnerChar : ""}
+                  onClick={selectWorkspace}
+                  index={i}
+                />
+              );
+            })}
+          </div>
+        )}
+        <AnalyticsSection />
       </div>
     </div>
   );

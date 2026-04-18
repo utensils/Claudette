@@ -24,7 +24,7 @@ pub struct DashboardMetrics {
     pub cost_daily_30d: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceMetrics {
     pub commits_count: u32,
@@ -204,49 +204,74 @@ fn workspace_metrics_batch_with(
     conn: &Connection,
     ids: &[String],
 ) -> Result<HashMap<String, WorkspaceMetrics>, rusqlite::Error> {
-    let mut result: HashMap<String, WorkspaceMetrics> = HashMap::with_capacity(ids.len());
+    // Pre-seed with zero rows so missing workspaces still appear in the result —
+    // matches the pre-batch contract where any requested id always returns a
+    // WorkspaceMetrics, even when no commits/sessions exist.
+    let mut result: HashMap<String, WorkspaceMetrics> = ids
+        .iter()
+        .map(|id| (id.clone(), WorkspaceMetrics::default()))
+        .collect();
     if ids.is_empty() {
         return Ok(result);
     }
 
-    let mut commit_stmt = conn.prepare(
-        "SELECT COUNT(*), COALESCE(SUM(additions), 0), COALESCE(SUM(deletions), 0)
-         FROM agent_commits WHERE workspace_id = ?1",
-    )?;
-    let mut turn_stmt = conn.prepare(
-        "SELECT turn_count FROM agent_sessions
-         WHERE workspace_id = ?1
-         ORDER BY started_at DESC LIMIT 1",
-    )?;
+    // Build a single `?,?,?` placeholder string so the IN-clause batches every
+    // workspace into one query instead of one-per-id.
+    let placeholders = std::iter::repeat_n("?", ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let id_params: Vec<&dyn rusqlite::ToSql> =
+        ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
 
-    for id in ids {
-        let (commits_count, additions, deletions): (u32, u64, u64) =
-            commit_stmt.query_row([id], |row| {
-                Ok((
-                    row.get::<_, i64>(0)? as u32,
-                    row.get::<_, i64>(1)? as u64,
-                    row.get::<_, i64>(2)? as u64,
-                ))
-            })?;
-        let latest_session_turns: u32 = turn_stmt
-            .query_row([id], |row| row.get::<_, i64>(0).map(|n| n as u32))
-            .or_else(|e| {
-                if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
-                    Ok(0)
-                } else {
-                    Err(e)
-                }
-            })?;
-        result.insert(
-            id.clone(),
-            WorkspaceMetrics {
-                commits_count,
-                additions,
-                deletions,
-                latest_session_turns,
-            },
-        );
+    let commit_sql = format!(
+        "SELECT workspace_id,
+                COUNT(*),
+                COALESCE(SUM(additions), 0),
+                COALESCE(SUM(deletions), 0)
+         FROM agent_commits
+         WHERE workspace_id IN ({placeholders})
+         GROUP BY workspace_id"
+    );
+    let mut commit_stmt = conn.prepare(&commit_sql)?;
+    let commit_rows = commit_stmt.query_map(id_params.as_slice(), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)? as u32,
+            row.get::<_, i64>(2)? as u64,
+            row.get::<_, i64>(3)? as u64,
+        ))
+    })?;
+    for row in commit_rows {
+        let (id, commits_count, additions, deletions) = row?;
+        if let Some(slot) = result.get_mut(&id) {
+            slot.commits_count = commits_count;
+            slot.additions = additions;
+            slot.deletions = deletions;
+        }
     }
+
+    // Latest session per workspace via correlated MAX(started_at) — one
+    // pass over agent_sessions instead of one query per id.
+    let turn_sql = format!(
+        "SELECT s.workspace_id, s.turn_count
+         FROM agent_sessions s
+         WHERE s.workspace_id IN ({placeholders})
+           AND s.started_at = (
+               SELECT MAX(s2.started_at) FROM agent_sessions s2
+               WHERE s2.workspace_id = s.workspace_id
+           )"
+    );
+    let mut turn_stmt = conn.prepare(&turn_sql)?;
+    let turn_rows = turn_stmt.query_map(id_params.as_slice(), |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u32))
+    })?;
+    for row in turn_rows {
+        let (id, turns) = row?;
+        if let Some(slot) = result.get_mut(&id) {
+            slot.latest_session_turns = turns;
+        }
+    }
+
     Ok(result)
 }
 
@@ -378,10 +403,14 @@ fn top_slash_commands(conn: &Connection) -> Result<Vec<(String, u32)>, rusqlite:
 }
 
 fn recent_sessions_24h(conn: &Connection) -> Result<Vec<SessionDot>, rusqlite::Error> {
+    // workspace_id is nullable in the schema; cascade-delete usually drops the
+    // session row, but a defensive filter keeps empty IDs out of the timeline
+    // so the click-to-select handler never receives "".
     let mut stmt = conn.prepare(
-        "SELECT ended_at, completed_ok, COALESCE(workspace_id, '')
+        "SELECT ended_at, completed_ok, workspace_id
          FROM agent_sessions
          WHERE ended_at IS NOT NULL
+           AND workspace_id IS NOT NULL
            AND ended_at >= datetime('now','-24 hours')
          ORDER BY ended_at DESC",
     )?;
