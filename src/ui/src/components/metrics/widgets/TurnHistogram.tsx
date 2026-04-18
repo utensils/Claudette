@@ -5,11 +5,10 @@ import { Histogram } from "../primitives/Histogram";
 const LABELS = ["≤2", "≤4", "≤8", "≤16", "≤32", "≤64", "≤128", "129+"];
 
 export function TurnHistogram() {
-  const buckets = useAppStore(
-    (s) => s.analyticsMetrics?.turnHistogram ?? []
-  );
-  const hasData = buckets.some((b) => b > 0);
-  const padded = buckets.length === 8 ? buckets : new Array(8).fill(0);
+  const buckets = useAppStore((s) => s.analyticsMetrics?.turnHistogram);
+  const hasData = buckets?.some((b) => b > 0) ?? false;
+  const padded =
+    buckets && buckets.length === 8 ? buckets : new Array(8).fill(0);
 
   return (
     <div className={styles.panel}>

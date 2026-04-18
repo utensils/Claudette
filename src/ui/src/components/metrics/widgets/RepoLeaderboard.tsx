@@ -7,14 +7,14 @@ function formatUsd(n: number): string {
 }
 
 export function RepoLeaderboard() {
-  const rows = useAppStore((s) => s.analyticsMetrics?.repoLeaderboard ?? []);
+  const rows = useAppStore((s) => s.analyticsMetrics?.repoLeaderboard);
   const repositories = useAppStore((s) => s.repositories);
   const repoMap = new Map(repositories.map((r) => [r.id, r]));
 
   return (
     <div className={styles.panel}>
       <span className={styles.panelTitle}>Repo leaderboard</span>
-      {rows.length === 0 ? (
+      {!rows || rows.length === 0 ? (
         <div className={styles.empty}>no data yet</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

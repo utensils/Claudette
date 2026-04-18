@@ -2,15 +2,13 @@ import styles from "../metrics.module.css";
 import { useAppStore } from "../../../stores/useAppStore";
 
 export function SlashCommandTop() {
-  const commands = useAppStore(
-    (s) => s.analyticsMetrics?.topSlashCommands ?? []
-  );
-  const max = commands.reduce((m, [, n]) => (n > m ? n : m), 0);
+  const commands = useAppStore((s) => s.analyticsMetrics?.topSlashCommands);
+  const max = commands?.reduce((m, [, n]) => (n > m ? n : m), 0) ?? 0;
 
   return (
     <div className={styles.panel}>
       <span className={styles.panelTitle}>Top slash commands</span>
-      {commands.length === 0 ? (
+      {!commands || commands.length === 0 ? (
         <div className={styles.empty}>no data yet</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
