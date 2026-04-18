@@ -11,7 +11,7 @@ Open settings with `⌘/Ctrl + ,` or from the sidebar. Settings are organized in
 |---------|-------------|---------|
 | Worktree base directory | Directory where new workspaces are created | `~/.claudette/workspaces` |
 | System tray | Enable/disable system tray integration | Enabled |
-| Archive on merge | Automatically archive a workspace when its pull request is merged. See [SCM Providers](/Claudette/features/scm-providers/). | Off |
+| Archive on merge | Automatically archive a workspace when its pull request is merged. See [SCM Providers](/claudette/features/scm-providers/). | Off |
 
 ## Models
 
@@ -26,7 +26,7 @@ Default values applied to all new agent sessions. Per-workspace overrides are av
 | Default plan mode | Start new sessions in plan mode | Off |
 | Default fast mode | Start new sessions in fast mode | Off |
 
-See [Agent Configuration](/Claudette/features/agent-configuration/) for detailed descriptions of each option.
+See [Agent Configuration](/claudette/features/agent-configuration/) for detailed descriptions of each option.
 
 ## Appearance
 
@@ -35,7 +35,7 @@ See [Agent Configuration](/Claudette/features/agent-configuration/) for detailed
 | Theme | Color theme (12 built-in + custom) | Default Dark |
 | Terminal font size | Font size for terminal tabs (8–24px) | 11px |
 
-See [Theming](/Claudette/features/theming/) for details on built-in themes and creating custom themes.
+See [Theming](/claudette/features/theming/) for details on built-in themes and creating custom themes.
 
 ## Notifications
 
@@ -84,7 +84,7 @@ When enabled, archiving a workspace deletes the local branch — but only if the
 
 ## Repository
 
-Per-repository settings are documented in [Per-Repo Settings](/Claudette/features/per-repo-settings/).
+Per-repository settings are documented in [Per-Repo Settings](/claudette/features/per-repo-settings/).
 
 ## Environment Variables
 
@@ -99,4 +99,4 @@ Claudette sets the following `CLAUDETTE_*` environment variables in every subpro
 | `CLAUDETTE_DEFAULT_BRANCH` | Default branch name | `main` |
 | `CLAUDETTE_BRANCH_NAME` | Workspace branch name | `sean/fix-auth-bug` |
 
-These are useful in [setup scripts](/Claudette/features/per-repo-settings/#setup-script), [notification commands](#notification-command), and any tools you run in the [integrated terminal](/Claudette/features/integrated-terminal/).
+These are useful in [setup scripts](/claudette/features/per-repo-settings/#setup-script), [notification commands](#notification-command), and any tools you run in the [integrated terminal](/claudette/features/integrated-terminal/).
