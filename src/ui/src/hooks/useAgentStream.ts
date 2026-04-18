@@ -340,14 +340,18 @@ export function useAgentStream() {
       if (!active) return;
       const { workspace_id: wsId, tool_use_id: toolUseId, tool_name: toolName, input } = event.payload;
       if (toolName === ASK_USER_QUESTION_TOOL) {
-        try {
-          const questions = parseAskUserQuestion(input);
-          if (questions.length > 0) {
-            setAgentQuestion({ workspaceId: wsId, toolUseId, questions });
+        // The CLI guarantees `input` is the validated tool-input object —
+        // narrow before handing it to the parser.
+        if (input && typeof input === "object") {
+          try {
+            const questions = parseAskUserQuestion(input as Record<string, unknown>);
+            if (questions.length > 0) {
+              setAgentQuestion({ workspaceId: wsId, toolUseId, questions });
+            }
+          } catch {
+            // Malformed input — ignore (CLI will eventually time out and we
+            // auto-deny on session cleanup).
           }
-        } catch {
-          // Malformed input — ignore (CLI will eventually time out and we
-          // auto-deny on session cleanup).
         }
       } else if (toolName === "ExitPlanMode") {
         let allowedPrompts: Array<{ tool: string; prompt: string }> = [];
