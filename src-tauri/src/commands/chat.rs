@@ -729,7 +729,6 @@ pub async fn send_chat_message(
                 } else {
                     crate::state::AttentionKind::Plan
                 };
-                let is_exit_plan = name == "ExitPlanMode";
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
                 let already_notified = agents.get(&ws_id).is_some_and(|s| s.needs_attention);
@@ -739,7 +738,7 @@ pub async fn send_chat_message(
                     // Observed ExitPlanMode — the plan phase is ending. Mark
                     // so the next turn forces a subprocess teardown even if
                     // the frontend fails to flip `plan_mode=false`.
-                    if is_exit_plan {
+                    if name == "ExitPlanMode" {
                         session.session_exited_plan = true;
                     }
                 }

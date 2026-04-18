@@ -276,6 +276,38 @@ describe("agentQuestion lifecycle (per-workspace)", () => {
   });
 });
 
+describe("planMode mount-default gate", () => {
+  // ChatToolbar applies a persisted default only when the runtime value is
+  // undefined; otherwise it preserves the agent-driven clear. This codifies
+  // the contract a remount (workspace swap, remote reconnect, HMR) must obey.
+  beforeEach(() => {
+    useAppStore.setState({ planMode: {} });
+  });
+
+  function applyMountDefault(wsId: string, defaultPlan: boolean) {
+    if (useAppStore.getState().planMode[wsId] === undefined) {
+      useAppStore.getState().setPlanMode(wsId, defaultPlan);
+    }
+  }
+
+  it("applies default when store has no runtime value", () => {
+    applyMountDefault(WS_ID, true);
+    expect(useAppStore.getState().planMode[WS_ID]).toBe(true);
+  });
+
+  it("preserves existing false runtime value on remount", () => {
+    useAppStore.getState().setPlanMode(WS_ID, false);
+    applyMountDefault(WS_ID, true);
+    expect(useAppStore.getState().planMode[WS_ID]).toBe(false);
+  });
+
+  it("preserves existing true runtime value on remount", () => {
+    useAppStore.getState().setPlanMode(WS_ID, true);
+    applyMountDefault(WS_ID, false);
+    expect(useAppStore.getState().planMode[WS_ID]).toBe(true);
+  });
+});
+
 describe("finalizeTurn afterMessageIndex", () => {
   beforeEach(() => {
     useAppStore.setState({
