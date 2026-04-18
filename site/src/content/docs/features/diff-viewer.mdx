@@ -22,6 +22,17 @@ A screenshot showing the diff viewer with code changes will be added here.
 
 The **right sidebar** (`⌘/Ctrl + D` to toggle) displays a list of all files that have been changed in the current workspace. Click any file to jump to its diff.
 
+## Change Groups
+
+The changed files list organizes files into collapsible sections that mirror `git status`:
+
+- **Committed** — files changed on this branch compared to the base branch
+- **Staged** — files added to the git index (`git add`)
+- **Unstaged** — tracked files with working tree modifications
+- **Untracked** — new files not yet tracked by git
+
+Each section has a colored left border for quick visual scanning. A file can appear in more than one group — for example, a file with both staged and unstaged changes shows up in both sections. Clicking a file opens the diff for that specific layer, not the combined diff.
+
 ## How It Works
 
 Claudette runs `git diff` against the workspace's worktree to detect changes. The diff updates automatically as the agent writes code, so you can watch changes appear in real time during streaming.

@@ -1,0 +1,57 @@
+---
+title: SCM Providers
+description: Pull request status, CI checks, and extensible plugin support for GitHub, GitLab, and more.
+---
+
+Claudette shows pull request state and CI check results for every workspace, right in the sidebar. No sign-in required — it wraps the CLI tools you already have authenticated (`gh`, `glab`).
+
+## What You See
+
+**Sidebar badges** — each workspace displays a git icon indicating its PR state:
+
+- **Open** — arrow icon, colored by CI status (green = passing, yellow = running, red = failing)
+- **Draft** — dashed circle icon
+- **Merged** — merge icon in purple
+- **Closed** — closed-PR icon, muted
+- **No PR** — dashed circle icon, muted
+
+**PR status banner** — a color-coded banner appears above the right sidebar tabs showing the PR number (clickable), a status icon, and a human-readable label like "Ready to merge" or "CI failed."
+
+**SCM tab** — the right sidebar includes a dedicated SCM tab with:
+
+- PR title, author, base branch, and a link to open in your browser
+- A list of CI checks with individual pass/fail/pending status
+- **Create PR** and **Merge PR** buttons for common actions without leaving the app
+
+## How It Works
+
+Claudette auto-detects your SCM provider by matching `git remote get-url origin` against known hostname patterns (e.g., `github.com`, `gitlab.com`). A background polling loop fetches PR and CI data every 30 seconds across all active workspaces — no manual refresh needed.
+
+All data is cached in memory, keyed by repository and branch. Concurrent CLI calls are capped at 4 to avoid overwhelming your machine.
+
+## Requirements
+
+| Provider | CLI tool | Auth |
+|----------|----------|------|
+| GitHub | [`gh`](https://cli.github.com/) | `gh auth login` |
+| GitLab | [`glab`](https://gitlab.com/gitlab-org/cli) | `glab auth login` |
+
+If the CLI isn't installed or authenticated, the SCM tab shows a helpful status message instead of failing silently.
+
+## Auto-Archive on Merge
+
+Enable **Settings > General > Archive on merge** to automatically archive a workspace when its PR is detected as merged. The sidebar cleans itself up without manual intervention.
+
+## Custom Plugins
+
+SCM providers are **Lua plugins** that live in `~/.claudette/plugins/<name>/`. Each plugin has a `plugin.json` manifest declaring which CLI it wraps, which hostnames it handles, and which operations it supports.
+
+GitHub and GitLab ship as bundled plugins — they're seeded to disk on first launch and kept up to date automatically. If you've customized a bundled plugin, your changes are preserved.
+
+The plugin sandbox enforces strict security:
+
+- **CLI allowlist** — plugins can only invoke the executables declared in their manifest
+- **30-second timeout** — per CLI invocation
+- **No filesystem or network access** — all I/O goes through the host API
+
+To write your own plugin for another provider (Gitea, Forgejo, Bitbucket, etc.), see the [SCM Provider Plugins TDD](https://github.com/utensils/Claudette/blob/main/docs/scm-provider-plugins-tdd.md) for the full plugin authoring guide.
