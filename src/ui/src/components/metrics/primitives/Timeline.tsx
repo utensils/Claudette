@@ -3,10 +3,15 @@ import type { SessionDot } from "../../../types/metrics";
 
 interface TimelineProps {
   dots: SessionDot[];
-  onSelect?: (workspaceId: string) => void;
 }
 
-export function Timeline({ dots, onSelect }: TimelineProps) {
+/**
+ * Decorative visualization of session activity over the last 24 hours.
+ * Workspace selection happens via the workspace cards, not the timeline —
+ * keeping this read-only lets `role="img"` stay honest about assistive-tech
+ * semantics (the SVG is a single figure, not a button list).
+ */
+export function Timeline({ dots }: TimelineProps) {
   const now = Date.now();
   const windowMs = 24 * 60 * 60 * 1000;
 
@@ -46,8 +51,6 @@ export function Timeline({ dots, onSelect }: TimelineProps) {
             cx={x}
             cy={height / 2}
             r={r}
-            style={{ cursor: onSelect ? "pointer" : "default" }}
-            onClick={() => onSelect?.(dot.workspaceId)}
           >
             <title>
               {new Date(t).toLocaleTimeString()} ·{" "}

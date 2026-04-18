@@ -102,8 +102,11 @@ fn dashboard_metrics_with(conn: &Connection) -> Result<DashboardMetrics, rusqlit
         |row| row.get::<_, i64>(0).map(|n| n as u32),
     )?;
 
+    // Wrap `committed_at` in `date()` so comparisons interpret the RFC3339
+    // committer timestamp (with tz offset) as a UTC date, matching how the
+    // `GROUP BY date(committed_at)` windows are computed downstream.
     let commits_today: u32 = conn.query_row(
-        "SELECT COUNT(*) FROM agent_commits WHERE committed_at >= date('now')",
+        "SELECT COUNT(*) FROM agent_commits WHERE date(committed_at) = date('now')",
         [],
         |row| row.get::<_, i64>(0).map(|n| n as u32),
     )?;
@@ -111,7 +114,7 @@ fn dashboard_metrics_with(conn: &Connection) -> Result<DashboardMetrics, rusqlit
     let (additions_7d, deletions_7d): (u64, u64) = conn.query_row(
         "SELECT COALESCE(SUM(additions), 0), COALESCE(SUM(deletions), 0)
          FROM agent_commits
-         WHERE committed_at >= date('now','-6 days')",
+         WHERE date(committed_at) >= date('now','-6 days')",
         [],
         |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64)),
     )?;
@@ -161,7 +164,7 @@ fn dashboard_metrics_with(conn: &Connection) -> Result<DashboardMetrics, rusqlit
 fn daily_counts_14d(conn: &Connection) -> Result<Vec<u32>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT date(committed_at) AS d, COUNT(*) FROM agent_commits
-         WHERE committed_at >= date('now','-13 days')
+         WHERE date(committed_at) >= date('now','-13 days')
          GROUP BY d",
     )?;
     let counts: HashMap<String, u32> = stmt

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import styles from "../metrics.module.css";
 import { useAppStore } from "../../../stores/useAppStore";
 
@@ -23,7 +24,7 @@ export function MicroStats({ workspaceId }: MicroStatsProps) {
   ) {
     return null;
   }
-  const parts: React.ReactNode[] = [];
+  const parts: ReactNode[] = [];
   if (additions > 0 || deletions > 0) {
     parts.push(
       <span key="churn">

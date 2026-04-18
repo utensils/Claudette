@@ -386,7 +386,6 @@ interface AppState {
   dashboardMetrics: DashboardMetrics | null;
   analyticsMetrics: AnalyticsMetrics | null;
   workspaceMetrics: Record<string, WorkspaceMetrics>;
-  metricsLoading: boolean;
   metricsError: string | null;
   setDashboardMetrics: (metrics: DashboardMetrics | null) => void;
   setAnalyticsMetrics: (metrics: AnalyticsMetrics | null) => void;
@@ -1246,7 +1245,6 @@ export const useAppStore = create<AppState>((set) => ({
   dashboardMetrics: null,
   analyticsMetrics: null,
   workspaceMetrics: {},
-  metricsLoading: false,
   metricsError: null,
   setDashboardMetrics: (metrics) =>
     set({ dashboardMetrics: metrics, metricsError: null }),
