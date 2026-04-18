@@ -29,6 +29,7 @@ function makeTurnData(
     message_id: messageId,
     turn_index: 0,
     message_count: 1,
+    commit_hash: null,
     activities: Array.from({ length: toolCount }, (_, i) => ({
       id: `act-${checkpointId}-${i}`,
       checkpoint_id: checkpointId,
@@ -109,6 +110,41 @@ describe("reconstructCompletedTurns", () => {
     expect(result[0].afterMessageIndex).toBe(1); // index 0 + 1
   });
 
+  it("sums assistant message duration_ms into durationMs per turn", () => {
+    const m1: ChatMessage = { ...makeMsg("m1", "User"), duration_ms: 99_999 };
+    const m2: ChatMessage = { ...makeMsg("m2", "Assistant"), duration_ms: 1_200 };
+    const m3: ChatMessage = { ...makeMsg("m3", "Assistant"), duration_ms: 800 };
+    const m4: ChatMessage = { ...makeMsg("m4", "User"), duration_ms: 99_999 };
+    const m5: ChatMessage = { ...makeMsg("m5", "Assistant"), duration_ms: 3_000 };
+    const messages = [m1, m2, m3, m4, m5];
+    const turnData = [makeTurnData("cp1", "m3"), makeTurnData("cp2", "m5")];
+
+    const result = reconstructCompletedTurns(messages, turnData);
+
+    expect(result).toHaveLength(2);
+    // Turn 1: spans m1..m3 — only m2+m3 are assistant → 2000ms
+    expect(result[0].durationMs).toBe(2_000);
+    // Turn 2: spans m4..m5 — only m5 is assistant → 3000ms
+    expect(result[1].durationMs).toBe(3_000);
+  });
+
+  it("passes commit_hash through as commitHash", () => {
+    const messages = [makeMsg("m1")];
+    const turnData: CompletedTurnData[] = [
+      {
+        checkpoint_id: "cp1",
+        message_id: "m1",
+        turn_index: 0,
+        message_count: 1,
+        commit_hash: "abc123",
+        activities: [],
+      },
+    ];
+
+    const result = reconstructCompletedTurns(messages, turnData);
+    expect(result[0].commitHash).toBe("abc123");
+  });
+
   it("maps activity fields correctly", () => {
     const messages = [makeMsg("m1")];
     const turnData: CompletedTurnData[] = [
@@ -117,6 +153,7 @@ describe("reconstructCompletedTurns", () => {
         message_id: "m1",
         turn_index: 0,
         message_count: 5,
+        commit_hash: null,
         activities: [
           {
             id: "act-1",

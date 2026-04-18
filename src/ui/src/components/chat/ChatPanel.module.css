@@ -171,29 +171,6 @@
   color: var(--text-muted);
 }
 
-/* Rollback button — always visible on eligible user messages */
-.rollbackBtn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  opacity: 0.4;
-  transition: opacity var(--transition-fast), color var(--transition-fast),
-    background var(--transition-fast);
-  line-height: 1;
-}
-
-.rollbackBtn:hover {
-  opacity: 1;
-  color: var(--accent-primary);
-  background: var(--accent-bg);
-}
-
 /* Assistant messages — clean prose, no chrome */
 .role_Assistant {
   background: transparent;
@@ -689,6 +666,52 @@
 
 .turnSummaryWrapper > .turnSummary {
   margin: 0;
+}
+
+/* Footer below a completed turn: elapsed time + copy + fork actions. */
+.turnFooter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 2px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.turnFooterElapsed {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+.turnFooterDot {
+  color: var(--text-faint);
+  user-select: none;
+}
+
+.turnFooterButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.turnFooterButton:hover {
+  color: var(--text);
+  background: var(--hover-bg-subtle);
+}
+
+.turnFooterButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .taskProgressBar {

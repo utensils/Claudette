@@ -45,6 +45,12 @@ export interface CompletedTurn {
   /** Index into chatMessages at the time of finalization — used to render
    *  the turn summary at the correct chronological position. */
   afterMessageIndex: number;
+  /** Commit hash from the corresponding conversation checkpoint, if any.
+   *  Used to gate the "fork workspace at this turn" action. */
+  commitHash?: string | null;
+  /** Total time this turn took, in milliseconds. Summed from the
+   *  duration_ms of assistant messages produced during the turn. */
+  durationMs?: number;
 }
 
 export interface AgentQuestionItem {
@@ -109,7 +115,12 @@ interface AppState {
     updates: Partial<ToolActivity>,
   ) => void;
   toggleToolActivityCollapsed: (wsId: string, index: number) => void;
-  finalizeTurn: (wsId: string, messageCount: number, turnId?: string) => void;
+  finalizeTurn: (
+    wsId: string,
+    messageCount: number,
+    turnId?: string,
+    durationMs?: number,
+  ) => void;
   hydrateCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
   setCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
   toggleCompletedTurn: (wsId: string, turnIndex: number) => void;
@@ -541,7 +552,7 @@ export const useAppStore = create<AppState>((set) => ({
         ),
       },
     })),
-  finalizeTurn: (wsId, messageCount, turnId) =>
+  finalizeTurn: (wsId, messageCount, turnId, durationMs) =>
     set((s) => {
       const activities = s.toolActivities[wsId] || [];
       if (activities.length === 0) {
@@ -568,6 +579,7 @@ export const useAppStore = create<AppState>((set) => ({
         messageCount,
         collapsed: true,
         afterMessageIndex: (s.chatMessages[wsId] || []).length,
+        durationMs,
       };
       debugChat("store", "finalizeTurn", {
         wsId,

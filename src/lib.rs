@@ -4,6 +4,7 @@ pub mod db;
 pub mod diff;
 pub mod env;
 pub mod file_expand;
+pub mod fork;
 pub mod git;
 pub mod mcp;
 pub mod mcp_supervisor;

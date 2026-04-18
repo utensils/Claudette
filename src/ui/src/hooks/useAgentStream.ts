@@ -333,7 +333,8 @@ export function useAgentStream() {
             finalizeTurn(
               wsId,
               turnMessageCountRef.current[wsId] || 0,
-              turnCheckpointIdRef.current[wsId]
+              turnCheckpointIdRef.current[wsId],
+              streamEvent.duration_ms,
             );
             turnMessageCountRef.current[wsId] = 0;
             turnFinalizedRef.current[wsId] = true;

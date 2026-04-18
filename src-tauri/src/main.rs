@@ -330,6 +330,7 @@ fn main() {
             commands::repository::set_setup_script_auto_run,
             // Workspace
             commands::workspace::create_workspace,
+            commands::workspace::fork_workspace_at_checkpoint,
             commands::workspace::run_workspace_setup,
             commands::workspace::archive_workspace,
             commands::workspace::restore_workspace,

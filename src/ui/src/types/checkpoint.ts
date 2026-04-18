@@ -25,5 +25,6 @@ export interface CompletedTurnData {
   message_id: string;
   turn_index: number;
   message_count: number;
+  commit_hash: string | null;
   activities: TurnToolActivityData[];
 }

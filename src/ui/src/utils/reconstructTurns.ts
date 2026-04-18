@@ -27,24 +27,33 @@ export function reconstructCompletedTurns(
     });
   }
 
-  return turnData
-    .filter((td) => msgIdToIndex.has(td.message_id))
-    .map((td) => {
-      const afterMessageIndex = msgIdToIndex.get(td.message_id)! + 1;
+  const valid = turnData.filter((td) => msgIdToIndex.has(td.message_id));
 
-      return {
-        id: td.checkpoint_id,
-        activities: td.activities.map((a) => ({
-          toolUseId: a.tool_use_id,
-          toolName: a.tool_name,
-          inputJson: a.input_json,
-          resultText: a.result_text,
-          collapsed: true,
-          summary: a.summary,
-        })),
-        messageCount: td.message_count,
+  return valid.map((td, i) => {
+    const afterMessageIndex = msgIdToIndex.get(td.message_id)! + 1;
+    const priorBoundary =
+      i > 0 ? msgIdToIndex.get(valid[i - 1].message_id)! + 1 : 0;
+    const durationMs =
+      messages
+        .slice(priorBoundary, afterMessageIndex)
+        .filter((m) => m.role === "Assistant")
+        .reduce((sum, m) => sum + (m.duration_ms ?? 0), 0) || undefined;
+
+    return {
+      id: td.checkpoint_id,
+      activities: td.activities.map((a) => ({
+        toolUseId: a.tool_use_id,
+        toolName: a.tool_name,
+        inputJson: a.input_json,
+        resultText: a.result_text,
         collapsed: true,
-        afterMessageIndex,
-      };
-    });
+        summary: a.summary,
+      })),
+      messageCount: td.message_count,
+      collapsed: true,
+      afterMessageIndex,
+      commitHash: td.commit_hash,
+      durationMs,
+    };
+  });
 }

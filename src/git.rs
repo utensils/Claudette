@@ -202,6 +202,36 @@ pub async fn create_worktree(
     Ok(abs_path.to_string_lossy().to_string())
 }
 
+/// Create a worktree + new branch rooted at an explicit git ref (commit hash,
+/// tag, or branch name). Unlike [`create_worktree`], this does NOT fetch or
+/// resolve the default branch — the caller supplies the exact base ref.
+///
+/// Used by workspace forking to anchor a new worktree to a checkpoint's commit.
+pub async fn create_worktree_from_ref(
+    repo_path: &str,
+    branch_name: &str,
+    worktree_path: &str,
+    base_ref: &str,
+) -> Result<String, GitError> {
+    run_git(
+        repo_path,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            branch_name,
+            worktree_path,
+            base_ref,
+        ],
+    )
+    .await?;
+
+    let abs_path = std::path::Path::new(worktree_path)
+        .canonicalize()
+        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    Ok(abs_path.to_string_lossy().to_string())
+}
+
 /// Restore a worktree for an existing branch (no -b flag).
 pub async fn restore_worktree(
     repo_path: &str,
@@ -292,6 +322,13 @@ pub async fn get_remote_url(repo_path: &str) -> Result<String, GitError> {
         .unwrap_or_else(|| "origin".to_string());
 
     run_git(repo_path, &["remote", "get-url", &remote]).await
+}
+
+/// Resolve HEAD to a commit hash for a worktree or repository. Works even in
+/// detached HEAD state — unlike [`current_branch`] which only returns branch
+/// names.
+pub async fn head_commit(repo_path: &str) -> Result<String, GitError> {
+    run_git(repo_path, &["rev-parse", "HEAD"]).await
 }
 
 /// Get the current branch name for a worktree or repository.
@@ -719,6 +756,40 @@ mod tests {
         remove_worktree(repo_path, wt2.path().to_str().unwrap(), true)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_create_worktree_from_ref_anchors_to_commit() {
+        let dir = setup_temp_repo().await;
+        let repo_path = dir.path().to_str().unwrap();
+        let file = dir.path().join("data.txt");
+
+        // Commit v1 and capture hash.
+        std::fs::write(&file, "v1").unwrap();
+        run_git(repo_path, &["add", "-A"]).await.unwrap();
+        run_git(repo_path, &["commit", "-m", "v1"]).await.unwrap();
+        let hash1 = run_git(repo_path, &["rev-parse", "HEAD"]).await.unwrap();
+
+        // Commit v2 on main.
+        std::fs::write(&file, "v2").unwrap();
+        run_git(repo_path, &["add", "-A"]).await.unwrap();
+        run_git(repo_path, &["commit", "-m", "v2"]).await.unwrap();
+
+        // Fork from the v1 commit — worktree should see "v1" not "v2".
+        let fork_dir = tempfile::tempdir().unwrap();
+        let fork_path = fork_dir.path().to_str().unwrap();
+        let out = create_worktree_from_ref(repo_path, "forked", fork_path, &hash1)
+            .await
+            .unwrap();
+        assert!(!out.is_empty());
+
+        let forked_file = fork_dir.path().join("data.txt");
+        assert_eq!(std::fs::read_to_string(&forked_file).unwrap(), "v1");
+
+        let forked_head = run_git(fork_path, &["rev-parse", "HEAD"]).await.unwrap();
+        assert_eq!(forked_head, hash1);
+
+        remove_worktree(repo_path, fork_path, true).await.unwrap();
     }
 
     #[tokio::test]

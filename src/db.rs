@@ -1001,6 +1001,73 @@ impl Database {
         Ok(deleted)
     }
 
+    /// Return checkpoints for `workspace_id` whose `turn_index` is at most
+    /// `max_turn_index`, ordered by `turn_index`. Used by the fork
+    /// orchestrator to copy only checkpoints up to (and including) the fork
+    /// point.
+    pub fn list_checkpoints_up_to(
+        &self,
+        workspace_id: &str,
+        max_turn_index: i32,
+    ) -> Result<Vec<ConversationCheckpoint>, rusqlite::Error> {
+        let sql = format!(
+            "SELECT {} FROM conversation_checkpoints \
+             WHERE workspace_id = ?1 AND turn_index <= ?2 ORDER BY turn_index",
+            Self::CHECKPOINT_COLS
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            params![workspace_id, max_turn_index],
+            Self::parse_checkpoint_row,
+        )?;
+        rows.collect()
+    }
+
+    /// Return chat messages for `workspace_id` up to and including the row
+    /// identified by `last_message_id`, ordered by (created_at, rowid). If
+    /// `last_message_id` is not found, returns an empty vec. Used by the fork
+    /// orchestrator to copy conversation history up to the fork point.
+    pub fn list_messages_up_to(
+        &self,
+        workspace_id: &str,
+        last_message_id: &str,
+    ) -> Result<Vec<ChatMessage>, rusqlite::Error> {
+        let boundary: Option<(String, i64)> = self
+            .conn
+            .query_row(
+                "SELECT created_at, rowid FROM chat_messages \
+                 WHERE id = ?1 AND workspace_id = ?2",
+                params![last_message_id, workspace_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((created_at, rowid)) = boundary else {
+            return Ok(Vec::new());
+        };
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id, workspace_id, role, content, cost_usd, duration_ms, created_at, thinking
+             FROM chat_messages
+             WHERE workspace_id = ?1
+               AND (created_at < ?2 OR (created_at = ?2 AND rowid <= ?3))
+             ORDER BY created_at, rowid",
+        )?;
+        let rows = stmt.query_map(params![workspace_id, created_at, rowid], |row| {
+            let role_str: String = row.get(2)?;
+            Ok(ChatMessage {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                role: role_str.parse().unwrap(),
+                content: row.get(3)?,
+                cost_usd: row.get(4)?,
+                duration_ms: row.get(5)?,
+                created_at: row.get(6)?,
+                thinking: row.get(7)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     // --- Checkpoint Files ---
 
     pub fn insert_checkpoint_files(&self, files: &[CheckpointFile]) -> Result<(), rusqlite::Error> {
@@ -1184,6 +1251,7 @@ impl Database {
                     message_id: cp.message_id,
                     turn_index: cp.turn_index,
                     message_count: cp.message_count,
+                    commit_hash: cp.commit_hash,
                     activities: acts,
                 })
             })
@@ -2516,6 +2584,54 @@ mod tests {
         assert_eq!(turns[0].activities.len(), 2);
         assert_eq!(turns[1].activities.len(), 1);
         assert_eq!(turns[1].activities[0].tool_name, "Bash");
+    }
+
+    #[test]
+    fn test_list_messages_up_to_includes_boundary() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "a"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "b"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::User, "c"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m4", "w1", ChatRole::Assistant, "d"))
+            .unwrap();
+
+        let msgs = db.list_messages_up_to("w1", "m2").unwrap();
+        let ids: Vec<_> = msgs.iter().map(|m| m.id.clone()).collect();
+        assert_eq!(ids, vec!["m1".to_string(), "m2".to_string()]);
+    }
+
+    #[test]
+    fn test_list_messages_up_to_missing_returns_empty() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::User, "a"))
+            .unwrap();
+        let msgs = db.list_messages_up_to("w1", "nonexistent").unwrap();
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn test_list_checkpoints_up_to() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("m1", "w1", ChatRole::Assistant, "a"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m2", "w1", ChatRole::Assistant, "b"))
+            .unwrap();
+        db.insert_chat_message(&make_chat_msg("m3", "w1", ChatRole::Assistant, "c"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp1", "w1", "m1", 0))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp2", "w1", "m2", 1))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint("cp3", "w1", "m3", 2))
+            .unwrap();
+
+        let up_to_1 = db.list_checkpoints_up_to("w1", 1).unwrap();
+        assert_eq!(up_to_1.len(), 2);
+        assert_eq!(up_to_1[0].id, "cp1");
+        assert_eq!(up_to_1[1].id, "cp2");
     }
 
     #[test]

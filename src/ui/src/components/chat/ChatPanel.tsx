@@ -1,7 +1,7 @@
 import React, { createContext, memo, useContext, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import Markdown from "react-markdown";
 import { preprocessContent, MARKDOWN_COMPONENTS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../utils/markdown";
-import { FileText, GitBranch, Plus, RotateCcw, Send, Square, X } from "lucide-react";
+import { FileText, GitBranch, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
 import {
@@ -23,6 +23,7 @@ import {
   clearConversation,
   readPlanFile,
   loadDiffFiles,
+  forkWorkspaceAtCheckpoint,
 } from "../../services/tauri";
 import { applySelectedModel } from "./applySelectedModel";
 import { roleClassKey, shouldRenderAsMarkdown } from "./messageRendering";
@@ -64,6 +65,20 @@ import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
 
 import { SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "../../utils/spinnerFrames";
+
+/** Format a duration in seconds as "15s" or "2m 34s". */
+function formatElapsedSeconds(secs: number): string {
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}m ${s}s`;
+}
+
+/** Format a duration in milliseconds as "15s" or "2m 34s". Sub-second turns
+ *  round up to "1s" so the footer always shows something meaningful. */
+function formatDurationMs(ms: number): string {
+  return formatElapsedSeconds(Math.max(1, Math.floor(ms / 1000)));
+}
 
 /**
  * Lazily renders a PDF first-page thumbnail.
@@ -210,7 +225,28 @@ export function ChatPanel() {
   );
   const setQueuedMessage = useAppStore((s) => s.setQueuedMessage);
   const clearQueuedMessage = useAppStore((s) => s.clearQueuedMessage);
+  const addWorkspace = useAppStore((s) => s.addWorkspace);
+  const selectWorkspace = useAppStore((s) => s.selectWorkspace);
   const isRunning = ws?.agent_status === "Running";
+
+  const isRemote = !!ws?.remote_connection_id;
+
+  const handleFork = useCallback(
+    async (checkpointId: string) => {
+      if (!selectedWorkspaceId || isRemote) return;
+      try {
+        const result = await forkWorkspaceAtCheckpoint(
+          selectedWorkspaceId,
+          checkpointId,
+        );
+        addWorkspace(result.workspace);
+        selectWorkspace(result.workspace.id);
+      } catch (err) {
+        setError(`Failed to fork workspace: ${err}`);
+      }
+    },
+    [selectedWorkspaceId, isRemote, addWorkspace, selectWorkspace],
+  );
 
   // Sticky scroll: auto-follow when at bottom, stop when user scrolls up.
   const { isAtBottom, scrollToBottom, handleContentChanged } =
@@ -246,12 +282,7 @@ export function ChatPanel() {
     return () => clearInterval(interval);
   }, [isRunning]);
 
-  const formatElapsed = useCallback((secs: number) => {
-    if (secs < 60) return `${secs}s`;
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}m ${s}s`;
-  }, []);
+  const formatElapsed = formatElapsedSeconds;
 
   // Load persisted permission level when workspace changes.
   useEffect(() => {
@@ -821,6 +852,7 @@ export function ChatPanel() {
                   messages={messages}
                   workspaceId={selectedWorkspaceId}
                   isRunning={isRunning}
+                  onForkTurn={isRemote ? undefined : handleFork}
                 />
               )}
 
@@ -1003,12 +1035,30 @@ function TurnSummary({
   collapsed,
   onToggle,
   taskProgress,
+  assistantText,
+  onFork,
+  onRollback,
 }: {
   turn: CompletedTurn;
   collapsed: boolean;
   onToggle: () => void;
   taskProgress?: TaskTrackerResult;
+  /** Joined text from assistant messages in this turn, used by copy action.
+   *  When empty, the copy button is not rendered. */
+  assistantText: string;
+  /** Called when the user clicks fork. When undefined the fork button is not
+   *  rendered (e.g. remote workspaces or missing commit hash). */
+  onFork?: () => void;
+  /** Called when the user clicks rollback. Undefined hides the button
+   *  (e.g. turn is running, or no checkpoint exists for this turn). */
+  onRollback?: () => void;
 }) {
+  const hasElapsed = typeof turn.durationMs === "number" && turn.durationMs > 0;
+  const hasCopy = assistantText.length > 0;
+  const hasFork = !!onFork;
+  const hasRollback = !!onRollback;
+  const showFooter = hasElapsed || hasCopy || hasFork || hasRollback;
+
   return (
     <div className={styles.turnSummaryWrapper}>
       <div
@@ -1059,6 +1109,138 @@ function TurnSummary({
           totalCount={taskProgress.totalCount}
         />
       )}
+      {showFooter && (
+        <TurnFooter
+          durationMs={turn.durationMs}
+          assistantText={hasCopy ? assistantText : undefined}
+          onFork={onFork}
+          onRollback={onRollback}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Bottom-of-turn action row: elapsed time, copy output, fork, rollback.
+ *  Rendered below the turn summary for every completed turn. */
+function TurnFooter({
+  durationMs,
+  assistantText,
+  onFork,
+  onRollback,
+}: {
+  durationMs?: number;
+  assistantText?: string;
+  onFork?: () => void;
+  onRollback?: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current !== null) {
+        window.clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!assistantText) return;
+    navigator.clipboard
+      .writeText(assistantText)
+      .then(() => {
+        setCopied(true);
+        if (copyTimeoutRef.current !== null) {
+          window.clearTimeout(copyTimeoutRef.current);
+        }
+        copyTimeoutRef.current = window.setTimeout(() => setCopied(false), 1200);
+      })
+      .catch((err) => {
+        console.error("Copy to clipboard failed:", err);
+      });
+  };
+
+  const handleFork = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onFork?.();
+  };
+
+  const handleRollback = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onRollback?.();
+  };
+
+  const elapsedNode =
+    typeof durationMs === "number" && durationMs > 0 ? (
+      <span key="elapsed" className={styles.turnFooterElapsed}>
+        {formatDurationMs(durationMs)}
+      </span>
+    ) : null;
+
+  const actionButtons: React.ReactNode[] = [];
+  if (assistantText) {
+    actionButtons.push(
+      <button
+        key="copy"
+        type="button"
+        className={styles.turnFooterButton}
+        onClick={handleCopy}
+        title={copied ? "Copied" : "Copy output"}
+        aria-label="Copy agent output"
+      >
+        {copied ? (
+          // Checkmark feedback for ~1.2s after successful copy.
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        )}
+      </button>,
+    );
+  }
+  if (onFork) {
+    actionButtons.push(
+      <button
+        key="fork"
+        type="button"
+        className={styles.turnFooterButton}
+        onClick={handleFork}
+        title="Fork workspace at this turn"
+        aria-label="Fork workspace at this turn"
+      >
+        <Split size={14} />
+      </button>,
+    );
+  }
+  if (onRollback) {
+    actionButtons.push(
+      <button
+        key="rollback"
+        type="button"
+        className={styles.turnFooterButton}
+        onClick={handleRollback}
+        title="Roll back to before this turn"
+        aria-label="Roll back to before this turn"
+      >
+        <RotateCcw size={14} />
+      </button>,
+    );
+  }
+
+  if (!elapsedNode && actionButtons.length === 0) return null;
+
+  return (
+    <div className={styles.turnFooter} onClick={(e) => e.stopPropagation()}>
+      {elapsedNode}
+      {elapsedNode && actionButtons.length > 0 && (
+        <span className={styles.turnFooterDot} aria-hidden="true">·</span>
+      )}
+      {actionButtons}
     </div>
   );
 }
@@ -1100,10 +1282,14 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   messages,
   workspaceId,
   isRunning,
+  onForkTurn,
 }: {
   messages: ChatMessage[];
   workspaceId: string;
   isRunning: boolean;
+  /** Handler invoked when the user forks a turn. Undefined disables the fork
+   *  button (e.g. for remote workspaces where the command cannot run). */
+  onForkTurn?: (checkpointId: string) => void;
 }) {
   const completedTurns = useAppStore(
     (s) => s.completedTurns[workspaceId] ?? EMPTY_COMPLETED_TURNS
@@ -1142,6 +1328,24 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     return map;
   }, [completedTurns]);
 
+  // Joined assistant text per turn, used by the "Copy output" action in the
+  // turn footer. A turn's slice is [prevTurn.afterMessageIndex, afterMessageIndex).
+  const assistantTextByTurnId = useMemo(() => {
+    const map = new Map<string, string>();
+    let prevBoundary = 0;
+    for (const turn of completedTurns) {
+      const text = messages
+        .slice(prevBoundary, turn.afterMessageIndex)
+        .filter((m) => m.role === "Assistant")
+        .map((m) => m.content)
+        .join("\n\n")
+        .trim();
+      map.set(turn.id, text);
+      prevBoundary = turn.afterMessageIndex;
+    }
+    return map;
+  }, [completedTurns, messages]);
+
   // Map user message index → checkpoint for the preceding turn.
   // Checks the message immediately before this user message (assistant or
   // user for tool-only turns) for a matching checkpoint. Index 0 always
@@ -1150,6 +1354,58 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     () => buildRollbackMap(messages, checkpoints),
     [messages, checkpoints],
   );
+
+  // Per-turn rollback data, keyed by turn.id. A turn's rollback target is
+  // the checkpoint captured just before the triggering user message ran.
+  // A turn's triggering user message is the first User message in its range
+  // [prevBoundary, afterMessageIndex) — the checkpoint itself is anchored to
+  // the last assistant message of the turn, so we can't use cp.message_id.
+  const rollbackByTurnId = useMemo(() => {
+    const result = new Map<
+      string,
+      {
+        workspaceId: string;
+        checkpointId: string | null;
+        messageId: string;
+        messagePreview: string;
+        messageContent: string;
+        hasFileChanges: boolean;
+      }
+    >();
+    let prevBoundary = 0;
+    for (const turn of completedTurns) {
+      let userIdx = -1;
+      for (let i = prevBoundary; i < turn.afterMessageIndex && i < messages.length; i++) {
+        if (messages[i].role === "User") {
+          userIdx = i;
+          break;
+        }
+      }
+      prevBoundary = turn.afterMessageIndex;
+      if (userIdx === -1) continue;
+      if (!rollbackCheckpointByIdx.has(userIdx)) continue;
+      const target = rollbackCheckpointByIdx.get(userIdx) ?? null;
+      const userMsg = messages[userIdx];
+      result.set(turn.id, {
+        workspaceId,
+        checkpointId: target ? target.id : null,
+        messageId: userMsg.id,
+        messagePreview: userMsg.content.slice(0, 100),
+        messageContent: userMsg.content,
+        hasFileChanges: target
+          ? checkpointHasFileChanges(target, checkpoints)
+          : clearAllHasFileChanges(checkpoints),
+      });
+    }
+    return result;
+  }, [completedTurns, checkpoints, messages, workspaceId, rollbackCheckpointByIdx]);
+
+  const buildOnRollback = (turnId: string) => {
+    if (isRunning) return undefined;
+    const data = rollbackByTurnId.get(turnId);
+    if (!data) return undefined;
+    return () => openModal("rollback", data);
+  };
 
   // Compute cumulative task progress at each turn index in a single O(n) pass.
   // Carries taskMap/todoMap forward across iterations instead of re-slicing.
@@ -1197,6 +1453,9 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
         collapsed={turn.collapsed}
         onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
         taskProgress={taskProgressByTurn.get(globalIdx)}
+        assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
+        onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
+        onRollback={buildOnRollback(turn.id)}
       />
     ));
   };
@@ -1210,30 +1469,6 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             {msg.role === "User" && (
               <div className={styles.roleLabel}>You</div>
             )}
-            {msg.role === "User" &&
-              !isRunning &&
-              rollbackCheckpointByIdx.has(idx) && (
-                <button
-                  className={styles.rollbackBtn}
-                  title="Roll back to before this message"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const cp = rollbackCheckpointByIdx.get(idx);
-                    openModal("rollback", {
-                      workspaceId,
-                      checkpointId: cp ? cp.id : null,
-                      messageId: msg.id,
-                      messagePreview: msg.content.slice(0, 100),
-                      messageContent: msg.content,
-                      hasFileChanges: cp
-                        ? checkpointHasFileChanges(cp, checkpoints)
-                        : clearAllHasFileChanges(checkpoints),
-                    });
-                  }}
-                >
-                  <RotateCcw size={14} />
-                </button>
-              )}
             {msg.role === "Assistant" && msg.thinking && showThinkingBlocks && (
               <ThinkingBlock content={msg.thinking} isStreaming={false} />
             )}
@@ -1290,6 +1525,9 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             collapsed={turn.collapsed}
             onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
             taskProgress={taskProgressByTurn.get(globalIdx)}
+            assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
+            onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
+            onRollback={buildOnRollback(turn.id)}
           />
         ))}
     </>

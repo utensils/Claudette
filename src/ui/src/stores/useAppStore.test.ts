@@ -331,6 +331,23 @@ describe("finalizeTurn afterMessageIndex", () => {
     expect(turns[0].afterMessageIndex).toBe(0);
   });
 
+  it("stores durationMs when provided", () => {
+    addToolActivities();
+    useAppStore.getState().finalizeTurn(WS_ID, 1, undefined, 12_345);
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].durationMs).toBe(12_345);
+  });
+
+  it("leaves durationMs undefined when not provided", () => {
+    addToolActivities();
+    useAppStore.getState().finalizeTurn(WS_ID, 1);
+
+    const turns = useAppStore.getState().completedTurns[WS_ID];
+    expect(turns[0].durationMs).toBeUndefined();
+  });
+
   it("successive turns get increasing afterMessageIndex", () => {
     useAppStore.setState({
       chatMessages: { [WS_ID]: [{ id: "m1", workspace_id: WS_ID, role: "Assistant", content: "a", cost_usd: null, duration_ms: null, created_at: "", thinking: null }] },

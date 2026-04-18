@@ -103,6 +103,18 @@ export function createWorkspace(
   return invoke("create_workspace", { repoId, name, skipSetup: skipSetup ?? false });
 }
 
+export interface ForkWorkspaceResult {
+  workspace: Workspace;
+  session_resumed: boolean;
+}
+
+export function forkWorkspaceAtCheckpoint(
+  workspaceId: string,
+  checkpointId: string
+): Promise<ForkWorkspaceResult> {
+  return invoke("fork_workspace_at_checkpoint", { workspaceId, checkpointId });
+}
+
 export function runWorkspaceSetup(
   workspaceId: string
 ): Promise<import("../types/repository").SetupResult | null> {

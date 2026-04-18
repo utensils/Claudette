@@ -43,5 +43,6 @@ pub struct CompletedTurnData {
     pub message_id: String,
     pub turn_index: i32,
     pub message_count: i32,
+    pub commit_hash: Option<String>,
     pub activities: Vec<TurnToolActivity>,
 }

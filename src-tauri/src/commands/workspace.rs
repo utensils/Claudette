@@ -10,6 +10,7 @@ use claudette::agent;
 use claudette::config;
 use claudette::db::Database;
 use claudette::env::WorkspaceEnv;
+use claudette::fork::{self, ForkInputs};
 use claudette::git;
 use claudette::mcp_supervisor::McpSupervisor;
 use claudette::model::{AgentStatus, Workspace, WorkspaceStatus};
@@ -152,6 +153,50 @@ pub async fn create_workspace(
     Ok(CreateWorkspaceResult {
         workspace: ws,
         setup_result,
+    })
+}
+
+#[derive(Serialize)]
+pub struct ForkWorkspaceResult {
+    pub workspace: Workspace,
+    /// Whether the Claude session JSONL was copied so the fork can `--resume`
+    /// its conversation history. When `false`, the fork starts a fresh session.
+    pub session_resumed: bool,
+}
+
+#[tauri::command]
+pub async fn fork_workspace_at_checkpoint(
+    workspace_id: String,
+    checkpoint_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ForkWorkspaceResult, String> {
+    let mut db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+
+    let (prefix_mode, prefix_custom) = read_branch_prefix_settings(&db);
+    let prefix = resolve_branch_prefix(&prefix_mode, &prefix_custom).await;
+
+    let worktree_base = state.worktree_base_dir.read().await.clone();
+
+    let outcome = fork::fork_workspace_at_checkpoint(
+        &mut db,
+        ForkInputs {
+            source_workspace_id: &workspace_id,
+            checkpoint_id: &checkpoint_id,
+            worktree_base: worktree_base.as_path(),
+            branch_prefix: &prefix,
+            db_path: state.db_path.as_path(),
+            now_iso,
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    crate::tray::rebuild_tray(&app);
+
+    Ok(ForkWorkspaceResult {
+        workspace: outcome.workspace,
+        session_resumed: outcome.session_resumed,
     })
 }
 
