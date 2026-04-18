@@ -35,13 +35,13 @@ Each section has a colored left border for quick visual scanning. A file can app
 
 ## How It Works
 
-Claudette runs a different git command per layer to build the changed-files list and the per-file diff:
+Claudette uses separate git operations per layer to build the changed-files list and to render the diff for a selected file. In some cases these are the same base command with different flags, and for untracked files the list and diff steps are different commands entirely:
 
-| Layer | Command |
-|-------|---------|
-| Committed | `git diff <merge-base>..HEAD` |
-| Staged | `git diff --cached` |
-| Unstaged | `git diff` |
-| Untracked | `git ls-files --others --exclude-standard` (diffed against `/dev/null`) |
+| Layer | Changed-files list | Per-file diff |
+|-------|--------------------|---------------|
+| Committed | `git diff <merge-base>..HEAD --name-status` / `--numstat` | `git diff <merge-base>..HEAD -- <path>` |
+| Staged | `git diff --cached --name-status` / `--numstat` | `git diff --cached -- <path>` |
+| Unstaged | `git diff --name-status` / `--numstat` | `git diff -- <path>` |
+| Untracked | `git ls-files --others --exclude-standard` | `git diff --no-index -- /dev/null <path>` |
 
 The list updates automatically as the agent writes code, so you can watch changes appear in real time during streaming.
