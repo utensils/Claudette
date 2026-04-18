@@ -222,6 +222,7 @@ export function ChatPanel() {
     (s) => (selectedWorkspaceId ? s.planApprovals[selectedWorkspaceId] ?? null : null)
   );
   const clearPlanApproval = useAppStore((s) => s.clearPlanApproval);
+  const setPlanMode = useAppStore((s) => s.setPlanMode);
   const queuedMessage = useAppStore(
     (s) => (selectedWorkspaceId ? s.queuedMessages[selectedWorkspaceId] ?? null : null)
   );
@@ -910,6 +911,12 @@ export function ChatPanel() {
                     try {
                       await submitPlanApproval(wsId, toolUseId, approved, reason);
                       clearPlanApproval(wsId);
+                      // User action is authoritative for ending the plan
+                      // phase — flip planMode off so the next turn triggers
+                      // drift detection (backend `session_exited_plan` covers
+                      // this already, but clearing the UI state keeps the
+                      // toolbar chip in sync).
+                      setPlanMode(wsId, false);
                     } catch (e) {
                       console.error("Failed to submit plan approval:", e);
                       setError(String(e));

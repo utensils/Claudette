@@ -66,9 +66,13 @@ export function ChatToolbar({ workspaceId, disabled }: ChatToolbarProps) {
       const effectiveThinking = thinking === "true" || (!thinking && defThinking === "true");
       setFastMode(workspaceId, effectiveFast);
       setThinkingEnabled(workspaceId, effectiveThinking);
-      // Plan mode is not persisted per-workspace (in-memory only);
-      // always apply the global default on load.
-      setPlanMode(workspaceId, defPlan === "true");
+      // Plan mode is not persisted per-workspace (in-memory only). Apply the
+      // global default only when the store has no runtime value yet — a
+      // remount mid-flow (e.g. workspace swap-and-return, remote reconnect)
+      // must not clobber an agent-driven clear of planMode.
+      if (useAppStore.getState().planMode[workspaceId] === undefined) {
+        setPlanMode(workspaceId, defPlan === "true");
+      }
       // Normalize effort against the loaded model to prevent stale values.
       const effectiveEffort = effort ?? defEffort;
       if (effectiveEffort) {

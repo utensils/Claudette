@@ -182,6 +182,7 @@ export function useAgentStream() {
                     if (inner.content_block.name === "EnterPlanMode") {
                       setPlanMode(wsId, true);
                     } else if (inner.content_block.name === "ExitPlanMode") {
+                      debugChat("plan-mode", "ExitPlanMode → setPlanMode(false)", { wsId, origin: "content_block_start" });
                       setPlanMode(wsId, false);
                     }
                   }
@@ -354,6 +355,11 @@ export function useAgentStream() {
           }
         }
       } else if (toolName === "ExitPlanMode") {
+        // Mirror the content_block_start clear at the control_request boundary
+        // in case that event arrived without the tool `name` populated.
+        // Idempotent — setting to the same value is a no-op.
+        debugChat("plan-mode", "ExitPlanMode → setPlanMode(false)", { wsId, origin: "agent-permission-prompt" });
+        setPlanMode(wsId, false);
         let allowedPrompts: Array<{ tool: string; prompt: string }> = [];
         if (input && typeof input === "object" && "allowedPrompts" in input) {
           const ap = (input as { allowedPrompts?: unknown }).allowedPrompts;
@@ -393,7 +399,7 @@ export function useAgentStream() {
       active = false;
       unlisten.then((fn) => fn());
     };
-  }, [setAgentQuestion, setPlanApproval]);
+  }, [setAgentQuestion, setPlanApproval, setPlanMode]);
 
   // Listen for checkpoint-created events from the backend.
   const addCheckpoint = useAppStore((s) => s.addCheckpoint);

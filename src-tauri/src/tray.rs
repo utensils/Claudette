@@ -635,6 +635,7 @@ mod tests {
             session_plan_mode: false,
             session_allowed_tools: Vec::new(),
             pending_permissions: HashMap::new(),
+            session_exited_plan: false,
         }
     }
 

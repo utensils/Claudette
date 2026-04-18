@@ -72,6 +72,11 @@ pub struct AgentSessionState {
     /// Outstanding `can_use_tool` control requests awaiting a `control_response`,
     /// keyed by tool_use_id. See [`PendingPermission`].
     pub pending_permissions: HashMap<String, PendingPermission>,
+    /// Set when the agent emits `ExitPlanMode` during the current persistent
+    /// session. The plan phase is over even if the frontend fails to flip
+    /// `plan_mode=false` on the next turn, so we force a teardown regardless
+    /// of the requested flag. Reset after teardown.
+    pub session_exited_plan: bool,
 }
 
 /// Handle to an active PTY process.
