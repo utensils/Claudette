@@ -1,0 +1,213 @@
+name: Nightly Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "site/**"
+      - "docs/**"
+      - "**/*.md"
+      - ".github/workflows/deploy-site.yml"
+      - ".github/workflows/conventional-commits.yml"
+      - ".github/workflows/update-frontend-hash.yml"
+      - ".github/workflows/release-please.yml"
+      - ".release-please-manifest.json"
+      - "CHANGELOG.md"
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  compute-version:
+    name: Compute Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      short_sha: ${{ steps.v.outputs.short_sha }}
+      last_tag: ${{ steps.v.outputs.last_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: v
+        run: |
+          set -euo pipefail
+          CURRENT=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          IFS='.' read -r MAJ MIN _ <<< "$CURRENT"
+          NEXT_MINOR="${MAJ}.$((MIN + 1)).0"
+
+          LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git rev-list --count "${LAST_TAG}..HEAD")
+          else
+            COMMITS=$(git rev-list --count HEAD)
+          fi
+
+          SHORT=$(git rev-parse --short=7 HEAD)
+          VERSION="${NEXT_MINOR}-dev.${COMMITS}.${SHORT}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT}" >> "$GITHUB_OUTPUT"
+          echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Computed nightly version: ${VERSION}"
+
+  prepare-release:
+    name: Prepare Release
+    needs: compute-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Reset nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.compute-version.outputs.version }}
+          LAST_TAG: ${{ needs.compute-version.outputs.last_tag }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+
+          NOTES="Automated nightly build of \`${GITHUB_SHA}\`.
+
+          **Version:** \`${VERSION}\`
+          **Built:** $(date -u +%FT%TZ)"
+
+          if [ -n "$LAST_TAG" ]; then
+            DIFF_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...${GITHUB_SHA}"
+            NOTES="${NOTES}
+          [Changes since ${LAST_TAG}](${DIFF_URL})"
+          fi
+
+          NOTES="${NOTES}
+
+          > **These builds are unstable pre-releases.** See [nightly-builds.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/nightly-builds.md)."
+
+          gh release create nightly \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Nightly ${VERSION}" \
+            --notes "$NOTES" \
+            --prerelease \
+            --draft
+
+  build:
+    needs: [compute-version, prepare-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            rust-target: aarch64-apple-darwin
+            bundles: app,dmg
+            label: macos-aarch64
+          - platform: macos-15-intel
+            rust-target: x86_64-apple-darwin
+            bundles: app,dmg
+            label: macos-x86_64
+          - platform: ubuntu-22.04
+            rust-target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+            label: linux-x86_64
+
+    name: Build (${{ matrix.label }})
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Stamp nightly version
+        shell: bash
+        env:
+          NIGHTLY_VERSION: ${{ needs.compute-version.outputs.version }}
+        run: |
+          perl -i -pe 's/^version\s*=\s*"[^"]+"/version = "$ENV{NIGHTLY_VERSION}"/' Cargo.toml
+          perl -i -pe 's/^version\s*=\s*"[^"]+"/version = "$ENV{NIGHTLY_VERSION}"/' src-tauri/Cargo.toml
+          perl -i -pe 's/^version\s*=\s*"[^"]+"/version = "$ENV{NIGHTLY_VERSION}"/' src-server/Cargo.toml
+          grep '^version' Cargo.toml src-tauri/Cargo.toml src-server/Cargo.toml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94"
+          targets: ${{ matrix.rust-target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: nightly-${{ matrix.label }}
+
+      - name: Install Linux system dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install frontend dependencies
+        run: cd src/ui && bun install --frozen-lockfile
+
+      - name: Generate icons
+        run: npx @tauri-apps/cli icon assets/logo.png
+
+      - name: Build and upload desktop app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+        with:
+          tagName: nightly
+          releaseName: "Nightly ${{ needs.compute-version.outputs.version }}"
+          releaseDraft: true
+          prerelease: true
+          args: --target ${{ matrix.rust-target }} --bundles ${{ matrix.bundles }}
+
+      - name: Build headless server
+        run: cargo build --release -p claudette-server --target ${{ matrix.rust-target }}
+
+      - name: Upload headless server binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BIN="target/${{ matrix.rust-target }}/release/claudette-server"
+          ASSET="claudette-server-${{ matrix.label }}"
+          cp "$BIN" "$ASSET"
+          gh release upload nightly "$ASSET" --clobber
+
+  # Nightly builds are not announced to Discord — too noisy. Stable releases only.
+  publish:
+    name: Publish Nightly
+    needs: build
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Un-draft the nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit nightly --draft=false --prerelease --repo "$GITHUB_REPOSITORY"
