@@ -553,19 +553,24 @@
   margin: 12px 0;
 }
 
-.cursor {
+.caret {
   display: inline-block;
-  width: 2px;
+  width: 1px;
   height: 1em;
-  background: var(--accent-primary);
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: blink 1s step-end infinite;
+  vertical-align: -0.15em;
+  margin-left: 1px;
+  background: currentColor;
+  animation: claudette-caret-blink 0.9s steps(2, end) infinite;
 }
 
-@keyframes blink {
-  0%, 100% { opacity: 1; }
+@keyframes claudette-caret-blink {
   50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
 }
 
 /* Processing indicator */

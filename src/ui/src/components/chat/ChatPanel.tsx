@@ -43,6 +43,7 @@ import {
   maxSizeFor,
 } from "../../utils/attachmentValidation";
 import { useAgentStream } from "../../hooks/useAgentStream";
+import { useTypewriter } from "../../hooks/useTypewriter";
 import { extractToolSummary } from "../../hooks/toolSummary";
 import { AgentQuestionCard } from "./AgentQuestionCard";
 import { PlanApprovalCard } from "./PlanApprovalCard";
@@ -195,6 +196,9 @@ export function ChatPanel() {
   // Subscribe only to boolean — avoids re-render on every streaming character
   const hasStreaming = useAppStore(
     (s) => !!(selectedWorkspaceId && s.streamingContent[selectedWorkspaceId])
+  );
+  const hasPendingTypewriter = useAppStore(
+    (s) => !!(selectedWorkspaceId && s.pendingTypewriter[selectedWorkspaceId])
   );
   const hasThinking = useAppStore(
     (s) => !!(selectedWorkspaceId && s.streamingThinking[selectedWorkspaceId])
@@ -863,7 +867,7 @@ export function ChatPanel() {
                 <StreamingThinkingBlock workspaceId={selectedWorkspaceId} isStreaming={isRunning ?? false} />
               )}
 
-              {selectedWorkspaceId && hasStreaming && (
+              {selectedWorkspaceId && (hasStreaming || hasPendingTypewriter) && (
                 <StreamingMessage workspaceId={selectedWorkspaceId} />
               )}
 
@@ -997,9 +1001,11 @@ const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
 });
 
 /**
- * Isolated streaming message component — subscribes to streaming text directly
- * and throttles Markdown re-parsing to ~16fps via requestAnimationFrame.
- * This prevents the entire ChatPanel from re-rendering on every character delta.
+ * Isolated streaming message component — runs the typewriter reveal at a steady
+ * rate while the agent streams, and keeps draining the latched text after
+ * streamingContent clears so the transition to the completed message is smooth
+ * (the just-added chat message is hidden behind pendingTypewriter until drain
+ * completes).
  */
 const StreamingMessage = memo(function StreamingMessage({
   workspaceId,
@@ -1009,39 +1015,38 @@ const StreamingMessage = memo(function StreamingMessage({
   const streaming = useAppStore(
     (s) => s.streamingContent[workspaceId] || ""
   );
+  const pendingText = useAppStore(
+    (s) => s.pendingTypewriter[workspaceId]?.text ?? ""
+  );
+  const isStreaming = useAppStore(
+    (s) => s.workspaces.find((w) => w.id === workspaceId)?.agent_status === "Running"
+  );
+  const clearPendingTypewriter = useAppStore((s) => s.clearPendingTypewriter);
   const { handleContentChanged } = useContext(ScrollContext);
 
-  // Throttle Markdown rendering: store latest text in ref, update at ~16fps
-  const latestRef = useRef(streaming);
-  latestRef.current = streaming;
-  const [displayed, setDisplayed] = useState(streaming);
-  const rafRef = useRef<number | null>(null);
+  const fullText = streaming || pendingText;
+  const { displayed, showCaret } = useTypewriter(fullText, isStreaming);
 
-  useEffect(() => {
-    let lastTime = 0;
-    const THROTTLE_MS = 60; // ~16fps
-    const tick = (time: number) => {
-      if (time - lastTime >= THROTTLE_MS) {
-        lastTime = time;
-        setDisplayed(latestRef.current);
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
-  // Auto-scroll when streaming content grows — respects user scroll intent.
   useEffect(() => {
     handleContentChanged();
   }, [displayed, handleContentChanged]);
 
+  // Drain complete + we're in pending-typewriter phase → release the hidden
+  // completed message so it takes over visually without a jump.
+  useEffect(() => {
+    if (!showCaret && !streaming && pendingText) {
+      clearPendingTypewriter(workspaceId);
+    }
+  }, [showCaret, streaming, pendingText, workspaceId, clearPendingTypewriter]);
+
   if (!displayed) return null;
 
   return (
-    <div className={`${styles.message} ${styles.role_Assistant}`}>
+    <div
+      className={`${styles.message} ${styles.role_Assistant}`}
+      aria-live="polite"
+      aria-busy={isStreaming}
+    >
       <div className={styles.content}>
         <Markdown
           remarkPlugins={REMARK_PLUGINS}
@@ -1050,7 +1055,7 @@ const StreamingMessage = memo(function StreamingMessage({
         >
           {preprocessContent(displayed)}
         </Markdown>
-        <span className={styles.cursor} />
+        {showCaret && <span className={styles.caret} aria-hidden="true" />}
       </div>
     </div>
   );
@@ -1331,6 +1336,12 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   const showThinkingBlocks = useAppStore(
     (s) => s.showThinkingBlocks[workspaceId] === true
   );
+  // While the typewriter is finishing the drain after streamingContent cleared,
+  // hide the just-added completed assistant message — StreamingMessage renders
+  // it in-place, so showing both would duplicate the text.
+  const pendingMessageId = useAppStore(
+    (s) => s.pendingTypewriter[workspaceId]?.messageId ?? null
+  );
   const chatAttachments = useAppStore(
     (s) => s.chatAttachments[workspaceId] ?? EMPTY_ATTACHMENTS
   );
@@ -1494,6 +1505,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
       {messages.map((msg, idx) => (
         <React.Fragment key={msg.id}>
           {renderTurns(idx)}
+          {msg.id === pendingMessageId ? null : (
           <div className={`${styles.message} ${styles[roleClassKey(msg.role, msg.content)]}`}>
             {msg.role === "User" && (
               <div className={styles.roleLabel}>You</div>
@@ -1541,6 +1553,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
               )}
             </div>
           </div>
+          )}
         </React.Fragment>
       ))}
       {/* Turns that finalized after or at the last message index */}

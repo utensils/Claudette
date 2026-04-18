@@ -97,6 +97,7 @@ interface AppState {
   addChatAttachments: (wsId: string, attachments: ChatAttachment[]) => void;
   streamingContent: Record<string, string>;
   streamingThinking: Record<string, string>;
+  pendingTypewriter: Record<string, { messageId: string; text: string } | null>;
   showThinkingBlocks: Record<string, boolean>;
   toolActivities: Record<string, ToolActivity[]>;
   completedTurns: Record<string, CompletedTurn[]>;
@@ -104,6 +105,8 @@ interface AppState {
   addChatMessage: (wsId: string, message: ChatMessage) => void;
   setStreamingContent: (wsId: string, content: string) => void;
   appendStreamingContent: (wsId: string, text: string) => void;
+  setPendingTypewriter: (wsId: string, messageId: string, text: string) => void;
+  clearPendingTypewriter: (wsId: string) => void;
   appendStreamingThinking: (wsId: string, text: string) => void;
   clearStreamingThinking: (wsId: string) => void;
   setShowThinkingBlocks: (wsId: string, show: boolean) => void;
@@ -471,6 +474,7 @@ export const useAppStore = create<AppState>((set) => ({
     })),
   streamingContent: {},
   streamingThinking: {},
+  pendingTypewriter: {},
   showThinkingBlocks: {},
   toolActivities: {},
   completedTurns: {},
@@ -496,6 +500,17 @@ export const useAppStore = create<AppState>((set) => ({
         ...s.streamingContent,
         [wsId]: (s.streamingContent[wsId] || "") + text,
       },
+    })),
+  setPendingTypewriter: (wsId, messageId, text) =>
+    set((s) => ({
+      pendingTypewriter: {
+        ...s.pendingTypewriter,
+        [wsId]: { messageId, text },
+      },
+    })),
+  clearPendingTypewriter: (wsId) =>
+    set((s) => ({
+      pendingTypewriter: { ...s.pendingTypewriter, [wsId]: null },
     })),
   appendStreamingThinking: (wsId, text) =>
     set((s) => ({

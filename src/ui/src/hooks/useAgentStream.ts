@@ -14,6 +14,7 @@ const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 export function useAgentStream() {
   const appendStreamingContent = useAppStore((s) => s.appendStreamingContent);
   const setStreamingContent = useAppStore((s) => s.setStreamingContent);
+  const setPendingTypewriter = useAppStore((s) => s.setPendingTypewriter);
   const appendStreamingThinking = useAppStore((s) => s.appendStreamingThinking);
   const clearStreamingThinking = useAppStore((s) => s.clearStreamingThinking);
   const addChatMessage = useAppStore((s) => s.addChatMessage);
@@ -246,8 +247,14 @@ export function useAgentStream() {
                 textLength: text.length,
                 turnMessageCount: turnMessageCountRef.current[wsId],
               });
+              const messageId = crypto.randomUUID();
+              // Latch the final text for the typewriter so StreamingMessage
+              // can keep draining after streamingContent clears. The matching
+              // messageId tells MessagesWithTurns to hide the just-added
+              // completed message until drain finishes.
+              setPendingTypewriter(wsId, messageId, text);
               addChatMessage(wsId, {
-                id: crypto.randomUUID(),
+                id: messageId,
                 workspace_id: wsId,
                 role: "Assistant",
                 content: text,
