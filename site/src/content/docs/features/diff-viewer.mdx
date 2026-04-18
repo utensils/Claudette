@@ -24,7 +24,7 @@ The **right sidebar** (`⌘/Ctrl + D` to toggle) displays a list of all files th
 
 ## Change Groups
 
-The changed files list organizes files into collapsible sections that mirror `git status`:
+The changed files list organizes files into collapsible sections, one per git layer:
 
 - **Committed** — files changed on this branch compared to the base branch
 - **Staged** — files added to the git index (`git add`)
@@ -35,4 +35,13 @@ Each section has a colored left border for quick visual scanning. A file can app
 
 ## How It Works
 
-Claudette runs `git diff` against the workspace's worktree to detect changes. The diff updates automatically as the agent writes code, so you can watch changes appear in real time during streaming.
+Claudette runs a different git command per layer to build the changed-files list and the per-file diff:
+
+| Layer | Command |
+|-------|---------|
+| Committed | `git diff <merge-base>..HEAD` |
+| Staged | `git diff --cached` |
+| Unstaged | `git diff` |
+| Untracked | `git ls-files --others --exclude-standard` (diffed against `/dev/null`) |
+
+The list updates automatically as the agent writes code, so you can watch changes appear in real time during streaming.
