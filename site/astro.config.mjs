@@ -47,6 +47,7 @@ export default defineConfig({
           items: [
             { slug: 'features/parallel-agents' },
             { slug: 'features/git-worktrees' },
+            { slug: 'features/scm-providers' },
             { slug: 'features/diff-viewer' },
             { slug: 'features/integrated-terminal' },
             { slug: 'features/remote-workspaces' },

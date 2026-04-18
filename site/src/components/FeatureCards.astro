@@ -2,6 +2,7 @@
 const features = [
   { icon: 'bot', title: 'Parallel Agents', desc: 'Run multiple Claude Code agents simultaneously, each in its own isolated workspace.' },
   { icon: 'git-branch', title: 'Git Worktrees', desc: 'Native git worktree integration for branch-based parallel development without conflicts.' },
+  { icon: 'git-pull-request', title: 'PR & CI Status', desc: 'See pull request state and CI checks right in your sidebar. Extensible via Lua plugins — GitHub and GitLab built in.' },
   { icon: 'globe', title: 'Remote Workspaces', desc: 'Connect to remote machines via encrypted WebSocket with automatic mDNS discovery.' },
   { icon: 'terminal', title: 'Integrated Terminal', desc: 'Multi-tab terminal with xterm.js, right alongside your agents and code diffs.' },
   { icon: 'file-diff', title: 'Diff Viewer', desc: 'Real-time git diff tracking with unified view and syntax highlighting.' },
@@ -13,6 +14,7 @@ const features = [
 const icons: Record<string, string> = {
   'bot': '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
   'git-branch': '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  'git-pull-request': '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/>',
   'globe': '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
   'terminal': '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
   'file-diff': '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/>',
