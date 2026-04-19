@@ -23,10 +23,10 @@ import styles from "./Sidebar.module.css";
 
 type StatusBucketKey = "in-progress" | "in-review" | "draft" | "merged" | "closed" | "archived";
 const STATUS_BUCKET_ORDER: { key: StatusBucketKey; label: string }[] = [
-  { key: "in-progress", label: "In progress" },
+  { key: "merged", label: "Merged" },
   { key: "in-review", label: "In review" },
   { key: "draft", label: "Draft" },
-  { key: "merged", label: "Merged" },
+  { key: "in-progress", label: "In progress" },
   { key: "closed", label: "Closed" },
   { key: "archived", label: "Archived" },
 ];
