@@ -33,11 +33,24 @@ export function reconstructCompletedTurns(
     const afterMessageIndex = msgIdToIndex.get(td.message_id)! + 1;
     const priorBoundary =
       i > 0 ? msgIdToIndex.get(valid[i - 1].message_id)! + 1 : 0;
+    const turnAssistantMessages = messages
+      .slice(priorBoundary, afterMessageIndex)
+      .filter((m) => m.role === "Assistant");
     const durationMs =
-      messages
-        .slice(priorBoundary, afterMessageIndex)
-        .filter((m) => m.role === "Assistant")
-        .reduce((sum, m) => sum + (m.duration_ms ?? 0), 0) || undefined;
+      turnAssistantMessages.reduce(
+        (sum, m) => sum + (m.duration_ms ?? 0),
+        0,
+      ) || undefined;
+    const inputTokens =
+      turnAssistantMessages.reduce(
+        (sum, m) => sum + (m.input_tokens ?? 0),
+        0,
+      ) || undefined;
+    const outputTokens =
+      turnAssistantMessages.reduce(
+        (sum, m) => sum + (m.output_tokens ?? 0),
+        0,
+      ) || undefined;
 
     return {
       id: td.checkpoint_id,
@@ -54,6 +67,8 @@ export function reconstructCompletedTurns(
       afterMessageIndex,
       commitHash: td.commit_hash,
       durationMs,
+      inputTokens,
+      outputTokens,
     };
   });
 }

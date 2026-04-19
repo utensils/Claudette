@@ -508,6 +508,10 @@ async fn handle_send_chat_message(
                 if !full_text.trim().is_empty()
                     && let Ok(db) = Database::open(&db_path)
                 {
+                    // TODO(#300 phase 1+): the Tauri bridge (commands/chat.rs) tracks
+                    // `latest_usage` from MessageDelta events and stamps per-message
+                    // token counts here. The remote server path hasn't been updated
+                    // yet, so remote sessions currently persist NULL token fields.
                     let msg = ChatMessage {
                         id: uuid::Uuid::new_v4().to_string(),
                         workspace_id: ws_id.clone(),

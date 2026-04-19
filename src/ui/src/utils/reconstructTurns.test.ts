@@ -132,6 +132,49 @@ describe("reconstructCompletedTurns", () => {
     expect(result[1].durationMs).toBe(3_000);
   });
 
+  it("sums assistant message token counts into inputTokens/outputTokens per turn", () => {
+    const m1: ChatMessage = { ...makeMsg("m1", "User") };
+    const m2: ChatMessage = {
+      ...makeMsg("m2", "Assistant"),
+      input_tokens: 1_000,
+      output_tokens: 150,
+    };
+    const m3: ChatMessage = {
+      ...makeMsg("m3", "Assistant"),
+      input_tokens: 500,
+      output_tokens: 50,
+    };
+    const m4: ChatMessage = { ...makeMsg("m4", "User") };
+    const m5: ChatMessage = {
+      ...makeMsg("m5", "Assistant"),
+      input_tokens: 2_500,
+      output_tokens: 300,
+    };
+    const messages = [m1, m2, m3, m4, m5];
+    const turnData = [makeTurnData("cp1", "m3"), makeTurnData("cp2", "m5")];
+
+    const result = reconstructCompletedTurns(messages, turnData);
+
+    expect(result).toHaveLength(2);
+    // Turn 1: m2+m3 assistant → 1500 in, 200 out
+    expect(result[0].inputTokens).toBe(1_500);
+    expect(result[0].outputTokens).toBe(200);
+    // Turn 2: m5 only → 2500 in, 300 out
+    expect(result[1].inputTokens).toBe(2_500);
+    expect(result[1].outputTokens).toBe(300);
+  });
+
+  it("leaves inputTokens/outputTokens undefined for legacy turns with no token data", () => {
+    const messages = [makeMsg("m1", "User"), makeMsg("m2", "Assistant")];
+    const turnData = [makeTurnData("cp1", "m2")];
+
+    const result = reconstructCompletedTurns(messages, turnData);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].inputTokens).toBeUndefined();
+    expect(result[0].outputTokens).toBeUndefined();
+  });
+
   it("passes commit_hash through as commitHash", () => {
     const messages = [makeMsg("m1")];
     const turnData: CompletedTurnData[] = [
