@@ -51,10 +51,15 @@ export interface CompletedTurn {
   /** Total time this turn took, in milliseconds. Summed from the
    *  duration_ms of assistant messages produced during the turn. */
   durationMs?: number;
-  /** Turn-total input tokens reported by the CLI on the `result` event.
-   *  Undefined for legacy turns replayed from DB without token metadata. */
+  /** Turn-total input tokens. Live turns receive this from the CLI's
+   *  `result.usage`; persisted turns are reconstructed by summing the
+   *  `input_tokens` of each assistant `ChatMessage` in the turn (see
+   *  `reconstructCompletedTurns`). Undefined for legacy turns with no
+   *  token metadata on any message. */
   inputTokens?: number;
-  /** Turn-total output tokens reported by the CLI on the `result` event. */
+  /** Turn-total output tokens. Live turns receive this from the CLI's
+   *  `result.usage`; persisted turns are reconstructed by summing the
+   *  `output_tokens` of each assistant `ChatMessage` in the turn. */
   outputTokens?: number;
 }
 
