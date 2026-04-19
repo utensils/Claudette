@@ -996,8 +996,9 @@ const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
   const thinking = useAppStore(
     (s) => s.streamingThinking[workspaceId] || ""
   );
-  if (!thinking) return null;
-  return <ThinkingBlock content={thinking} isStreaming={isStreaming} />;
+  const { displayed, showCaret } = useTypewriter(thinking, isStreaming);
+  if (!displayed) return null;
+  return <ThinkingBlock content={displayed} isStreaming={isStreaming} showCaret={showCaret} />;
 });
 
 /**

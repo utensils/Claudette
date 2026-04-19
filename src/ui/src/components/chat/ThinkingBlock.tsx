@@ -5,9 +5,10 @@ import styles from "./ThinkingBlock.module.css";
 interface ThinkingBlockProps {
   content: string;
   isStreaming: boolean;
+  showCaret?: boolean;
 }
 
-export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
+export function ThinkingBlock({ content, isStreaming, showCaret }: ThinkingBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
   if (!content) return null;
@@ -28,7 +29,10 @@ export function ThinkingBlock({ content, isStreaming }: ThinkingBlockProps) {
         <span className={styles.label}>{label}</span>
       </button>
       {expanded && (
-        <div className={styles.content}>{content}</div>
+        <div className={styles.content}>
+          {content}
+          {showCaret && <span className={styles.caret} aria-hidden="true" />}
+        </div>
       )}
     </div>
   );
