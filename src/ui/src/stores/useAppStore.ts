@@ -51,6 +51,11 @@ export interface CompletedTurn {
   /** Total time this turn took, in milliseconds. Summed from the
    *  duration_ms of assistant messages produced during the turn. */
   durationMs?: number;
+  /** Turn-total input tokens reported by the CLI on the `result` event.
+   *  Undefined for legacy turns replayed from DB without token metadata. */
+  inputTokens?: number;
+  /** Turn-total output tokens reported by the CLI on the `result` event. */
+  outputTokens?: number;
 }
 
 export interface AgentQuestionItem {
@@ -123,6 +128,8 @@ interface AppState {
     messageCount: number,
     turnId?: string,
     durationMs?: number,
+    inputTokens?: number,
+    outputTokens?: number,
   ) => void;
   hydrateCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
   setCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
@@ -573,7 +580,7 @@ export const useAppStore = create<AppState>((set) => ({
         ),
       },
     })),
-  finalizeTurn: (wsId, messageCount, turnId, durationMs) =>
+  finalizeTurn: (wsId, messageCount, turnId, durationMs, inputTokens, outputTokens) =>
     set((s) => {
       const activities = s.toolActivities[wsId] || [];
       if (activities.length === 0) {
@@ -601,6 +608,8 @@ export const useAppStore = create<AppState>((set) => ({
         collapsed: true,
         afterMessageIndex: (s.chatMessages[wsId] || []).length,
         durationMs,
+        inputTokens,
+        outputTokens,
       };
       debugChat("store", "finalizeTurn", {
         wsId,

@@ -828,3 +828,41 @@ describe("mergeRemoteData / clearRemoteData default branches", () => {
     expect(defaults["local-repo"]).toBe("origin/main");
   });
 });
+
+describe("finalizeTurn token counts", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      completedTurns: {},
+      toolActivities: {
+        // finalizeTurn early-returns if toolActivities is empty, so seed one.
+        ws1: [
+          {
+            toolUseId: "t1",
+            toolName: "Bash",
+            inputJson: "{}",
+            resultText: "",
+            collapsed: true,
+            summary: "",
+          },
+        ],
+      },
+    });
+  });
+
+  it("records input/output tokens on the completed turn", () => {
+    useAppStore.getState().finalizeTurn("ws1", 1, "turn-1", 1234, 1500, 240);
+    const turns = useAppStore.getState().completedTurns.ws1 || [];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].durationMs).toBe(1234);
+    expect(turns[0].inputTokens).toBe(1500);
+    expect(turns[0].outputTokens).toBe(240);
+  });
+
+  it("leaves token counts undefined when omitted", () => {
+    useAppStore.getState().finalizeTurn("ws1", 1, "turn-2", 500);
+    const turns = useAppStore.getState().completedTurns.ws1 || [];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].inputTokens).toBeUndefined();
+    expect(turns[0].outputTokens).toBeUndefined();
+  });
+});
