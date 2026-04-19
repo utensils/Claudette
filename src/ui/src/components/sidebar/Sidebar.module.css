@@ -118,7 +118,9 @@
 }
 
 .repoGroup {
-  margin-bottom: 4px;
+  /* Generous rhythm between groups — white space is the cheapest separator
+     and makes the sidebar scan as "paragraphs" of related workspaces. */
+  margin-bottom: 14px;
   touch-action: none;
   transition: opacity 0.15s ease;
 }
@@ -168,10 +170,16 @@
   transition: transform var(--transition-fast);
 }
 
+/* Repo names read as section-header labels, not primary destinations — the
+   workspaces under them are the interactive targets. Smaller, uppercase, and
+   tracked letter-spacing matches the existing WORKSPACES title treatment. */
 .repoName {
   flex: 1;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -280,11 +288,26 @@
   background: var(--hover-bg);
 }
 
+/* Indent guide — a thin hairline running through the workspace stack,
+   visually binding children to their parent repo. Rendered via ::before so
+   it stacks with the ::after selection accent without either overriding
+   the other on selected rows. Top/bottom at 0 so stacked items form a
+   continuous line. */
+.wsItem::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--divider);
+}
+
 .wsSelected {
   background: var(--selected-bg);
 }
 
-.wsSelected::before {
+.wsSelected::after {
   content: "";
   position: absolute;
   left: 12px;
