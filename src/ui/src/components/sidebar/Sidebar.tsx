@@ -502,7 +502,7 @@ export const Sidebar = memo(function Sidebar() {
           } else if (hasHiddenArchived) {
             message = "All workspaces are archived.";
           } else if (hasNoWorkspaces && localRepos.length === 0) {
-            message = "No repositories yet — add one from the toolbar below.";
+            message = "No local repositories yet — add one from the toolbar below.";
           } else if (hasNoWorkspaces) {
             message = "No workspaces yet.";
           } else if (repoFilterActive) {
