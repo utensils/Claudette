@@ -75,19 +75,27 @@ Two surgical changes — the existing `update_chat_message_cost` is **not rename
 
 Extend the frontend `ChatMessage` interface with the same four nullable fields. No other frontend type changes in Phase 1.
 
-### 6. Minimal per-message readout
+### 6. Minimal per-turn readout in `TurnFooter`
 
-The existing chat UI already renders a metadata line on assistant messages showing cost and duration. Extend that line to prepend a token segment when `input_tokens` or `output_tokens` is non-null:
+The chat UI does **not** currently display per-message cost or duration. It does display per-turn duration via `TurnFooter` (`ChatPanel.tsx:1161`), which reads `turn.durationMs` from the `CompletedTurn` Zustand slice. That `durationMs` is written by `finalizeTurn()` (`useAgentStream.ts:279`), which currently receives `streamEvent.duration_ms` from the `Result` event.
+
+Phase 1 rides this exact path for tokens — consistent with how duration already works:
+
+1. **Store:** extend `CompletedTurn` with `inputTokens?: number`, `outputTokens?: number`.
+2. **Store action:** extend `finalizeTurn` signature to accept optional token counts and store them on the `CompletedTurn`.
+3. **Hook:** `useAgentStream`'s `result` handler passes `streamEvent.usage?.input_tokens` / `.output_tokens` into `finalizeTurn`.
+4. **Render:** `TurnFooter` renders a token segment next to the elapsed-time segment when counts are present:
 
 ```
-1.2k in · 240 out · $0.003 · 2.1s
+1.2k in · 240 out · 45s
 ```
 
 Rules:
 
 - Format: numbers < 1000 render raw (`999`); >= 1000 render as `1.2k` with one decimal place.
-- Omit the token segment entirely when both `input_tokens` and `output_tokens` are null — preserves the existing rendering for historical messages.
-- Cache tokens (`cache_read_tokens`, `cache_creation_tokens`) are **persisted but not displayed** in Phase 1. Their natural home is a tooltip on the Phase 2 context meter, where cache-hit ratio is more interpretable than next to per-message output counts.
+- Omit the token segment entirely when both `inputTokens` and `outputTokens` are undefined — preserves the existing rendering for completed turns without tokens (legacy sessions replayed from DB will not have per-turn token aggregates).
+- Cache tokens are **persisted per message in SQLite but not displayed** in Phase 1. Their natural home is a tooltip on the Phase 2 context meter.
+- No per-message UI change. Per-message DB columns exist for (a) future per-message tooltip/drill-down, and (b) historical-session reconstruction.
 
 ### 7. Out of scope
 
@@ -109,9 +117,10 @@ Phase 1 deliberately excludes:
 
 **Frontend (vitest):**
 
-- Render an assistant message with `input_tokens`/`output_tokens` populated — readout contains the token segment.
-- Render with both null — readout omits the token segment entirely.
-- Formatting: `1234 → "1.2k"`, `999 → "999"`, `0 → "0"`.
+- `TurnFooter` renders the token segment when `inputTokens`/`outputTokens` are present on the `CompletedTurn`.
+- `TurnFooter` omits the token segment when both are undefined.
+- Token formatting helper: `1234 → "1.2k"`, `999 → "999"`, `0 → "0"`.
+- `finalizeTurn` reducer writes `inputTokens`/`outputTokens` onto the appended `CompletedTurn`.
 
 ## Risks
 
