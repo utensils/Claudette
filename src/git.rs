@@ -66,9 +66,16 @@ pub async fn validate_repo(path: &str) -> Result<(), GitError> {
     Ok(())
 }
 
+/// Resolve the default branch for a repository.
+///
+/// Tries, in order: remote HEAD symbolic-ref, remote-tracking `main`/`master`,
+/// local `main`/`master`, and finally `symbolic-ref HEAD` (the currently
+/// checked-out branch). The last fallback is a best-effort guess for local-only
+/// repos with non-standard branch names — it may not reflect the true default
+/// if HEAD has been moved to a feature branch.
 pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
     // Resolve the primary remote name (usually "origin", but could be "upstream"
-    // in fork-and-PR workflows). Falls back to "origin" if no remote exists.
+    // in fork-and-PR workflows).
     let remote = run_git(repo_path, &["remote"])
         .await
         .ok()
