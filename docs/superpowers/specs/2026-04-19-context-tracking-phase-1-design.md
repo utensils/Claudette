@@ -112,15 +112,14 @@ Phase 1 deliberately excludes:
 
 **Rust:**
 
-- `src/agent.rs` unit tests: deserialize a `message_delta` payload with full usage; deserialize a `result` payload with usage; deserialize a `result` with only `input_tokens`/`output_tokens` (cache fields absent); deserialize a legacy payload with no `usage` key at all (must remain valid, `usage: None`).
-- `src/db.rs` test: migration from v19 → v20 preserves existing `chat_messages` rows; insert + fetch a `ChatMessage` with all four token fields populated; insert + fetch with token fields NULL.
+- `src/agent.rs` unit tests: deserialize a `message_delta` payload with full usage; deserialize a `result` payload with usage; deserialize a `result` with only `input_tokens`/`output_tokens` (cache fields absent); deserialize legacy `message_delta` and `result` payloads with no `usage` key at all (must remain valid with `usage: None`).
+- `src/db.rs` round-trip tests: insert + fetch a `ChatMessage` with all four token fields populated; insert + fetch with token fields NULL. (SQLite `ALTER TABLE ADD COLUMN` is non-destructive by design — existing rows acquire NULL for the new columns with no data migration — so a dedicated v19→v20 migration-preservation test is not necessary.)
 
 **Frontend (vitest):**
 
-- `TurnFooter` renders the token segment when `inputTokens`/`outputTokens` are present on the `CompletedTurn`.
-- `TurnFooter` omits the token segment when both are undefined.
-- Token formatting helper: `1234 → "1.2k"`, `999 → "999"`, `0 → "0"`.
-- `finalizeTurn` reducer writes `inputTokens`/`outputTokens` onto the appended `CompletedTurn`.
+- `formatTokens` helper: `1234 → "1.2k"`, `999 → "999"`, `0 → "0"`, truncates toward zero (`1299 → "1.2k"`).
+- `finalizeTurn` reducer writes `inputTokens`/`outputTokens` onto the appended `CompletedTurn`; omitting them leaves the fields undefined.
+- `TurnFooter` render behavior (show/hide the token segment) is covered by the manual UAT step in the implementation plan — the existing codebase has no component-render test pattern for `ChatPanel.tsx`, and extracting `TurnFooter` solely for testability is out of scope for this plumbing PR.
 
 ## Risks
 
