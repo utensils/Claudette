@@ -156,13 +156,15 @@ pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
 /// timeout. Failures are logged but never propagated — callers can proceed with
 /// potentially stale refs when the network is unavailable.
 pub async fn fetch_remote(repo_path: &str) -> Result<(), GitError> {
-    let remote = match run_git(repo_path, &["remote"])
-        .await
-        .ok()
-        .and_then(|out| out.lines().next().map(|l| l.to_string()))
-    {
-        Some(r) => r,
-        None => return Ok(()),
+    let remote = match run_git(repo_path, &["remote"]).await {
+        Ok(output) => match output.lines().next() {
+            Some(r) => r.to_string(),
+            None => return Ok(()),
+        },
+        Err(e) => {
+            eprintln!("[git] failed to list remotes: {e}");
+            return Ok(());
+        }
     };
 
     // Spawn with kill_on_drop so the child is terminated if the timeout fires.
@@ -330,10 +332,11 @@ pub async fn rename_branch(path: &str, old_name: &str, new_name: &str) -> Result
 
 /// Get the remote URL for a repository (typically `origin`).
 pub async fn get_remote_url(repo_path: &str) -> Result<String, GitError> {
-    let remote = run_git(repo_path, &["remote"])
-        .await
-        .ok()
-        .and_then(|out| out.lines().next().map(|l| l.to_string()))
+    let output = run_git(repo_path, &["remote"]).await?;
+    let remote = output
+        .lines()
+        .next()
+        .map(|l| l.to_string())
         .ok_or_else(|| GitError::CommandFailed("No remote configured".into()))?;
 
     run_git(repo_path, &["remote", "get-url", &remote]).await
@@ -671,8 +674,11 @@ mod tests {
     async fn test_get_remote_url_no_remote() {
         let dir = setup_temp_repo().await;
         let path = dir.path().to_str().unwrap();
-        let result = get_remote_url(path).await;
-        assert!(result.is_err());
+        let err = get_remote_url(path).await.unwrap_err();
+        assert!(
+            err.to_string().contains("No remote configured"),
+            "expected 'No remote configured', got: {err}"
+        );
     }
 
     #[tokio::test]
