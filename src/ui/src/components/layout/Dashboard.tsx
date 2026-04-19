@@ -276,6 +276,7 @@ export function Dashboard() {
         </div>
         <div className={styles.scrollBody}>
           <StatsStrip />
+          <AnalyticsSection />
           <div className={styles.empty}>
             <Layers size={40} className={styles.emptyIcon} />
             <span className={styles.emptyTitle}>No active workspaces</span>
@@ -284,7 +285,6 @@ export function Dashboard() {
               <kbd className={styles.hintKey}>+</kbd> next to a repo name.
             </p>
           </div>
-          <AnalyticsSection />
         </div>
       </div>
     );
@@ -302,6 +302,7 @@ export function Dashboard() {
       </div>
       <div className={styles.scrollBody}>
         <StatsStrip />
+        <AnalyticsSection />
         <div className={styles.workspacesSection}>
           <button
             type="button"
@@ -339,7 +340,6 @@ export function Dashboard() {
             </div>
           )}
         </div>
-        <AnalyticsSection />
       </div>
     </div>
   );
