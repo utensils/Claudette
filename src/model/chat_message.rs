@@ -41,4 +41,8 @@ pub struct ChatMessage {
     pub duration_ms: Option<i64>,
     pub created_at: String,
     pub thinking: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub cache_read_tokens: Option<i64>,
+    pub cache_creation_tokens: Option<i64>,
 }

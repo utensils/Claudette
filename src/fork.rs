@@ -288,6 +288,10 @@ fn copy_history(
             // created_at is set by the DB default on insert.
             created_at: String::new(),
             thinking: msg.thinking.clone(),
+            input_tokens: msg.input_tokens,
+            output_tokens: msg.output_tokens,
+            cache_read_tokens: msg.cache_read_tokens,
+            cache_creation_tokens: msg.cache_creation_tokens,
         };
         db.insert_chat_message(&copied)?;
     }
@@ -459,6 +463,10 @@ mod tests {
             duration_ms: None,
             created_at: String::new(),
             thinking: None,
+            input_tokens: None,
+            output_tokens: None,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
         }
     }
 

@@ -348,6 +348,17 @@ impl Database {
             )?;
         }
 
+        if version < 20 {
+            self.conn.execute_batch(
+                "ALTER TABLE chat_messages ADD COLUMN input_tokens INTEGER;
+                 ALTER TABLE chat_messages ADD COLUMN output_tokens INTEGER;
+                 ALTER TABLE chat_messages ADD COLUMN cache_read_tokens INTEGER;
+                 ALTER TABLE chat_messages ADD COLUMN cache_creation_tokens INTEGER;
+
+                 PRAGMA user_version = 20;",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -700,8 +711,10 @@ impl Database {
     #[allow(dead_code)]
     pub fn insert_chat_message(&self, msg: &ChatMessage) -> Result<(), rusqlite::Error> {
         self.conn.execute(
-            "INSERT INTO chat_messages (id, workspace_id, role, content, cost_usd, duration_ms, thinking)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO chat_messages (
+                id, workspace_id, role, content, cost_usd, duration_ms, thinking,
+                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 msg.id,
                 msg.workspace_id,
@@ -710,6 +723,10 @@ impl Database {
                 msg.cost_usd,
                 msg.duration_ms,
                 msg.thinking,
+                msg.input_tokens,
+                msg.output_tokens,
+                msg.cache_read_tokens,
+                msg.cache_creation_tokens,
             ],
         )?;
         Ok(())
@@ -721,7 +738,8 @@ impl Database {
         workspace_id: &str,
     ) -> Result<Vec<ChatMessage>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, workspace_id, role, content, cost_usd, duration_ms, created_at, thinking
+            "SELECT id, workspace_id, role, content, cost_usd, duration_ms, created_at, thinking,
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
              FROM chat_messages WHERE workspace_id = ?1 ORDER BY created_at, rowid",
         )?;
         let rows = stmt.query_map(params![workspace_id], |row| {
@@ -735,6 +753,10 @@ impl Database {
                 duration_ms: row.get(5)?,
                 created_at: row.get(6)?,
                 thinking: row.get(7)?,
+                input_tokens: row.get(8)?,
+                output_tokens: row.get(9)?,
+                cache_read_tokens: row.get(10)?,
+                cache_creation_tokens: row.get(11)?,
             })
         })?;
         rows.collect()
@@ -772,7 +794,8 @@ impl Database {
     /// one row per workspace even when multiple messages share the same timestamp.
     pub fn last_message_per_workspace(&self) -> Result<Vec<ChatMessage>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT m.id, m.workspace_id, m.role, m.content, m.cost_usd, m.duration_ms, m.created_at, m.thinking
+            "SELECT m.id, m.workspace_id, m.role, m.content, m.cost_usd, m.duration_ms, m.created_at, m.thinking,
+                    m.input_tokens, m.output_tokens, m.cache_read_tokens, m.cache_creation_tokens
              FROM chat_messages m
              WHERE m.rowid = (
                  SELECT rowid FROM chat_messages c2
@@ -792,6 +815,10 @@ impl Database {
                 duration_ms: row.get(5)?,
                 created_at: row.get(6)?,
                 thinking: row.get(7)?,
+                input_tokens: row.get(8)?,
+                output_tokens: row.get(9)?,
+                cache_read_tokens: row.get(10)?,
+                cache_creation_tokens: row.get(11)?,
             })
         })?;
         rows.collect()
@@ -1046,7 +1073,8 @@ impl Database {
         };
 
         let mut stmt = self.conn.prepare(
-            "SELECT id, workspace_id, role, content, cost_usd, duration_ms, created_at, thinking
+            "SELECT id, workspace_id, role, content, cost_usd, duration_ms, created_at, thinking,
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens
              FROM chat_messages
              WHERE workspace_id = ?1
                AND (created_at < ?2 OR (created_at = ?2 AND rowid <= ?3))
@@ -1063,6 +1091,10 @@ impl Database {
                 duration_ms: row.get(5)?,
                 created_at: row.get(6)?,
                 thinking: row.get(7)?,
+                input_tokens: row.get(8)?,
+                output_tokens: row.get(9)?,
+                cache_read_tokens: row.get(10)?,
+                cache_creation_tokens: row.get(11)?,
             })
         })?;
         rows.collect()
@@ -1770,6 +1802,10 @@ mod tests {
             duration_ms: None,
             created_at: String::new(),
             thinking: None,
+            input_tokens: None,
+            output_tokens: None,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
         }
     }
 
@@ -1868,6 +1904,38 @@ mod tests {
         assert_eq!(msgs[0].role, ChatRole::User);
         assert_eq!(msgs[1].role, ChatRole::Assistant);
         assert_eq!(msgs[2].role, ChatRole::System);
+    }
+
+    #[test]
+    fn test_chat_message_tokens_round_trip() {
+        let db = setup_db_with_workspace();
+        let mut msg = make_chat_msg("mt1", "w1", ChatRole::Assistant, "hello");
+        msg.input_tokens = Some(1234);
+        msg.output_tokens = Some(56);
+        msg.cache_read_tokens = Some(100_000);
+        msg.cache_creation_tokens = Some(7_000);
+        db.insert_chat_message(&msg).unwrap();
+
+        let msgs = db.list_chat_messages("w1").unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].input_tokens, Some(1234));
+        assert_eq!(msgs[0].output_tokens, Some(56));
+        assert_eq!(msgs[0].cache_read_tokens, Some(100_000));
+        assert_eq!(msgs[0].cache_creation_tokens, Some(7_000));
+    }
+
+    #[test]
+    fn test_chat_message_tokens_null_round_trip() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg("mt2", "w1", ChatRole::Assistant, "hi"))
+            .unwrap();
+
+        let msgs = db.list_chat_messages("w1").unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].input_tokens, None);
+        assert_eq!(msgs[0].output_tokens, None);
+        assert_eq!(msgs[0].cache_read_tokens, None);
+        assert_eq!(msgs[0].cache_creation_tokens, None);
     }
 
     // --- Attachment tests ---
