@@ -285,6 +285,8 @@ export function useAgentStream() {
               turnMessageCountRef.current[wsId] || 0,
               turnCheckpointIdRef.current[wsId],
               streamEvent.duration_ms,
+              streamEvent.usage?.input_tokens,
+              streamEvent.usage?.output_tokens,
             );
             turnMessageCountRef.current[wsId] = 0;
             turnFinalizedRef.current[wsId] = true;
