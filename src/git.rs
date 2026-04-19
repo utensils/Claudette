@@ -388,13 +388,44 @@ pub struct CommitInfo {
     pub files_changed: i64,
 }
 
+/// Returns `since` with an explicit UTC marker appended if it lacks one,
+/// so `git log --since` doesn't fall back to local-time interpretation.
+/// Recognizes trailing `Z`/`z` and `±HH:MM` / `±HHMM` offsets.
+fn ensure_utc_tz(since: &str) -> String {
+    let s = since.trim();
+    if s.ends_with('Z') || s.ends_with('z') {
+        return s.to_string();
+    }
+    let b = s.as_bytes();
+    let has_colon_offset = b.len() >= 6 && {
+        let t = &b[b.len() - 6..];
+        (t[0] == b'+' || t[0] == b'-')
+            && t[1].is_ascii_digit()
+            && t[2].is_ascii_digit()
+            && t[3] == b':'
+            && t[4].is_ascii_digit()
+            && t[5].is_ascii_digit()
+    };
+    let has_compact_offset = b.len() >= 5 && {
+        let t = &b[b.len() - 5..];
+        (t[0] == b'+' || t[0] == b'-') && t[1..].iter().all(|c| c.is_ascii_digit())
+    };
+    if has_colon_offset || has_compact_offset {
+        s.to_string()
+    } else {
+        format!("{s} UTC")
+    }
+}
+
 /// List commits in a worktree whose committer date is after `since`, with
 /// per-commit aggregated additions/deletions/files_changed from numstat.
 ///
 /// `since` is passed to `git log --since` and accepts any format git's
 /// approxidate understands — RFC3339, ISO-8601, or SQLite's
-/// `datetime('now')` output (`YYYY-MM-DD HH:MM:SS` UTC) all work. The
-/// returned `committed_at` is always RFC3339.
+/// `datetime('now')` output (`YYYY-MM-DD HH:MM:SS` UTC). Naive strings
+/// (no `Z` or `±HH:MM` offset) are assumed UTC, since that matches how
+/// SQLite stores timestamps; git's default interpretation would be local
+/// time, which silently shifts the window.
 ///
 /// Used for post-turn metric scraping in the agent lifecycle. Committer
 /// date (not author date) is used so commits that were cherry-picked or
@@ -403,11 +434,12 @@ pub struct CommitInfo {
 /// Binary files (numstat emits "-\t-\t") contribute 0 additions/deletions
 /// but still count toward `files_changed`.
 pub async fn commits_since(worktree_path: &str, since: &str) -> Result<Vec<CommitInfo>, GitError> {
+    let since_utc = ensure_utc_tz(since);
     let raw = run_git(
         worktree_path,
         &[
             "log",
-            &format!("--since={since}"),
+            &format!("--since={since_utc}"),
             "--pretty=format:COMMIT|%H|%cI",
             "--numstat",
         ],
@@ -1037,6 +1069,36 @@ mod tests {
         assert_eq!(
             bin_commit.files_changed, 1,
             "binary file must still count toward files_changed"
+        );
+    }
+
+    #[test]
+    fn test_ensure_utc_tz() {
+        // Already-qualified strings pass through unchanged.
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10Z"),
+            "2026-04-18T03:36:10Z"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10+00:00"),
+            "2026-04-18T03:36:10+00:00"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-17T23:36:10-04:00"),
+            "2026-04-17T23:36:10-04:00"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10+0000"),
+            "2026-04-18T03:36:10+0000"
+        );
+        // Naive SQLite format gets a UTC suffix.
+        assert_eq!(
+            ensure_utc_tz("2026-04-18 03:36:10"),
+            "2026-04-18 03:36:10 UTC"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10"),
+            "2026-04-18T03:36:10 UTC"
         );
     }
 }
