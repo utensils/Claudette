@@ -8,7 +8,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} role="status" aria-live="polite" aria-atomic="false">
       {toasts.map((t) => (
         <div key={t.id} className={styles.toast}>
           <span className={styles.message}>{t.message}</span>

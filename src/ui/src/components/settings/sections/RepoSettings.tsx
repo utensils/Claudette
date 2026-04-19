@@ -57,6 +57,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
       setCustomInstructions(repo.custom_instructions ?? "");
       setBranchRenamePreferences(repo.branch_rename_preferences ?? "");
       setAutoRunSetup(repo.setup_script_auto_run ?? false);
+      setArchiveOnMerge("inherit");
       setError(null);
     }
   }, [repoId]); // eslint-disable-line react-hooks/exhaustive-deps

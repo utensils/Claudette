@@ -213,7 +213,7 @@ function App() {
       if (store.selectedWorkspaceId === workspace_id) {
         store.selectWorkspace(null);
       }
-      const msg = pr_number
+      const msg = pr_number != null
         ? `Workspace \u201c${workspace_name}\u201d archived \u2014 PR #${pr_number} merged`
         : `Workspace \u201c${workspace_name}\u201d archived \u2014 PR merged`;
       store.addToast(msg);

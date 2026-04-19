@@ -594,11 +594,8 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
                         })
                     {
                         eprintln!("[scm] PR merged for workspace {} — auto-archiving", ws_id);
-                        let pr_info = detail
-                            .pull_request
-                            .as_ref()
-                            .map(|pr| (pr.number, pr.title.clone()));
-                        auto_archive_workspace(&handle, &app_state, &ws_id, pr_info).await;
+                        let pr_number = detail.pull_request.as_ref().map(|pr| pr.number);
+                        auto_archive_workspace(&handle, &app_state, &ws_id, pr_number).await;
                     }
                 }
             }
@@ -617,7 +614,7 @@ async fn auto_archive_workspace(
     handle: &tauri::AppHandle,
     app_state: &AppState,
     workspace_id: &str,
-    pr_info: Option<(u64, String)>,
+    pr_number: Option<u64>,
 ) {
     // All DB work in a block (Database is not Send — must not hold across .await)
     let archive_info: Option<(String, String, Option<String>, Option<String>, String)> = {
@@ -643,10 +640,18 @@ async fn auto_archive_workspace(
             .flatten()
             .map(|r| r.path);
 
+        // Match the legacy fallback chain from notify_attention in tray.rs:
+        // notification_sound → audio_notifications=false → "Default"
         let sound = db
             .get_app_setting("notification_sound")
             .ok()
             .flatten()
+            .or_else(
+                || match db.get_app_setting("audio_notifications").ok().flatten() {
+                    Some(v) if v == "false" => Some("None".to_string()),
+                    _ => None,
+                },
+            )
             .unwrap_or_else(|| "Default".to_string());
 
         // Update DB status
@@ -688,22 +693,21 @@ async fn auto_archive_workspace(
     // Rebuild tray and notify frontend
     crate::tray::rebuild_tray(handle);
 
-    let pr_number = pr_info.as_ref().map(|(n, _)| *n);
-    let body = match &pr_info {
-        Some((num, _)) => {
+    let body = match pr_number {
+        Some(num) => {
             format!("Workspace \u{2018}{ws_name}\u{2019} archived \u{2014} PR #{num} merged")
         }
         None => format!("Workspace \u{2018}{ws_name}\u{2019} archived \u{2014} PR merged"),
     };
     crate::tray::send_notification(handle, "", "Claudette", &body, &sound);
 
-    let _ = handle.emit(
-        "workspace-auto-archived",
-        serde_json::json!({
-            "workspace_id": ws_id,
-            "workspace_name": ws_name,
-            "pr_number": pr_number,
-        }),
-    );
+    let mut payload = serde_json::json!({
+        "workspace_id": ws_id,
+        "workspace_name": ws_name,
+    });
+    if let Some(num) = pr_number {
+        payload["pr_number"] = serde_json::json!(num);
+    }
+    let _ = handle.emit("workspace-auto-archived", payload);
     eprintln!("[scm] Auto-archived workspace '{ws_name}' ({ws_id})");
 }

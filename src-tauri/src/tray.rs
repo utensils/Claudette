@@ -582,7 +582,9 @@ pub(crate) fn send_notification(
                 )
             {
                 show_and_focus(&app_clone);
-                let _ = app_clone.emit("tray-select-workspace", ws_id);
+                if !ws_id.is_empty() {
+                    let _ = app_clone.emit("tray-select-workspace", ws_id);
+                }
             }
         });
     }

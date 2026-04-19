@@ -381,6 +381,8 @@ interface AppState {
   setSlashCommands: (wsId: string, cmds: SlashCommand[]) => void;
 }
 
+const toastTimers = new Map<string, number>();
+
 export const useAppStore = create<AppState>((set) => ({
   // -- Repositories --
   repositories: [],
@@ -795,12 +797,20 @@ export const useAppStore = create<AppState>((set) => ({
   addToast: (message) => {
     const id = crypto.randomUUID();
     set((s) => ({ toasts: [...s.toasts, { id, message }] }));
-    setTimeout(() => {
+    const handle = window.setTimeout(() => {
+      toastTimers.delete(id);
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
     }, 5000);
+    toastTimers.set(id, handle);
   },
-  removeToast: (id) =>
-    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  removeToast: (id) => {
+    const handle = toastTimers.get(id);
+    if (handle != null) {
+      window.clearTimeout(handle);
+      toastTimers.delete(id);
+    }
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
 
   // -- Permissions --
   permissionLevel: {},
