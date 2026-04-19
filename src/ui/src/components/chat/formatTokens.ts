@@ -6,6 +6,6 @@ export function formatTokens(n: number): string {
   if (n < 1000) {
     return `${n}`;
   }
-  const tenths = Math.floor(n / 100) / 10;
+  const tenths = Math.trunc(n / 100) / 10;
   return `${tenths.toFixed(1)}k`;
 }
