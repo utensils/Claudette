@@ -104,13 +104,16 @@ export function useAutoUpdater() {
 
   // Subscribe to the Rust-side download progress event.
   useEffect(() => {
+    let cancelled = false;
     let unlisten: UnlistenFn | undefined;
     listen<number>("updater://progress", (event) => {
       useAppStore.getState().setUpdateProgress(event.payload);
     }).then((fn) => {
-      unlisten = fn;
+      if (cancelled) fn();
+      else unlisten = fn;
     });
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, []);
