@@ -345,6 +345,10 @@ async fn handle_send_chat_message(
         duration_ms: None,
         created_at: now_iso(),
         thinking: None,
+        input_tokens: None,
+        output_tokens: None,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
     };
     db.insert_chat_message(&user_msg)
         .map_err(|e| e.to_string())?;
@@ -513,6 +517,10 @@ async fn handle_send_chat_message(
                         duration_ms: None,
                         created_at: now_iso(),
                         thinking: pending_thinking.take(),
+                        input_tokens: None,
+                        output_tokens: None,
+                        cache_read_tokens: None,
+                        cache_creation_tokens: None,
                     };
                     let _ = db.insert_chat_message(&msg);
                 }
@@ -568,6 +576,10 @@ async fn handle_stop_agent(
         duration_ms: None,
         created_at: now_iso(),
         thinking: None,
+        input_tokens: None,
+        output_tokens: None,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
     };
     db.insert_chat_message(&msg).map_err(|e| e.to_string())?;
     Ok(json!(null))

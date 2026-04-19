@@ -137,6 +137,10 @@ pub async fn send_chat_message(
         duration_ms: None,
         created_at: now_iso(),
         thinking: None,
+        input_tokens: None,
+        output_tokens: None,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
     };
     // Decode, validate, and persist attachments alongside the user message.
     // Both inserts share a transaction so the message and its attachments are
@@ -661,6 +665,11 @@ pub async fn send_chat_message(
         // be attached to the next text-bearing assistant message. The CLI
         // may fire a thinking-only event followed by a text-only event.
         let mut pending_thinking: Option<String> = None;
+        // Tracks the most recent per-message usage observed on a MessageDelta
+        // event. Written into the next persisted assistant ChatMessage and reset
+        // to None after each persistence so per-message counts stay distinct
+        // across multi-message turns.
+        let mut latest_usage: Option<claudette::agent::TokenUsage> = None;
         let mut pending_attention_notify: bool;
         while let Some(event) = rx.recv().await {
             pending_attention_notify = false;
@@ -834,6 +843,17 @@ pub async fn send_chat_message(
                 crate::tray::rebuild_tray(&app);
             }
 
+            // Track per-assistant-message cumulative usage as the CLI streams it.
+            // The final MessageDelta before message_stop carries the authoritative
+            // per-message total; we overwrite on every delta and consume it when the
+            // assistant message is persisted below.
+            if let AgentEvent::Stream(StreamEvent::Stream {
+                event: InnerStreamEvent::MessageDelta { usage: Some(u) },
+            }) = &event
+            {
+                latest_usage = Some(u.clone());
+            }
+
             if let AgentEvent::ProcessExited(_code) = &event {
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
@@ -972,6 +992,7 @@ pub async fn send_chat_message(
                     && let Ok(db) = Database::open(&db_path)
                 {
                     let msg_id = uuid::Uuid::new_v4().to_string();
+                    let taken_usage = latest_usage.take();
                     let msg = ChatMessage {
                         id: msg_id.clone(),
                         workspace_id: ws_id.clone(),
@@ -981,6 +1002,14 @@ pub async fn send_chat_message(
                         duration_ms: None,
                         created_at: now_iso(),
                         thinking: pending_thinking.take(),
+                        input_tokens: taken_usage.as_ref().map(|u| u.input_tokens as i64),
+                        output_tokens: taken_usage.as_ref().map(|u| u.output_tokens as i64),
+                        cache_read_tokens: taken_usage
+                            .as_ref()
+                            .and_then(|u| u.cache_read_input_tokens.map(|n| n as i64)),
+                        cache_creation_tokens: taken_usage
+                            .as_ref()
+                            .and_then(|u| u.cache_creation_input_tokens.map(|n| n as i64)),
                     };
                     if db.insert_chat_message(&msg).is_ok() {
                         last_assistant_msg_id = Some(msg_id);
@@ -1115,6 +1144,10 @@ pub async fn stop_agent(
         duration_ms: None,
         created_at: now_iso(),
         thinking: None,
+        input_tokens: None,
+        output_tokens: None,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
     };
     db.insert_chat_message(&msg).map_err(|e| e.to_string())?;
 
