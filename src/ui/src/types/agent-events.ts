@@ -18,12 +18,16 @@ export type StreamEvent =
       result?: string;
       total_cost_usd?: number;
       duration_ms?: number;
+      // Rust serializes `Option<T>` as `null` when absent (no
+      // `skip_serializing_if`), so the wire payload can carry either
+      // `{ usage: null }` or `usage` omitted entirely. The cache fields
+      // can likewise be `null` when the CLI doesn't emit them.
       usage?: {
         input_tokens: number;
         output_tokens: number;
-        cache_creation_input_tokens?: number;
-        cache_read_input_tokens?: number;
-      };
+        cache_creation_input_tokens?: number | null;
+        cache_read_input_tokens?: number | null;
+      } | null;
     }
   | { type: "user"; message: UserEventMessage }
   | { type: "Unknown" };
