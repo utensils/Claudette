@@ -669,6 +669,11 @@
   color: var(--text-dim);
 }
 
+.turnFooterTokens {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
 .turnFooterDot {
   color: var(--text-faint);
   user-select: none;
