@@ -132,6 +132,12 @@ pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
         return Ok("master".into());
     }
 
+    // Ultimate fallback: use the current branch (best guess for local repos
+    // with non-standard branch names like "trunk" or "develop").
+    if let Ok(current) = run_git(repo_path, &["symbolic-ref", "HEAD", "--short"]).await {
+        return Ok(current);
+    }
+
     Err(GitError::CommandFailed(
         "Could not determine default branch".into(),
     ))
@@ -143,11 +149,14 @@ pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
 /// timeout. Failures are logged but never propagated — callers can proceed with
 /// potentially stale refs when the network is unavailable.
 pub async fn fetch_remote(repo_path: &str) -> Result<(), GitError> {
-    let remote = run_git(repo_path, &["remote"])
+    let remote = match run_git(repo_path, &["remote"])
         .await
         .ok()
         .and_then(|out| out.lines().next().map(|l| l.to_string()))
-        .unwrap_or_else(|| "origin".to_string());
+    {
+        Some(r) => r,
+        None => return Ok(()),
+    };
 
     // Spawn with kill_on_drop so the child is terminated if the timeout fires.
     let mut child = match Command::new("git")
@@ -314,12 +323,11 @@ pub async fn rename_branch(path: &str, old_name: &str, new_name: &str) -> Result
 
 /// Get the remote URL for a repository (typically `origin`).
 pub async fn get_remote_url(repo_path: &str) -> Result<String, GitError> {
-    // Resolve the primary remote name (same approach as default_branch)
     let remote = run_git(repo_path, &["remote"])
         .await
         .ok()
         .and_then(|out| out.lines().next().map(|l| l.to_string()))
-        .unwrap_or_else(|| "origin".to_string());
+        .ok_or_else(|| GitError::CommandFailed("No remote configured".into()))?;
 
     run_git(repo_path, &["remote", "get-url", &remote]).await
 }
@@ -630,6 +638,34 @@ mod tests {
         let dir = setup_temp_repo().await;
         let path = dir.path().to_str().unwrap();
         fetch_remote(path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_default_branch_nonstandard_local_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        run_git(path, &["init", "-b", "trunk"]).await.unwrap();
+        run_git(path, &["config", "user.email", "test@test.com"])
+            .await
+            .unwrap();
+        run_git(path, &["config", "user.name", "Test"])
+            .await
+            .unwrap();
+        let readme = dir.path().join("README.md");
+        std::fs::write(&readme, "# test").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "initial"]).await.unwrap();
+
+        let branch = default_branch(path).await.unwrap();
+        assert_eq!(branch, "trunk");
+    }
+
+    #[tokio::test]
+    async fn test_get_remote_url_no_remote() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let result = get_remote_url(path).await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
