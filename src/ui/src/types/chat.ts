@@ -9,6 +9,10 @@ export interface ChatMessage {
   duration_ms: number | null;
   created_at: string;
   thinking: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
 }
 
 /** A persisted image attachment returned from the backend (base64-encoded). */

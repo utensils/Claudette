@@ -21,6 +21,10 @@ function msg(
     duration_ms: null,
     created_at: new Date().toISOString(),
     thinking: null,
+    input_tokens: null,
+    output_tokens: null,
+    cache_read_tokens: null,
+    cache_creation_tokens: null,
   };
 }
 

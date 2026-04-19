@@ -262,6 +262,10 @@ export function useAgentStream() {
                 duration_ms: null,
                 created_at: new Date().toISOString(),
                 thinking: useAppStore.getState().streamingThinking[wsId] || null,
+                input_tokens: null,
+                output_tokens: null,
+                cache_read_tokens: null,
+                cache_creation_tokens: null,
               });
               // Clear thinking only after attaching it to a text message.
               clearStreamingThinking(wsId);
