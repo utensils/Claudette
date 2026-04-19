@@ -207,6 +207,16 @@ pub async fn create_worktree(
     // Fetch latest remote state before branching (best-effort).
     let _ = fetch_remote(repo_path).await;
     let base = default_branch(repo_path).await?;
+
+    // Verify the base ref points to a real commit (symbolic-ref HEAD returns
+    // a branch name even on unborn branches with zero commits).
+    if run_git(repo_path, &["rev-parse", "--verify", &base]).await.is_err() {
+        return Err(GitError::CommandFailed(
+            "Repository has no commits — create at least one commit before creating a workspace"
+                .into(),
+        ));
+    }
+
     run_git(
         repo_path,
         &["worktree", "add", "-b", branch_name, worktree_path, &base],
@@ -648,6 +658,22 @@ mod tests {
         let dir = setup_temp_repo().await;
         let path = dir.path().to_str().unwrap();
         fetch_remote(path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_create_worktree_empty_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        run_git(path, &["init", "-b", "main"]).await.unwrap();
+
+        let wt = dir.path().join("worktree");
+        let err = create_worktree(path, "test-branch", wt.to_str().unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("no commits"),
+            "expected 'no commits' error, got: {err}"
+        );
     }
 
     #[tokio::test]
