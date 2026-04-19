@@ -15,6 +15,20 @@ use crate::env::WorkspaceEnv;
 // Stream event types — maps to Claude CLI `--output-format stream-json`
 // ---------------------------------------------------------------------------
 
+/// Token accounting reported by the CLI on `message_delta` (per-message
+/// cumulative) and `result` (turn total) events. Matches the shape of
+/// Anthropic's `usage` block; cache fields are independently optional to
+/// tolerate CLI responses that omit them.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<u64>,
+}
+
 /// Top-level JSON line from Claude CLI stdout.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -41,6 +55,8 @@ pub enum StreamEvent {
         total_cost_usd: Option<f64>,
         #[serde(default)]
         duration_ms: Option<i64>,
+        #[serde(default)]
+        usage: Option<TokenUsage>,
     },
 
     #[serde(rename = "user")]
@@ -98,7 +114,10 @@ pub enum InnerStreamEvent {
     ContentBlockStop { index: usize },
 
     #[serde(rename = "message_delta")]
-    MessageDelta {},
+    MessageDelta {
+        #[serde(default)]
+        usage: Option<TokenUsage>,
+    },
 
     #[serde(rename = "message_stop")]
     MessageStop {},
@@ -1292,7 +1311,7 @@ mod tests {
         let event = parse_stream_line(line).unwrap();
         match event {
             StreamEvent::Stream { event } => {
-                assert!(matches!(event, InnerStreamEvent::MessageDelta {}));
+                assert!(matches!(event, InnerStreamEvent::MessageDelta { .. }));
             }
             _ => panic!("Expected Stream event"),
         }
@@ -1457,6 +1476,7 @@ mod tests {
                 result,
                 total_cost_usd,
                 duration_ms,
+                ..
             } => {
                 assert_eq!(subtype, "success");
                 assert_eq!(result.unwrap(), "full text");
@@ -1477,6 +1497,7 @@ mod tests {
                 result,
                 total_cost_usd,
                 duration_ms,
+                ..
             } => {
                 assert_eq!(subtype, "error");
                 assert!(result.is_none());
@@ -2652,6 +2673,104 @@ mod tests {
                 assert!(matches!(request, ControlRequestInner::Unknown));
             }
             other => panic!("expected ControlRequest, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod token_usage_tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_result_with_full_usage() {
+        let line = r#"{
+            "type": "result",
+            "subtype": "success",
+            "total_cost_usd": 0.12,
+            "duration_ms": 4321,
+            "usage": {
+                "input_tokens": 1200,
+                "output_tokens": 340,
+                "cache_creation_input_tokens": 500,
+                "cache_read_input_tokens": 10000
+            }
+        }"#;
+        let ev: StreamEvent = serde_json::from_str(line).unwrap();
+        match ev {
+            StreamEvent::Result { usage: Some(u), .. } => {
+                assert_eq!(u.input_tokens, 1200);
+                assert_eq!(u.output_tokens, 340);
+                assert_eq!(u.cache_creation_input_tokens, Some(500));
+                assert_eq!(u.cache_read_input_tokens, Some(10000));
+            }
+            other => panic!("expected Result with usage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserializes_result_without_usage_or_cache() {
+        let line = r#"{
+            "type": "result",
+            "subtype": "success",
+            "total_cost_usd": 0.01,
+            "duration_ms": 100
+        }"#;
+        let ev: StreamEvent = serde_json::from_str(line).unwrap();
+        match ev {
+            StreamEvent::Result { usage, .. } => assert!(usage.is_none()),
+            other => panic!("expected Result, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserializes_result_with_minimal_usage() {
+        let line = r#"{
+            "type": "result",
+            "subtype": "success",
+            "usage": { "input_tokens": 10, "output_tokens": 20 }
+        }"#;
+        let ev: StreamEvent = serde_json::from_str(line).unwrap();
+        match ev {
+            StreamEvent::Result { usage: Some(u), .. } => {
+                assert_eq!(u.input_tokens, 10);
+                assert_eq!(u.output_tokens, 20);
+                assert_eq!(u.cache_creation_input_tokens, None);
+                assert_eq!(u.cache_read_input_tokens, None);
+            }
+            other => panic!("expected Result with usage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserializes_message_delta_with_usage() {
+        let line = r#"{
+            "type": "stream_event",
+            "event": {
+                "type": "message_delta",
+                "usage": { "input_tokens": 5, "output_tokens": 7 }
+            }
+        }"#;
+        let ev: StreamEvent = serde_json::from_str(line).unwrap();
+        match ev {
+            StreamEvent::Stream {
+                event: InnerStreamEvent::MessageDelta { usage: Some(u) },
+            } => {
+                assert_eq!(u.input_tokens, 5);
+                assert_eq!(u.output_tokens, 7);
+            }
+            other => panic!("expected Stream(MessageDelta) with usage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserializes_message_delta_without_usage() {
+        let line = r#"{"type":"stream_event","event":{"type":"message_delta"}}"#;
+        let ev: StreamEvent = serde_json::from_str(line).unwrap();
+        match ev {
+            StreamEvent::Stream {
+                event: InnerStreamEvent::MessageDelta { usage: None },
+            } => {}
+            other => panic!("expected Stream(MessageDelta) no usage, got {other:?}"),
         }
     }
 }
