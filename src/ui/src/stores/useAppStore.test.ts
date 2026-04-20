@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./useAppStore";
 import type { AgentQuestion } from "./useAppStore";
+import type { ChatMessage } from "../types/chat";
 import type { ConversationCheckpoint } from "../types/checkpoint";
 import { applyPlanModeMountDefault } from "../components/chat/applyPlanModeMountDefault";
 
@@ -1038,5 +1039,95 @@ describe("clearLatestTurnUsage", () => {
     useAppStore.getState().clearLatestTurnUsage("ws-never-set");
     expect(useAppStore.getState().latestTurnUsage.ws1).toBeDefined();
     expect(useAppStore.getState().latestTurnUsage.ws2).toBeDefined();
+  });
+});
+
+describe("rollbackConversation updates latestTurnUsage", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      chatMessages: {},
+      completedTurns: {},
+      toolActivities: {},
+      latestTurnUsage: {
+        ws1: {
+          inputTokens: 999,
+          outputTokens: 42,
+          cacheReadTokens: 12_345,
+          cacheCreationTokens: 67,
+        },
+      },
+      lastMessages: {},
+      agentQuestions: {},
+      planApprovals: {},
+      streamingContent: {},
+      streamingThinking: {},
+      checkpoints: {},
+    });
+  });
+
+  it("writes latestTurnUsage from the last assistant message with token data", () => {
+    const msgs: ChatMessage[] = [
+      {
+        id: "m1",
+        workspace_id: "ws1",
+        role: "User",
+        content: "hi",
+        cost_usd: null,
+        duration_ms: null,
+        created_at: "",
+        thinking: null,
+        input_tokens: null,
+        output_tokens: null,
+        cache_read_tokens: null,
+        cache_creation_tokens: null,
+      },
+      {
+        id: "m2",
+        workspace_id: "ws1",
+        role: "Assistant",
+        content: "hello",
+        cost_usd: null,
+        duration_ms: null,
+        created_at: "",
+        thinking: null,
+        input_tokens: 300,
+        output_tokens: 80,
+        cache_read_tokens: 5_000,
+        cache_creation_tokens: 200,
+      },
+    ];
+    useAppStore.getState().rollbackConversation("ws1", "cp1", msgs);
+    expect(useAppStore.getState().latestTurnUsage.ws1).toEqual({
+      inputTokens: 300,
+      outputTokens: 80,
+      cacheReadTokens: 5_000,
+      cacheCreationTokens: 200,
+    });
+  });
+
+  it("clears latestTurnUsage when rollback produces no assistant messages", () => {
+    useAppStore.getState().rollbackConversation("ws1", "cp1", []);
+    expect(useAppStore.getState().latestTurnUsage.ws1).toBeUndefined();
+  });
+
+  it("clears latestTurnUsage when rollback produces only pre-migration assistant messages", () => {
+    const msgs: ChatMessage[] = [
+      {
+        id: "m1",
+        workspace_id: "ws1",
+        role: "Assistant",
+        content: "legacy",
+        cost_usd: null,
+        duration_ms: null,
+        created_at: "",
+        thinking: null,
+        input_tokens: null,
+        output_tokens: null,
+        cache_read_tokens: null,
+        cache_creation_tokens: null,
+      },
+    ];
+    useAppStore.getState().rollbackConversation("ws1", "cp1", msgs);
+    expect(useAppStore.getState().latestTurnUsage.ws1).toBeUndefined();
   });
 });

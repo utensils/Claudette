@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { DEFAULT_THEME_ID } from "../styles/themes";
 import { debugChat } from "../utils/chatDebug";
+import { extractLatestCallUsage } from "../utils/extractLatestCallUsage";
 import type {
   Repository,
   Workspace,
@@ -870,6 +871,18 @@ export const useAppStore = create<AppState>((set) => ({
       const updatedLastMessages = lastMsg
         ? { ...s.lastMessages, [wsId]: lastMsg }
         : restLastMessages;
+      // Recompute the meter's latestTurnUsage from the rolled-back message
+      // list. Write if the last assistant message has token data; delete
+      // the entry otherwise so the meter hides.
+      const nextCall = extractLatestCallUsage(messages);
+      let latestTurnUsage = s.latestTurnUsage;
+      if (nextCall) {
+        latestTurnUsage = { ...s.latestTurnUsage, [wsId]: nextCall };
+      } else if (wsId in s.latestTurnUsage) {
+        const next = { ...s.latestTurnUsage };
+        delete next[wsId];
+        latestTurnUsage = next;
+      }
       return {
         chatMessages: { ...s.chatMessages, [wsId]: messages },
         lastMessages: updatedLastMessages,
@@ -889,6 +902,7 @@ export const useAppStore = create<AppState>((set) => ({
             return current.filter((cp) => cp.turn_index <= target.turn_index);
           })(),
         },
+        latestTurnUsage,
       };
     }),
 
