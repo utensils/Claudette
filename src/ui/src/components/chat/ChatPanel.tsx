@@ -60,6 +60,13 @@ import {
 } from "./nativeSlashCommands";
 import { checkpointHasFileChanges, clearAllHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { CompactionDivider } from "./CompactionDivider";
+import { SyntheticContinuationMessage } from "./SyntheticContinuationMessage";
+import {
+  extractCompactionEvents,
+  parseCompactionSentinel,
+  parseSyntheticSummarySentinel,
+} from "../../utils/compactionSentinel";
 import { PanelToggles } from "../shared/PanelToggles";
 import { deriveTasks, processActivities, turnHasTaskActivity, hasTaskActivity } from "../../hooks/useTaskTracker";
 import type { TaskTrackerResult, TrackedTask } from "../../hooks/useTaskTracker";
@@ -360,9 +367,11 @@ export function ChatPanel() {
         // token data. If none is available (fresh / pre-migration workspace),
         // clear any stale value so the meter hides.
         const callUsage = extractLatestCallUsage(filtered);
-        const { setLatestTurnUsage, clearLatestTurnUsage } = useAppStore.getState();
-        if (callUsage) setLatestTurnUsage(wsId, callUsage);
-        else clearLatestTurnUsage(wsId);
+        const store = useAppStore.getState();
+        if (callUsage) store.setLatestTurnUsage(wsId, callUsage);
+        else store.clearLatestTurnUsage(wsId);
+        // Phase 3: seed compactionEvents by scanning for COMPACTION: sentinels.
+        store.setCompactionEvents(wsId, extractCompactionEvents(filtered));
 
         // Load attachments for this workspace's messages.
         if (isLocal) {
@@ -1548,7 +1557,40 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
 
   return (
     <>
-      {messages.map((msg, idx) => (
+      {messages.map((msg, idx) => {
+        // Sentinel dispatch for System messages — must precede the generic
+        // message bubble so compaction/synthetic-summary messages render
+        // as their own dedicated components.
+        if (msg.role === "System" && msg.id !== pendingMessageId) {
+          const compaction = parseCompactionSentinel(msg.content);
+          if (compaction) {
+            return (
+              <React.Fragment key={msg.id}>
+                {renderTurns(idx)}
+                <CompactionDivider
+                  event={{
+                    ...compaction,
+                    timestamp: msg.created_at,
+                    afterMessageIndex: idx,
+                  }}
+                />
+              </React.Fragment>
+            );
+          }
+          const syntheticBody = parseSyntheticSummarySentinel(msg.content);
+          if (syntheticBody !== null) {
+            return (
+              <React.Fragment key={msg.id}>
+                {renderTurns(idx)}
+                <SyntheticContinuationMessage
+                  body={syntheticBody}
+                />
+              </React.Fragment>
+            );
+          }
+        }
+        // Default rendering for User, Assistant, and non-sentinel System messages.
+        return (
         <React.Fragment key={msg.id}>
           {renderTurns(idx)}
           {msg.id === pendingMessageId ? null : (
@@ -1601,7 +1643,8 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
           </div>
           )}
         </React.Fragment>
-      ))}
+        );
+      })}
       {/* Turns that finalized after or at the last message index */}
       {completedTurns
         .map((turn, globalIdx) => ({ turn, globalIdx }))
