@@ -51,6 +51,16 @@ export function reconstructCompletedTurns(
         (sum, m) => sum + (m.output_tokens ?? 0),
         0,
       ) || undefined;
+    const cacheReadTokens =
+      turnAssistantMessages.reduce(
+        (sum, m) => sum + (m.cache_read_tokens ?? 0),
+        0,
+      ) || undefined;
+    const cacheCreationTokens =
+      turnAssistantMessages.reduce(
+        (sum, m) => sum + (m.cache_creation_tokens ?? 0),
+        0,
+      ) || undefined;
 
     return {
       id: td.checkpoint_id,
@@ -69,6 +79,8 @@ export function reconstructCompletedTurns(
       durationMs,
       inputTokens,
       outputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
     };
   });
 }
