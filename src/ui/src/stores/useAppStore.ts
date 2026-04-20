@@ -61,6 +61,16 @@ export interface CompletedTurn {
    *  `result.usage`; persisted turns are reconstructed by summing the
    *  `output_tokens` of each assistant `ChatMessage` in the turn. */
   outputTokens?: number;
+  /** Turn-total cache-read tokens. Live turns receive this from the CLI's
+   *  `result.usage.cache_read_input_tokens`; persisted turns are reconstructed
+   *  by summing the `cache_read_tokens` of each assistant `ChatMessage` in
+   *  the turn. */
+  cacheReadTokens?: number;
+  /** Turn-total cache-creation tokens. Live turns receive this from the
+   *  CLI's `result.usage.cache_creation_input_tokens`; persisted turns are
+   *  reconstructed by summing the `cache_creation_tokens` of each assistant
+   *  `ChatMessage` in the turn. */
+  cacheCreationTokens?: number;
 }
 
 export interface AgentQuestionItem {
@@ -135,6 +145,8 @@ interface AppState {
     durationMs?: number,
     inputTokens?: number,
     outputTokens?: number,
+    cacheReadTokens?: number,
+    cacheCreationTokens?: number,
   ) => void;
   hydrateCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
   setCompletedTurns: (wsId: string, turns: CompletedTurn[]) => void;
@@ -587,7 +599,16 @@ export const useAppStore = create<AppState>((set) => ({
         ),
       },
     })),
-  finalizeTurn: (wsId, messageCount, turnId, durationMs, inputTokens, outputTokens) =>
+  finalizeTurn: (
+    wsId,
+    messageCount,
+    turnId,
+    durationMs,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+  ) =>
     set((s) => {
       const activities = s.toolActivities[wsId] || [];
       if (activities.length === 0) {
@@ -617,6 +638,8 @@ export const useAppStore = create<AppState>((set) => ({
         durationMs,
         inputTokens,
         outputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
       };
       debugChat("store", "finalizeTurn", {
         wsId,

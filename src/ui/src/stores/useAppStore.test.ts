@@ -849,20 +849,38 @@ describe("finalizeTurn token counts", () => {
     });
   });
 
-  it("records input/output tokens on the completed turn", () => {
-    useAppStore.getState().finalizeTurn("ws1", 1, "turn-1", 1234, 1500, 240);
+  it("records input/output AND cache tokens on the completed turn", () => {
+    useAppStore.getState().finalizeTurn(
+      "ws1", 1, "turn-1", 1234, 1500, 240, 80_000, 1_200,
+    );
     const turns = useAppStore.getState().completedTurns.ws1 || [];
     expect(turns).toHaveLength(1);
     expect(turns[0].durationMs).toBe(1234);
     expect(turns[0].inputTokens).toBe(1500);
     expect(turns[0].outputTokens).toBe(240);
+    expect(turns[0].cacheReadTokens).toBe(80_000);
+    expect(turns[0].cacheCreationTokens).toBe(1_200);
   });
 
-  it("leaves token counts undefined when omitted", () => {
-    useAppStore.getState().finalizeTurn("ws1", 1, "turn-2", 500);
+  it("leaves cache tokens undefined when omitted", () => {
+    useAppStore.getState().finalizeTurn(
+      "ws1", 1, "turn-2", 500, 100, 50,
+    );
+    const turns = useAppStore.getState().completedTurns.ws1 || [];
+    expect(turns).toHaveLength(1);
+    expect(turns[0].inputTokens).toBe(100);
+    expect(turns[0].outputTokens).toBe(50);
+    expect(turns[0].cacheReadTokens).toBeUndefined();
+    expect(turns[0].cacheCreationTokens).toBeUndefined();
+  });
+
+  it("leaves all token fields undefined when none provided", () => {
+    useAppStore.getState().finalizeTurn("ws1", 1, "turn-3", 500);
     const turns = useAppStore.getState().completedTurns.ws1 || [];
     expect(turns).toHaveLength(1);
     expect(turns[0].inputTokens).toBeUndefined();
     expect(turns[0].outputTokens).toBeUndefined();
+    expect(turns[0].cacheReadTokens).toBeUndefined();
+    expect(turns[0].cacheCreationTokens).toBeUndefined();
   });
 });
