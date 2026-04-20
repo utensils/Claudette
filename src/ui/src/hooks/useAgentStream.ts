@@ -318,7 +318,10 @@ export function useAgentStream() {
             // Tool results — update matching tool activities and extract
             // plan file path from EnterPlanMode results.
             const planPathRe = /(\/[^\s)"`]+\/\.claude\/plans\/[^\s)"`]+\.md)/;
-            for (const block of streamEvent.message.content) {
+            const blocks = Array.isArray(streamEvent.message.content)
+              ? streamEvent.message.content
+              : [];
+            for (const block of blocks) {
               if (block.type === "tool_result") {
                 const text =
                   typeof block.content === "string"
