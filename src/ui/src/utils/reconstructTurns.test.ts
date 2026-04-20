@@ -164,7 +164,10 @@ describe("reconstructCompletedTurns", () => {
     expect(result[1].outputTokens).toBe(300);
   });
 
-  it("sums assistant message cache tokens into cacheReadTokens/cacheCreationTokens per turn", () => {
+  it("takes the max of assistant message cache tokens per turn (not sum)", () => {
+    // Cache tokens are cumulative-per-API-call — summing would double-count
+    // the shared prompt prefix each call re-reads. Max approximates the
+    // turn's actual cache footprint to match live Result.usage.
     const m1: ChatMessage = { ...makeMsg("m1", "User") };
     const m2: ChatMessage = {
       ...makeMsg("m2", "Assistant"),
@@ -188,10 +191,11 @@ describe("reconstructCompletedTurns", () => {
     const result = reconstructCompletedTurns(messages, turnData);
 
     expect(result).toHaveLength(2);
-    // Turn 1: m2+m3 assistant → 60000 cache read, 1200 cache creation
-    expect(result[0].cacheReadTokens).toBe(60_000);
-    expect(result[0].cacheCreationTokens).toBe(1_200);
-    // Turn 2: m5 only → 100000 cache read, 500 cache creation
+    // Turn 1: max(m2.cache_read=50_000, m3.cache_read=10_000) = 50_000
+    //         max(m2.cache_creation=1_000, m3.cache_creation=200) = 1_000
+    expect(result[0].cacheReadTokens).toBe(50_000);
+    expect(result[0].cacheCreationTokens).toBe(1_000);
+    // Turn 2: m5 only → 100_000 cache read, 500 cache creation
     expect(result[1].cacheReadTokens).toBe(100_000);
     expect(result[1].cacheCreationTokens).toBe(500);
   });

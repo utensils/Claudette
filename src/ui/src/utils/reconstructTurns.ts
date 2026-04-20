@@ -51,14 +51,19 @@ export function reconstructCompletedTurns(
         (sum, m) => sum + (m.output_tokens ?? 0),
         0,
       ) || undefined;
+    // Cache tokens on each assistant message row represent cumulative-per-
+    // API-call usage, not per-message deltas. Summing across a multi-message
+    // (tool-use) turn double-counts the shared prompt prefix that each call
+    // re-reads from cache. Using max approximates the turn's actual cache
+    // footprint more faithfully — matches what `result.usage` reports live.
     const cacheReadTokens =
       turnAssistantMessages.reduce(
-        (sum, m) => sum + (m.cache_read_tokens ?? 0),
+        (maxSeen, m) => Math.max(maxSeen, m.cache_read_tokens ?? 0),
         0,
       ) || undefined;
     const cacheCreationTokens =
       turnAssistantMessages.reduce(
-        (sum, m) => sum + (m.cache_creation_tokens ?? 0),
+        (maxSeen, m) => Math.max(maxSeen, m.cache_creation_tokens ?? 0),
         0,
       ) || undefined;
 

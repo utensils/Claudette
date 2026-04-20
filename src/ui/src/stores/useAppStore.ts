@@ -62,14 +62,13 @@ export interface CompletedTurn {
    *  `output_tokens` of each assistant `ChatMessage` in the turn. */
   outputTokens?: number;
   /** Turn-total cache-read tokens. Live turns receive this from the CLI's
-   *  `result.usage.cache_read_input_tokens`; persisted turns are reconstructed
-   *  by summing the `cache_read_tokens` of each assistant `ChatMessage` in
-   *  the turn. */
+   *  `result.usage.cache_read_input_tokens`. Persisted turns use the MAX
+   *  (not sum) of per-message `cache_read_tokens` — cache counts are
+   *  cumulative-per-API-call, so summing across a multi-message tool-use
+   *  turn would double-count the shared prompt prefix each call re-reads. */
   cacheReadTokens?: number;
-  /** Turn-total cache-creation tokens. Live turns receive this from the
-   *  CLI's `result.usage.cache_creation_input_tokens`; persisted turns are
-   *  reconstructed by summing the `cache_creation_tokens` of each assistant
-   *  `ChatMessage` in the turn. */
+  /** Turn-total cache-creation tokens. Same max-based reconstruction semantics
+   *  as `cacheReadTokens`. */
   cacheCreationTokens?: number;
 }
 
