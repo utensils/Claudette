@@ -157,7 +157,7 @@ export const ScmPanel = memo(function ScmPanel() {
           disabled={refreshing}
           title="Refresh"
         >
-          <RefreshCw size={13} className={refreshing ? styles.spin : ""} />
+          <RefreshCw size={14} className={refreshing ? styles.spin : ""} />
         </button>
       </div>
 
@@ -230,7 +230,7 @@ function CiCheckRow({ check }: { check: CiCheck }) {
           title="View details"
           onClick={() => openUrl(check.url!)}
         >
-          <ExternalLink size={10} />
+          <ExternalLink size={12} />
         </button>
       )}
     </div>
@@ -253,13 +253,13 @@ function getPrIcon(pr: PullRequest) {
 function getPrColor(pr: PullRequest): string {
   switch (pr.state) {
     case "merged":
-      return "var(--purple, #a855f7)";
+      return "var(--badge-plan)";
     case "closed":
-      return "var(--red, #ef4444)";
+      return "var(--status-stopped)";
     case "draft":
       return "var(--text-dim)";
     default:
-      return "var(--green, #22c55e)";
+      return "var(--badge-done)";
   }
 }
 
@@ -278,12 +278,12 @@ function getCheckIcon(status: CiCheck["status"]) {
 function getCheckColor(status: CiCheck["status"]): string {
   switch (status) {
     case "success":
-      return "var(--green, #22c55e)";
+      return "var(--badge-done)";
     case "failure":
-      return "var(--red, #ef4444)";
+      return "var(--status-stopped)";
     case "cancelled":
       return "var(--text-dim)";
     default:
-      return "var(--yellow, #eab308)";
+      return "var(--tool-task)";
   }
 }

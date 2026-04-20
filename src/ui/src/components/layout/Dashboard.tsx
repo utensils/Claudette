@@ -149,7 +149,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
         </span>
       </div>
       <div className={styles.branchLine}>
-        <GitBranch size={11} />
+        <GitBranch size={12} />
         <span className={styles.branch}>{ws.branch_name}</span>
         {baseBranch && (
           <>

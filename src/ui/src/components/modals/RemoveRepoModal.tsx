@@ -32,7 +32,7 @@ export function RemoveRepoModal() {
   };
 
   return (
-    <Modal title="Remove Repository" onClose={closeModal}>
+    <Modal title="Remove repository" onClose={closeModal}>
       <div className={shared.warning}>
         Are you sure you want to remove <strong>{repoName}</strong>? This will
         not delete the repository from disk, only unregister it.

@@ -83,11 +83,11 @@
 }
 
 .error {
-  font-size: 11px;
-  color: var(--red, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
-  padding: 6px 8px;
-  border-radius: 4px;
+  font-size: var(--fs-xs);
+  color: var(--status-stopped);
+  background: var(--error-bg);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
 .noPr {

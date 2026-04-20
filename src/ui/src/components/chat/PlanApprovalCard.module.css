@@ -1,17 +1,12 @@
 /* Plan approval card — shares visual language with AgentQuestionCard */
 .card {
-  background: linear-gradient(
-    135deg,
-    rgba(var(--accent-primary-rgb), 0.06) 0%,
-    rgba(var(--accent-primary-rgb), 0.02) 100%
-  );
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  background: var(--chat-system-bg);
+  border: 1px solid var(--accent-bg-strong);
   border-left: 3px solid var(--accent-primary);
-  border-radius: 0 10px 10px 0;
-  padding: 18px 20px;
-  margin: 12px 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2),
-              inset 0 1px 0 rgba(var(--accent-primary-rgb), 0.06);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-3) 0;
+  box-shadow: var(--shadow-md);
   animation: fadeInUp 0.2s ease both;
 }
 
@@ -112,16 +107,16 @@
 .planContent code {
   font-family: var(--font-mono, monospace);
   font-size: 0.9em;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover-bg);
   padding: 0.15em 0.4em;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .planContent pre {
   margin: 0.6em 0;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.25);
-  border-radius: 6px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--overlay-bg);
+  border-radius: var(--radius-md);
   overflow-x: auto;
 }
 
@@ -154,16 +149,12 @@
 
 /* Callout blocks use global class names injected by preprocessCallouts */
 .planContent :global(.cc-callout) {
-  background: linear-gradient(
-    135deg,
-    rgba(var(--accent-primary-rgb), 0.07) 0%,
-    rgba(var(--accent-primary-rgb), 0.03) 100%
-  );
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.12);
+  background: var(--chat-system-bg);
+  border: 1px solid var(--accent-bg-strong);
   border-left: 3px solid var(--accent-primary);
-  border-radius: 0 8px 8px 0;
-  padding: 14px 18px;
-  margin: 12px 0;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0;
 }
 
 .planContent :global(.cc-callout) p {
@@ -279,6 +270,6 @@
 }
 
 .denyBtn:hover {
-  background: rgba(255, 100, 100, 0.06);
+  background: var(--error-bg);
   color: var(--text-primary);
 }

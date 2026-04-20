@@ -138,7 +138,7 @@ export const RightSidebar = memo(function RightSidebar() {
       return status === "Added"
         ? "var(--diff-added-text)"
         : status === "Modified"
-          ? "#e6c84d"
+          ? "var(--tool-task)"
           : "var(--diff-removed-text)";
     }
     return "var(--diff-hunk-header)";
@@ -256,7 +256,7 @@ export const RightSidebar = memo(function RightSidebar() {
                   label="Unstaged"
                   files={diffStagedFiles!.unstaged}
                   layer="unstaged"
-                  accentColor="#e6c84d"
+                  accentColor="var(--tool-task)"
                   renderFileRow={renderFileRow}
                 />
                 <FileGroup

@@ -132,10 +132,9 @@ export function ModelSettings() {
               ))}
             </select>
             <select
-              className={styles.select}
+              className={`${styles.select} ${styles.selectWide}`}
               value={defaultThinking ? "true" : "false"}
               onChange={(e) => handleThinkingChange(e.target.value)}
-              style={{ minWidth: 130 }}
             >
               <option value="false">Thinking off</option>
               <option value="true">Thinking on</option>
@@ -154,11 +153,10 @@ export function ModelSettings() {
         </div>
         <div className={styles.settingControl}>
           <select
-            className={styles.select}
+            className={`${styles.select}${effortDisabled ? ` ${styles.selectDim}` : ""}`}
             value={defaultEffort}
             onChange={(e) => handleEffortChange(e.target.value)}
             disabled={effortDisabled}
-            style={{ opacity: effortDisabled ? 0.5 : 1 }}
           >
             {availableEffortLevels.map((l) => (
               <option key={l.id} value={l.id}>
@@ -221,13 +219,12 @@ export function ModelSettings() {
         </div>
         <div className={styles.settingControl}>
           <button
-            className={styles.toggle}
+            className={`${styles.toggle}${fastDisabled ? ` ${styles.selectDim}` : ""}`}
             role="switch"
             aria-checked={defaultFastMode}
             aria-label="Default to fast mode"
             data-checked={defaultFastMode && !fastDisabled}
             disabled={fastDisabled}
-            style={{ opacity: fastDisabled ? 0.5 : 1 }}
             onClick={handleToggle(defaultFastMode, setDefaultFastMode, "default_fast_mode")}
           >
             <div className={styles.toggleKnob} />

@@ -29,7 +29,7 @@ export function ConfirmNightlyChannelModal() {
   };
 
   return (
-    <Modal title="Switch to Nightly Channel?" onClose={handleClose}>
+    <Modal title="Switch to nightly channel?" onClose={handleClose}>
       <div className={shared.warning}>
         Nightly builds are untested pre-releases built from the latest{" "}
         <strong>main</strong> branch. They may contain bugs or break features.

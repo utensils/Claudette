@@ -32,7 +32,7 @@ export function RelinkRepoModal() {
   };
 
   return (
-    <Modal title="Re-link Repository" onClose={closeModal}>
+    <Modal title="Re-link repository" onClose={closeModal}>
       <div className={shared.warning}>
         Path for <strong>{repoName}</strong> is no longer valid. Provide the new
         location.

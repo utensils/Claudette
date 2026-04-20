@@ -1,17 +1,12 @@
 /* Agent question card — styled to match callout blocks */
 .card {
-  background: linear-gradient(
-    135deg,
-    rgba(var(--accent-primary-rgb), 0.06) 0%,
-    rgba(var(--accent-primary-rgb), 0.02) 100%
-  );
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.15);
+  background: var(--chat-system-bg);
+  border: 1px solid var(--accent-bg-strong);
   border-left: 3px solid var(--accent-primary);
-  border-radius: 0 10px 10px 0;
-  padding: 18px 20px;
-  margin: 12px 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2),
-              inset 0 1px 0 rgba(var(--accent-primary-rgb), 0.06);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-3) 0;
+  box-shadow: var(--shadow-md);
   animation: fadeInUp 0.2s ease both;
 }
 

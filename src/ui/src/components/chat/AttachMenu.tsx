@@ -218,7 +218,7 @@ export function AttachMenu({
             <div className={styles.divider} />
             <button className={styles.manageItem} onClick={handleManage}>
               <span className={styles.menuIcon}>
-                <Settings size={13} />
+                <Settings size={14} />
               </span>
               Manage connectors
             </button>

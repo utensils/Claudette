@@ -75,7 +75,7 @@ export function AddRepoModal() {
   };
 
   return (
-    <Modal title="Add Repository" onClose={closeModal}>
+    <Modal title="Add repository" onClose={closeModal}>
       <div className={shared.field}>
         <label className={shared.label}>Repository path</label>
         <div className={shared.inputRow}>

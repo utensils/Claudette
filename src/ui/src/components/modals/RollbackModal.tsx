@@ -98,13 +98,13 @@ export function RollbackModal() {
   };
 
   return (
-    <Modal title="Roll Back Conversation" onClose={closeModal}>
+    <Modal title="Roll back conversation" onClose={closeModal}>
       <div className={shared.warning}>
         {isClearAll
           ? "Clear the entire conversation and start fresh?"
           : "Roll back to before this message? All messages after this point will be removed."}
         {messagePreview && (
-          <div style={{ marginTop: 6, opacity: 0.7, fontStyle: "italic" }}>
+          <div className={shared.quoteLine}>
             &ldquo;{messagePreview}
             {messagePreview.length >= 100 ? "..." : ""}
             &rdquo;

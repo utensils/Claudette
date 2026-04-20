@@ -27,7 +27,7 @@ export function ShareModal() {
   };
 
   return (
-    <Modal title="Share This Machine" onClose={closeModal}>
+    <Modal title="Share this machine" onClose={closeModal}>
       <div className={shared.field}>
         <label className={shared.label}>Connection string</label>
         <div className={shared.inputRow}>
@@ -41,7 +41,7 @@ export function ShareModal() {
             Copy
           </button>
         </div>
-        <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: 4 }}>
+        <div className={shared.smallHint}>
           Share this string with others so they can connect to your workspaces from their Claudette app.
         </div>
       </div>

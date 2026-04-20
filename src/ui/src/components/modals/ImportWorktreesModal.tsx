@@ -101,7 +101,7 @@ export function ImportWorktreesModal() {
 
   if (loading) {
     return (
-      <Modal title="Import Worktrees" onClose={chainOrClose}>
+      <Modal title="Import worktrees" onClose={chainOrClose}>
         <div className={styles.loading}>Scanning for existing worktrees...</div>
       </Modal>
     );
@@ -109,7 +109,7 @@ export function ImportWorktreesModal() {
 
   if (rows.length === 0) {
     return (
-      <Modal title="Import Worktrees" onClose={chainOrClose}>
+      <Modal title="Import worktrees" onClose={chainOrClose}>
         <p className={styles.description}>
           No existing worktrees found for this repository.
         </p>
@@ -123,7 +123,7 @@ export function ImportWorktreesModal() {
   }
 
   return (
-    <Modal title="Existing Worktrees Found" onClose={chainOrClose}>
+    <Modal title="Existing worktrees found" onClose={chainOrClose}>
       <p className={styles.description}>
         These git worktrees already exist for this repository.
         Select which ones to import as workspaces:

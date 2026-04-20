@@ -207,7 +207,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
   return (
     <div>
       <div className={styles.repoHeader}>
-        <div style={{ position: "relative" }} ref={iconPopoverRef}>
+        <div className={styles.iconPickerAnchor} ref={iconPopoverRef}>
           <button
             className={styles.repoIconButton}
             onClick={() => setIconPickerOpen(!iconPickerOpen)}
@@ -217,7 +217,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
             {icon ? (
               <RepoIcon icon={icon} size={20} />
             ) : (
-              <span style={{ fontSize: 16, opacity: 0.4 }}>+</span>
+              <span className={styles.iconPlaceholder}>+</span>
             )}
           </button>
           {iconPickerOpen && (
@@ -266,28 +266,17 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           Personal setup script{repoScriptOverrides ? " (overridden)" : ""}:
         </div>
         <textarea
-          className={styles.textarea}
+          className={`${styles.textarea}${repoScriptOverrides ? ` ${styles.overriddenInput}` : ""}`}
           value={setupScript}
           onChange={(e) => setSetupScript(e.target.value)}
           onBlur={() => save({ setup_script: setupScript.trim() || null })}
           placeholder="e.g. mise trust && mise install"
           rows={3}
-          style={{ opacity: repoScriptOverrides ? 0.5 : 1 }}
         />
         <div className={styles.fieldHint}>
           Runs automatically when a new workspace is created.
         </div>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginTop: 8,
-            fontSize: 12,
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-          }}
-        >
+        <label className={styles.autoRunLabel}>
           <input
             type="checkbox"
             checked={autoRunSetup}
@@ -322,7 +311,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           {repoInstructionsOverrides ? " (overridden)" : ""}:
         </div>
         <textarea
-          className={styles.textarea}
+          className={`${styles.textarea}${repoInstructionsOverrides ? ` ${styles.overriddenInput}` : ""}`}
           value={customInstructions}
           onChange={(e) => setCustomInstructions(e.target.value)}
           onBlur={() =>
@@ -332,7 +321,6 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           }
           placeholder="e.g. Always use TypeScript. Prefer functional components."
           rows={4}
-          style={{ opacity: repoInstructionsOverrides ? 0.5 : 1 }}
         />
         <div className={styles.fieldHint}>
           Appended to the agent's system prompt at the start of every chat.
@@ -341,7 +329,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
 
       <div className={styles.fieldGroup}>
         <div className={styles.fieldLabel}>Branch rename preferences</div>
-        <div className={styles.fieldHint} style={{ marginBottom: 8 }}>
+        <div className={`${styles.fieldHint} ${styles.fieldHintSpaced}`}>
           Custom instructions sent to the agent along with your first message in
           a workspace where the branch hasn't already been renamed.
         </div>
@@ -362,7 +350,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
 
       <div className={styles.fieldGroup}>
         <div className={styles.fieldLabel}>MCP servers</div>
-        <div className={styles.fieldHint} style={{ marginBottom: 12 }}>
+        <div className={`${styles.fieldHint} ${styles.fieldHintSpacedWide}`}>
           Servers injected into agent sessions. Toggle to enable or disable for
           this repository.
         </div>
@@ -479,7 +467,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
             })()}
           </div>
         )}
-        <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+        <div className={styles.buttonRow}>
           <button
             className={styles.iconBtn}
             onClick={() => openModal("mcpSelection", { repoId })}
@@ -506,7 +494,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
 
       <div className={styles.fieldGroup}>
         <div className={styles.fieldLabel}>Worktree discovery</div>
-        <div className={styles.fieldHint} style={{ marginBottom: 8 }}>
+        <div className={`${styles.fieldHint} ${styles.fieldHintSpaced}`}>
           Scan for existing git worktrees (e.g. from Conductor) and import them
           as workspaces.
         </div>

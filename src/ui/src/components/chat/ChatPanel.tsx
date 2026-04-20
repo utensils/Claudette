@@ -133,15 +133,15 @@ function PdfThumbnail({ dataBase64, attachmentId, filename, className }: {
 
 /** Semantic colors for tool names — makes tool activity scannable at a glance. */
 const TOOL_COLORS: Record<string, string> = {
-  Read: "#6cb6ff",
-  Glob: "#6cb6ff",
-  Grep: "#6cb6ff",
-  Write: "#f0a050",
-  Edit: "#e0c050",
-  Bash: "#7ee07e",
-  WebSearch: "#c0a0f0",
-  WebFetch: "#c0a0f0",
-  Agent: "#f08080",
+  Read: "var(--tool-read)",
+  Glob: "var(--tool-read)",
+  Grep: "var(--tool-read)",
+  Write: "var(--tool-write)",
+  Edit: "var(--tool-edit)",
+  Bash: "var(--tool-bash)",
+  WebSearch: "var(--tool-web)",
+  WebFetch: "var(--tool-web)",
+  Agent: "var(--tool-agent)",
   AskUserQuestion: "var(--accent-primary)",
 };
 
@@ -1669,7 +1669,7 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
           </span>
           <span className={styles.turnLabel}>
             {activities.length} tool call{activities.length !== 1 ? "s" : ""}
-            {isRunning && <span style={{ color: "var(--accent-dim)" }}> in progress</span>}
+            {isRunning && <span className={styles.inProgressNote}> in progress</span>}
           </span>
         </div>
         {!collapsed && (
@@ -2341,7 +2341,7 @@ function ChatInputArea({
                 onClick={() => removeAttachment(att.id)}
                 title="Remove"
               >
-                <X size={10} />
+                <X size={12} />
               </button>
             </div>
           ))}
@@ -2367,7 +2367,7 @@ function ChatInputArea({
         placeholder={isRunning ? "Type to queue a message..." : "Send a message..."}
       />
       <div className={styles.inputControls}>
-        <div style={{ position: "relative" }}>
+        <div className={styles.attachBtnWrap}>
           <button
             className={`${styles.attachBtn} ${attachMenuOpen ? styles.attachBtnActive : ""}`}
             onClick={() => setAttachMenuOpen((v) => !v)}

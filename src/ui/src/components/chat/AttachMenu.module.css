@@ -148,10 +148,10 @@ button.serverInfo:hover .serverName {
   left: 2px;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s ease;
+  border-radius: var(--radius-pill);
+  background: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-normal);
 }
 
 .toggleOn .toggleKnob {
