@@ -46,7 +46,7 @@ struct AgentStreamPayload {
     event: AgentEvent,
 }
 
-use claudette::permissions::tools_for_level;
+use claudette::permissions::{is_bypass_tools, tools_for_level};
 
 /// Spawn-time flags of the currently running persistent session, plus the
 /// backend-observed `exited_plan` latch (set when the agent emits
@@ -82,6 +82,45 @@ fn persistent_session_flags_drifted(
     session.plan_mode != requested.plan_mode
         || session.allowed_tools != requested.allowed_tools
         || (session.plan_mode && session.exited_plan)
+}
+
+/// Decide how to respond to a `can_use_tool` control_request that reached the
+/// handler for a tool other than AskUserQuestion / ExitPlanMode.
+///
+/// Bypass mode + plan mode off → allow (echo `updatedInput` — required by the
+/// CLI's `PermissionPromptToolResultSchema`). This is the fix for "full"
+/// sessions seeing spurious denials: the CLI still routes certain tools
+/// (MCP servers, Skills, some built-in edge paths) through
+/// `--permission-prompt-tool stdio` even under `--permission-mode
+/// bypassPermissions`, so we must answer allow rather than fall through.
+///
+/// Otherwise (standard/readonly, or plan-mode active) → deny with a message
+/// that names the escalation path; the model paraphrases this string to the
+/// user.
+///
+/// Auto-allow in bypass mode does not bypass an MCP server's own
+/// authorization — servers refuse at their layer via a normal tool_result,
+/// not a control_request.
+fn build_permission_response(
+    session_allowed_tools: &[String],
+    session_plan_mode: bool,
+    tool_name: &str,
+    original_input: &serde_json::Value,
+) -> serde_json::Value {
+    if is_bypass_tools(session_allowed_tools) && !session_plan_mode {
+        serde_json::json!({
+            "behavior": "allow",
+            "updatedInput": original_input,
+        })
+    } else {
+        let msg = format!(
+            "{tool_name} isn't enabled at the current permission level. Switch to 'full' in the chat toolbar (or run /permissions full) to allow it."
+        );
+        serde_json::json!({
+            "behavior": "deny",
+            "message": msg,
+        })
+    }
 }
 
 #[tauri::command]
@@ -696,16 +735,20 @@ pub async fn send_chat_message(
                 got_init = true;
             }
 
-            // Handle control_request: can_use_tool from the CLI's stdio permission
-            // prompt protocol. For AskUserQuestion / ExitPlanMode we remember the
-            // request and emit `agent-permission-prompt` so the UI shows the card
-            // ONLY after the Rust side is ready to receive the answer — the
-            // previous content_block_stop-driven approach raced the still-
-            // in-flight control_request and produced "No pending permission
-            // request" errors when the user clicked too quickly.
-            // For every OTHER tool, immediately deny — Claudette relies on
-            // --allowedTools for normal approvals, so reaching this path means
-            // a plan-mode or unknown-tool block we should report to the model.
+            // Handle control_request: can_use_tool from the CLI's stdio
+            // permission prompt protocol. Three branches:
+            //   1. AskUserQuestion / ExitPlanMode — stash a pending record and
+            //      emit `agent-permission-prompt` so the UI card renders only
+            //      after the Rust side is ready to receive the answer.
+            //      Needed even in bypass mode: the agent wants the user's
+            //      *answer*, not just permission.
+            //   2. Session spawned in bypass mode + plan mode OFF — auto-allow.
+            //      The CLI still routes some tools (MCP, Skills, certain
+            //      edge-path built-ins) through `--permission-prompt-tool
+            //      stdio` even under `--permission-mode bypassPermissions`, so
+            //      without this branch "full" users see spurious denials.
+            //   3. Otherwise — deny with a message that names the escalation
+            //      path (the model paraphrases this to the user).
             if let AgentEvent::Stream(StreamEvent::ControlRequest {
                 request_id,
                 request:
@@ -738,26 +781,30 @@ pub async fn send_chat_message(
                     });
                     let _ = app.emit("agent-permission-prompt", &payload);
                 } else {
-                    // Auto-deny any other tool that reaches the permission-prompt
-                    // path — current Claudette behaviour is no interactive approval
-                    // beyond the question/plan cards. Sending a structured deny
-                    // unblocks the CLI turn instead of hanging.
                     let app_state = app.state::<AppState>();
                     let agents = app_state.agents.read().await;
-                    let ps = agents
+                    let (ps, session_allowed_tools, session_plan_mode) = agents
                         .get(&ws_id)
-                        .and_then(|s| s.persistent_session.clone());
+                        .map(|s| {
+                            (
+                                s.persistent_session.clone(),
+                                s.session_allowed_tools.clone(),
+                                s.session_plan_mode,
+                            )
+                        })
+                        .unwrap_or_else(|| (None, Vec::new(), false));
                     drop(agents);
                     if let Some(ps) = ps {
-                        let msg = format!(
-                            "Permission for {tool_name} is not granted in this Claudette session."
+                        let response = build_permission_response(
+                            &session_allowed_tools,
+                            session_plan_mode,
+                            tool_name,
+                            input,
                         );
-                        let deny = serde_json::json!({
-                            "behavior": "deny",
-                            "message": msg,
-                        });
-                        if let Err(e) = ps.send_control_response(request_id, deny).await {
-                            eprintln!("[chat] Failed to auto-deny {tool_name}: {e}");
+                        if let Err(e) = ps.send_control_response(request_id, response).await {
+                            eprintln!(
+                                "[chat] Failed to respond to control_request for {tool_name}: {e}"
+                            );
                         }
                     }
                 }
@@ -2016,5 +2063,60 @@ mod tests {
             session(false, &tools, true),
             requested(false, &tools),
         ));
+    }
+
+    use super::build_permission_response;
+    use serde_json::json;
+
+    #[test]
+    fn permission_response_allows_bypass_session_non_plan() {
+        let input = json!({ "path": "/tmp/foo" });
+        let response = build_permission_response(&s(&["*"]), false, "Skill", &input);
+        assert_eq!(response["behavior"], "allow");
+        assert_eq!(response["updatedInput"], input);
+    }
+
+    #[test]
+    fn permission_response_denies_bypass_session_during_plan_mode() {
+        // Plan mode deliberately gates mutating tools even when the session's
+        // allowed_tools is the bypass sentinel.
+        let input = json!({});
+        let response = build_permission_response(&s(&["*"]), true, "Edit", &input);
+        assert_eq!(response["behavior"], "deny");
+    }
+
+    #[test]
+    fn permission_response_denies_standard_session() {
+        let input = json!({});
+        let response = build_permission_response(&s(&["Read", "Write"]), false, "Edit", &input);
+        assert_eq!(response["behavior"], "deny");
+        let msg = response["message"].as_str().expect("message");
+        assert!(
+            msg.contains("full"),
+            "message should name the escalation: {msg}"
+        );
+        assert!(
+            msg.contains("/permissions"),
+            "message should point at the slash command: {msg}"
+        );
+    }
+
+    #[test]
+    fn permission_response_denies_empty_session() {
+        // Pre-spawn or cleared state — defensive deny so we never silently
+        // approve a tool on a session whose flags we can't confirm.
+        let input = json!({});
+        let response = build_permission_response(&[], false, "Edit", &input);
+        assert_eq!(response["behavior"], "deny");
+    }
+
+    #[test]
+    fn permission_response_rejects_multi_element_wildcard() {
+        // The bypass sentinel is exactly ["*"]. ["*", "Read"] is a concrete
+        // list (the "*" is not special outside the singleton form) and must
+        // not auto-allow.
+        let input = json!({});
+        let response = build_permission_response(&s(&["*", "Read"]), false, "Edit", &input);
+        assert_eq!(response["behavior"], "deny");
     }
 }

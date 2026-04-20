@@ -40,6 +40,15 @@ pub fn tools_for_level(level: &str) -> Vec<String> {
     tools.iter().map(|s| (*s).to_string()).collect()
 }
 
+/// Returns true when `tools` is the singleton wildcard sentinel `["*"]` — the
+/// shape `tools_for_level("full")` produces and `build_claude_args` /
+/// `build_persistent_args` treat as "spawn with `--permission-mode
+/// bypassPermissions`". The control-request handler uses this same predicate
+/// to decide whether a stray `can_use_tool` should be auto-allowed.
+pub fn is_bypass_tools(tools: &[String]) -> bool {
+    tools.len() == 1 && tools[0] == "*"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,6 +77,14 @@ mod tests {
     #[test]
     fn unknown_level_defaults_to_readonly() {
         assert_eq!(tools_for_level("unknown"), tools_for_level("readonly"));
+    }
+
+    #[test]
+    fn is_bypass_tools_recognizes_singleton_wildcard() {
+        assert!(is_bypass_tools(&["*".to_string()]));
+        assert!(!is_bypass_tools(&[]));
+        assert!(!is_bypass_tools(&["Read".to_string()]));
+        assert!(!is_bypass_tools(&["*".to_string(), "Read".to_string()]));
     }
 
     #[test]

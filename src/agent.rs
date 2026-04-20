@@ -332,8 +332,7 @@ pub fn build_claude_args(
     // added in `build_persistent_args` instead, where the Tauri bridge owns
     // the stdin and handles control_request → control_response.
 
-    // Check if we should bypass permissions (full access with wildcard)
-    let bypass_permissions = allowed_tools.len() == 1 && allowed_tools[0] == "*";
+    let bypass_permissions = crate::permissions::is_bypass_tools(allowed_tools);
 
     // Model is session-level — only set on the first turn.
     if !is_resume && let Some(ref model) = settings.model {
@@ -1070,7 +1069,7 @@ fn build_persistent_args(
         "stdio".to_string(),
     ];
 
-    let bypass_permissions = allowed_tools.len() == 1 && allowed_tools[0] == "*";
+    let bypass_permissions = crate::permissions::is_bypass_tools(allowed_tools);
 
     if is_resume {
         args.push("--resume".to_string());
