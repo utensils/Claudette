@@ -1,12 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="default-dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
+    <script>
+      // Pre-hydrate data-theme from a localStorage mirror written by
+      // applyTheme(). The authoritative theme is stored in SQLite but that
+      // read is async — localStorage gives us a synchronous cache so the
+      // first paint picks the right palette and skips the coral→theme flash.
+      (function () {
+        try {
+          var id = localStorage.getItem("claudette.theme");
+          if (id) document.documentElement.setAttribute("data-theme", id);
+        } catch (e) {}
+      })();
+    </script>
     <title>Claudette</title>
   </head>
   <body>

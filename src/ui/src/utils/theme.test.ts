@@ -19,11 +19,21 @@ const fakeStyle = {
   set cssText(_v: string) { styleMap.clear(); },
 };
 
+const attrMap = new Map<string, string>();
 vi.stubGlobal("document", {
-  documentElement: { style: fakeStyle },
+  documentElement: {
+    style: fakeStyle,
+    setAttribute: (name: string, value: string) => { attrMap.set(name, value); },
+    getAttribute: (name: string) => attrMap.get(name) ?? null,
+  },
   getElementById: () => null,
   createElement: () => ({ rel: "", href: "", id: "" }),
   head: { appendChild: () => {} },
+});
+vi.stubGlobal("localStorage", {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
 });
 
 // Import AFTER the global stub so the module sees our fake document.
