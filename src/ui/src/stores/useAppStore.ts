@@ -162,6 +162,11 @@ interface AppState {
   appendStreamingContent: (wsId: string, text: string) => void;
   setPendingTypewriter: (wsId: string, messageId: string, text: string) => void;
   clearPendingTypewriter: (wsId: string) => void;
+  /** Atomic drain-end handoff: clears both `pendingTypewriter` and
+   *  `streamingThinking` in a single store update so the streaming thinking
+   *  block and the draining assistant text hand off to the completed message
+   *  in the same render, without a gap or a 1-frame duplicate. */
+  finishTypewriterDrain: (wsId: string) => void;
   appendStreamingThinking: (wsId: string, text: string) => void;
   clearStreamingThinking: (wsId: string) => void;
   setShowThinkingBlocks: (wsId: string, show: boolean) => void;
@@ -602,6 +607,11 @@ export const useAppStore = create<AppState>((set) => ({
   clearPendingTypewriter: (wsId) =>
     set((s) => ({
       pendingTypewriter: { ...s.pendingTypewriter, [wsId]: null },
+    })),
+  finishTypewriterDrain: (wsId) =>
+    set((s) => ({
+      pendingTypewriter: { ...s.pendingTypewriter, [wsId]: null },
+      streamingThinking: { ...s.streamingThinking, [wsId]: "" },
     })),
   appendStreamingThinking: (wsId, text) =>
     set((s) => ({
