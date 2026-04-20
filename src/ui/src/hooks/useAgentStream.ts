@@ -269,8 +269,11 @@ export function useAgentStream() {
                 cache_read_tokens: null,
                 cache_creation_tokens: null,
               });
-              // Clear thinking only after attaching it to a text message.
-              clearStreamingThinking(wsId);
+              // streamingThinking is NOT cleared here — StreamingThinkingBlock
+              // needs to keep rendering through the typewriter drain so the
+              // block doesn't vanish between streamingContent clearing and the
+              // completed message unhiding. It's cleared atomically with
+              // pendingTypewriter at drain-complete via finishTypewriterDrain.
             }
             setStreamingContent(wsId, "");
             break;

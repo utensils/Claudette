@@ -225,6 +225,7 @@ export function ChatPanel() {
     (s) => (selectedWorkspaceId ? s.agentQuestions[selectedWorkspaceId] ?? null : null)
   );
   const clearAgentQuestion = useAppStore((s) => s.clearAgentQuestion);
+  const finishTypewriterDrainTop = useAppStore((s) => s.finishTypewriterDrain);
   const pendingPlan = useAppStore(
     (s) => (selectedWorkspaceId ? s.planApprovals[selectedWorkspaceId] ?? null : null)
   );
@@ -723,10 +724,14 @@ export function ChatPanel() {
     }
 
     // Clear any pending agent question or plan approval — the user is sending
-    // a new message (answer from a card or manual override).
+    // a new message (answer from a card or manual override). Also release any
+    // stuck typewriter drain from the previous turn so the completed message
+    // doesn't stay hidden behind pendingTypewriter across turns (the
+    // drain-complete effect cannot fire while isStreaming flips back to true).
     if (selectedWorkspaceId) {
       clearAgentQuestion(selectedWorkspaceId);
       clearPlanApproval(selectedWorkspaceId);
+      finishTypewriterDrainTop(selectedWorkspaceId);
     }
 
     setError(null);
@@ -1039,7 +1044,7 @@ const StreamingMessage = memo(function StreamingMessage({
   const isStreaming = useAppStore(
     (s) => s.workspaces.find((w) => w.id === workspaceId)?.agent_status === "Running"
   );
-  const clearPendingTypewriter = useAppStore((s) => s.clearPendingTypewriter);
+  const finishTypewriterDrain = useAppStore((s) => s.finishTypewriterDrain);
   const { handleContentChanged } = useContext(ScrollContext);
 
   const fullText = streaming || pendingText;
@@ -1050,12 +1055,14 @@ const StreamingMessage = memo(function StreamingMessage({
   }, [displayed, handleContentChanged]);
 
   // Drain complete + we're in pending-typewriter phase → release the hidden
-  // completed message so it takes over visually without a jump.
+  // completed message so it takes over visually without a jump. Also clears
+  // streamingThinking in the same store update so StreamingThinkingBlock
+  // unmounts atomically with the completed message unhiding.
   useEffect(() => {
     if (!showCaret && !streaming && pendingText) {
-      clearPendingTypewriter(workspaceId);
+      finishTypewriterDrain(workspaceId);
     }
-  }, [showCaret, streaming, pendingText, workspaceId, clearPendingTypewriter]);
+  }, [showCaret, streaming, pendingText, workspaceId, finishTypewriterDrain]);
 
   if (!displayed) return null;
 
