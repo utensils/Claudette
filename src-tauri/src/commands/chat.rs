@@ -876,28 +876,32 @@ pub async fn send_chat_message(
             }
 
             // MCP monitoring: check tool results for connection failure patterns.
-            if let AgentEvent::Stream(StreamEvent::User { message }) = &event {
-                for block in &message.content {
-                    if let claudette::agent::UserContentBlock::ToolResult {
-                        tool_use_id,
-                        content,
-                    } = block
-                        && let Some(tool_name) = mcp_tool_names.get(tool_use_id)
-                    {
-                        let content_str = content.to_string();
-                        if claudette::mcp_supervisor::is_terminal_mcp_error(&content_str)
-                            && let Some(server_name) =
-                                claudette::mcp_supervisor::extract_mcp_server_name(tool_name)
+            if let AgentEvent::Stream(StreamEvent::User { message, .. }) = &event {
+                if let claudette::agent::UserMessageContent::Blocks(blocks) = &message.content {
+                    for block in blocks {
+                        if let claudette::agent::UserContentBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                        } = block
+                            && let Some(tool_name) = mcp_tool_names.get(tool_use_id)
                         {
-                            let sv = app.state::<Arc<McpSupervisor>>();
-                            sv.report_tool_failure(&repo_id_for_mcp, server_name, &content_str)
-                                .await;
-                            if let Some(snapshot) = sv.get_status(&repo_id_for_mcp).await {
-                                let _ = app.emit("mcp-status-changed", &snapshot);
+                            let content_str = content.to_string();
+                            if claudette::mcp_supervisor::is_terminal_mcp_error(&content_str)
+                                && let Some(server_name) =
+                                    claudette::mcp_supervisor::extract_mcp_server_name(tool_name)
+                            {
+                                let sv = app.state::<Arc<McpSupervisor>>();
+                                sv.report_tool_failure(&repo_id_for_mcp, server_name, &content_str)
+                                    .await;
+                                if let Some(snapshot) = sv.get_status(&repo_id_for_mcp).await {
+                                    let _ = app.emit("mcp-status-changed", &snapshot);
+                                }
                             }
                         }
                     }
                 }
+                // Text-content user events are handled by Task 4's bridge logic —
+                // no action needed here for now. Their handling comes in Task 4.
             }
 
             // When a persistent turn completes (Result event), clear active_pid
