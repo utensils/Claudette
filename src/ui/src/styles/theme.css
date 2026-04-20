@@ -22,6 +22,9 @@
   --accent-bg:           rgba(224, 120, 80, 0.08);
   --accent-bg-strong:    rgba(224, 120, 80, 0.15);
   --accent-glow:         0 0 12px rgba(224, 120, 80, 0.25);
+  /* Text color to pair with an --accent-primary background. Dark text on
+     our bright/medium accents; light themes override below. */
+  --on-accent:           #1c1815;
 
   /* ---- Mascot pink (the bow) ---- */
   --mascot-pink:         #f5a0b8;
@@ -70,7 +73,11 @@
   --badge-plan:          #8cb8e0;
   --badge-ask:           #f5a0b8;
 
-  /* ---- Tool activity — per-category hues used in chat tool chips ---- */
+  /* ---- Tool activity — per-category hues used in chat tool chips.
+     Intentionally brand-invariant: tool chips keep the same hue across
+     every theme so users build a stable read/write/bash/etc. muscle
+     memory. Only :root defines these; the other [data-theme] blocks
+     inherit and do not override. ---- */
   --tool-read:           #6cb6ff;  /* reads: Read, Glob, Grep */
   --tool-write:          #f0a050;  /* writes: Write */
   --tool-edit:           #e0c050;  /* edits: Edit */
@@ -198,6 +205,8 @@
   --accent-bg: rgba(196, 90, 53, 0.08);
   --accent-bg-strong: rgba(196, 90, 53, 0.14);
   --accent-glow: 0 0 8px rgba(196, 90, 53, 0.15);
+  /* Dark accent needs light foreground for on-accent text. */
+  --on-accent: #fff8f0;
 
   --app-bg: #fff8f0;
   --sidebar-bg: #f5efe8;
@@ -429,6 +438,8 @@
   --accent-bg: rgba(144, 122, 169, 0.12);
   --accent-bg-strong: rgba(144, 122, 169, 0.22);
   --accent-glow: 0 0 12px rgba(144, 122, 169, 0.22);
+  /* Dark iris accent → cream foreground. */
+  --on-accent: #faf4ed;
 
   --app-bg: #faf4ed;
   --sidebar-bg: #fffaf3;
@@ -477,6 +488,8 @@
   --accent-bg: rgba(38, 139, 210, 0.12);
   --accent-bg-strong: rgba(38, 139, 210, 0.22);
   --accent-glow: 0 0 12px rgba(38, 139, 210, 0.28);
+  /* Solarized blue is dark enough to need base3 foreground. */
+  --on-accent: #fdf6e3;
 
   --app-bg: #002b36;
   --sidebar-bg: #073642;
@@ -526,6 +539,8 @@
   --accent-bg: rgba(38, 139, 210, 0.10);
   --accent-bg-strong: rgba(38, 139, 210, 0.20);
   --accent-glow: 0 0 12px rgba(38, 139, 210, 0.22);
+  /* Solarized blue is dark enough to need base3 foreground. */
+  --on-accent: #fdf6e3;
 
   --app-bg: #fdf6e3;
   --sidebar-bg: #eee8d5;

@@ -23,6 +23,7 @@ const THEMEABLE_VARS = [
   "accent-bg",
   "accent-bg-strong",
   "accent-glow",
+  "on-accent",
   "mascot-pink",
   "mascot-pink-dim",
   "sidebar-bg",
@@ -124,10 +125,25 @@ export function getTerminalTheme(): ITheme {
   };
 }
 
+// Keys the user may have set via applyUserFonts() — preserved across
+// theme switches so font/zoom choices don't reset when picking a theme.
+const PRESERVED_INLINE_PROPS = new Set(["--font-sans", "--font-mono", "zoom"]);
+
 function clearThemeableInlineVars(): void {
   const root = document.documentElement;
-  for (const varName of THEMEABLE_VARS) {
-    root.style.removeProperty(`--${varName}`);
+  // Iterate every inline property and strip all `--*` overrides except
+  // the font/zoom keys managed by applyUserFonts. This is stricter than
+  // the old THEMEABLE_VARS allowlist — a user JSON theme that sets a
+  // non-standard custom property (e.g. `--my-custom-token`) will no
+  // longer leak into the next theme.
+  const toRemove: string[] = [];
+  for (let i = 0; i < root.style.length; i++) {
+    const prop = root.style.item(i);
+    if (PRESERVED_INLINE_PROPS.has(prop)) continue;
+    if (prop.startsWith("--")) toRemove.push(prop);
+  }
+  for (const prop of toRemove) {
+    root.style.removeProperty(prop);
   }
   root.style.removeProperty("color-scheme");
 }
