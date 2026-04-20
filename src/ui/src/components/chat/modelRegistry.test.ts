@@ -10,6 +10,9 @@ describe("modelRegistry", () => {
     }
   });
 
+  // `"opus"` is the 1M alias of Opus 4.7 whose id lacks the `[1m]` suffix
+  // other 1M variants use. Keep the explicit `id === "opus"` check — removing
+  // it would silently misclassify the alias as a 200k model.
   it("1M-context variants report 1_000_000", () => {
     const oneM = MODELS.filter((m) => m.id === "opus" || m.id.endsWith("[1m]"));
     expect(oneM.length).toBeGreaterThan(0);
