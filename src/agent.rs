@@ -33,7 +33,11 @@ pub struct TokenUsage {
     pub cache_creation_input_tokens: Option<u64>,
     #[serde(default)]
     pub cache_read_input_tokens: Option<u64>,
-    #[serde(default)]
+    // `skip_serializing_if` keeps absent iterations out of the re-emitted
+    // Tauri payload entirely — important because `TokenUsage` rides every
+    // `message_delta` event (many per turn) where `iterations` is never
+    // present, and we don't want to emit `"iterations": null` on each one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub iterations: Option<Vec<TokenUsageIteration>>,
 }
 
@@ -2866,6 +2870,21 @@ mod token_usage_tests {
         assert!(
             re_encoded.contains("\"input_tokens\":3"),
             "iteration[0].input_tokens dropped: {re_encoded}"
+        );
+    }
+
+    #[test]
+    fn absent_iterations_are_omitted_not_nulled() {
+        // message_delta events frequently carry a TokenUsage with no
+        // iterations. skip_serializing_if keeps the field OUT of the
+        // serialized payload — we don't want `"iterations": null`
+        // riding every content delta to the frontend.
+        let line = r#"{"type":"stream_event","event":{"type":"message_delta","usage":{"input_tokens":5,"output_tokens":7}}}"#;
+        let ev: StreamEvent = serde_json::from_str(line).unwrap();
+        let re_encoded = serde_json::to_string(&ev).unwrap();
+        assert!(
+            !re_encoded.contains("\"iterations\""),
+            "iterations key should be omitted when absent: {re_encoded}"
         );
     }
 }
