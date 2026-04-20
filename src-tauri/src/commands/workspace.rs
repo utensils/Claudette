@@ -430,13 +430,19 @@ pub async fn archive_workspace(
     }
 
     // Stop any running agent and clear session so tray state stays consistent.
-    {
+    let ended_sid = {
         let mut agents = state.agents.write().await;
-        if let Some(session) = agents.remove(&id)
-            && let Some(pid) = session.active_pid
-        {
-            let _ = claudette::agent::stop_agent(pid).await;
+        if let Some(session) = agents.remove(&id) {
+            if let Some(pid) = session.active_pid {
+                let _ = claudette::agent::stop_agent(pid).await;
+            }
+            Some(session.session_id)
+        } else {
+            None
         }
+    };
+    if let Some(sid) = ended_sid.as_deref().filter(|s| !s.is_empty()) {
+        let _ = db.end_agent_session(sid, true);
     }
 
     db.delete_terminal_tabs_for_workspace(&id)
@@ -526,8 +532,11 @@ pub async fn delete_workspace(
     // Best-effort branch delete. Force-deletes even if unmerged commits exist.
     let _ = git::branch_delete(&repo.path, &ws.branch_name).await;
 
-    // Cascade deletes chat messages and terminal tabs.
-    db.delete_workspace(&id).map_err(|e| e.to_string())?;
+    // Cascade deletes chat messages and terminal tabs. Materializes a frozen
+    // summary row into `deleted_workspace_summaries` in the same transaction so
+    // lifetime dashboard stats survive the cascade.
+    db.delete_workspace_with_summary(&id)
+        .map_err(|e| e.to_string())?;
 
     // If this was the last workspace for the repo, clean up MCP supervisor state
     // and notify the frontend to clear the stale MCP status indicator.

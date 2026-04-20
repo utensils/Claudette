@@ -359,6 +359,80 @@ impl Database {
             )?;
         }
 
+        if version < 21 {
+            // Metrics capture foundation: per-session lifecycle rows, per-commit
+            // rows, and a frozen-aggregates table for workspaces that get
+            // hard-deleted (so lifetime dashboard stats survive `delete_workspace`).
+            self.conn.execute_batch(
+                "CREATE TABLE agent_sessions (
+                    id              TEXT PRIMARY KEY,
+                    workspace_id    TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+                    repository_id   TEXT NOT NULL,
+                    started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                    last_message_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    ended_at        TEXT,
+                    turn_count      INTEGER NOT NULL DEFAULT 0,
+                    completed_ok    INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX idx_agent_sessions_workspace ON agent_sessions(workspace_id);
+                CREATE INDEX idx_agent_sessions_started   ON agent_sessions(started_at);
+
+                CREATE TABLE agent_commits (
+                    commit_hash     TEXT NOT NULL,
+                    workspace_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                    repository_id   TEXT NOT NULL,
+                    session_id      TEXT,
+                    additions       INTEGER NOT NULL DEFAULT 0,
+                    deletions       INTEGER NOT NULL DEFAULT 0,
+                    files_changed   INTEGER NOT NULL DEFAULT 0,
+                    committed_at    TEXT NOT NULL,
+                    PRIMARY KEY (workspace_id, commit_hash)
+                );
+                CREATE INDEX idx_agent_commits_workspace ON agent_commits(workspace_id);
+                CREATE INDEX idx_agent_commits_committed ON agent_commits(committed_at);
+
+                CREATE TABLE deleted_workspace_summaries (
+                    id                        TEXT PRIMARY KEY,
+                    workspace_id              TEXT NOT NULL,
+                    workspace_name            TEXT NOT NULL,
+                    repository_id             TEXT NOT NULL,
+                    workspace_created_at      TEXT NOT NULL,
+                    deleted_at                TEXT NOT NULL DEFAULT (datetime('now')),
+                    sessions_started          INTEGER NOT NULL DEFAULT 0,
+                    sessions_completed        INTEGER NOT NULL DEFAULT 0,
+                    total_turns               INTEGER NOT NULL DEFAULT 0,
+                    total_session_duration_ms INTEGER NOT NULL DEFAULT 0,
+                    commits_made              INTEGER NOT NULL DEFAULT 0,
+                    total_additions           INTEGER NOT NULL DEFAULT 0,
+                    total_deletions           INTEGER NOT NULL DEFAULT 0,
+                    total_files_changed       INTEGER NOT NULL DEFAULT 0,
+                    messages_user             INTEGER NOT NULL DEFAULT 0,
+                    messages_assistant        INTEGER NOT NULL DEFAULT 0,
+                    messages_system           INTEGER NOT NULL DEFAULT 0,
+                    total_cost_usd            REAL NOT NULL DEFAULT 0,
+                    first_message_at          TEXT,
+                    last_message_at           TEXT,
+                    slash_commands_used       INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX idx_deleted_ws_summaries_repo ON deleted_workspace_summaries(repository_id);
+
+                PRAGMA user_version = 21;",
+            )?;
+        }
+
+        if version < 22 {
+            // Leaderboard and per-repo aggregations do correlated subquery
+            // lookups like `WHERE s.repository_id = r.repository_id` and
+            // `GROUP BY repository_id`. Without these indexes those scans are
+            // full-table, which the 30s dashboard poll amplifies.
+            self.conn.execute_batch(
+                "CREATE INDEX idx_agent_sessions_repo ON agent_sessions(repository_id);
+                 CREATE INDEX idx_agent_commits_repo  ON agent_commits(repository_id);
+
+                 PRAGMA user_version = 22;",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -662,6 +736,279 @@ impl Database {
             "UPDATE workspaces SET session_id = NULL, turn_count = 0 WHERE id = ?1",
             params![workspace_id],
         )?;
+        Ok(())
+    }
+
+    // --- Metrics: agent session lifecycle ---
+
+    /// Record the start of an agent session. Idempotent (INSERT OR IGNORE) so
+    /// that a retried first-turn path doesn't double-insert.
+    pub fn insert_agent_session(
+        &self,
+        session_id: &str,
+        workspace_id: &str,
+        repository_id: &str,
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO agent_sessions (id, workspace_id, repository_id)
+             VALUES (?1, ?2, ?3)",
+            params![session_id, workspace_id, repository_id],
+        )?;
+        Ok(())
+    }
+
+    /// Bump turn_count + last_message_at on an in-flight session. No-op if the
+    /// session row does not exist (e.g. pre-v20 sessions resumed from state).
+    pub fn update_agent_session_turn(
+        &self,
+        session_id: &str,
+        turn_count: u32,
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE agent_sessions
+             SET turn_count = ?1, last_message_at = datetime('now')
+             WHERE id = ?2 AND ended_at IS NULL",
+            params![turn_count, session_id],
+        )?;
+        Ok(())
+    }
+
+    /// Return a session's `started_at` timestamp if the row exists.
+    /// Used by post-turn commit scraping to bound `git log --since=`.
+    pub fn get_agent_session_started_at(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<String>, rusqlite::Error> {
+        self.conn
+            .query_row(
+                "SELECT started_at FROM agent_sessions WHERE id = ?1",
+                params![session_id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+    }
+
+    /// Mark a session as ended. Idempotent — only updates rows with null
+    /// `ended_at`, so multiple teardown paths (init failure, rollback,
+    /// clear_conversation, archive) can all call this safely.
+    pub fn end_agent_session(
+        &self,
+        session_id: &str,
+        completed_ok: bool,
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE agent_sessions
+             SET ended_at = datetime('now'), completed_ok = ?1
+             WHERE id = ?2 AND ended_at IS NULL",
+            params![if completed_ok { 1 } else { 0 }, session_id],
+        )?;
+        Ok(())
+    }
+
+    // --- Metrics: agent commits ---
+
+    /// Insert commits observed during an agent session. Idempotent per
+    /// `(workspace_id, commit_hash)` — re-scraping the same session is safe,
+    /// and the same hash observed in a different workspace is recorded
+    /// separately so per-workspace attribution is preserved.
+    pub fn insert_agent_commits_batch(
+        &self,
+        workspace_id: &str,
+        repository_id: &str,
+        session_id: Option<&str>,
+        commits: &[crate::model::AgentCommit],
+    ) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR IGNORE INTO agent_commits
+                 (commit_hash, workspace_id, repository_id, session_id,
+                  additions, deletions, files_changed, committed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for c in commits {
+                stmt.execute(params![
+                    c.commit_hash,
+                    workspace_id,
+                    repository_id,
+                    session_id,
+                    c.additions,
+                    c.deletions,
+                    c.files_changed,
+                    c.committed_at,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    // --- Metrics: materialize-on-delete ---
+
+    /// Compute aggregate stats for a workspace and insert a frozen summary row
+    /// BEFORE the workspace is hard-deleted. Callers must invoke this in the
+    /// same transaction as the delete (see `delete_workspace_with_summary`).
+    ///
+    /// Silently no-ops if the workspace row is missing — prevents a double-call
+    /// from inserting a row with empty aggregates.
+    fn materialize_workspace_summary_tx(
+        tx: &rusqlite::Transaction<'_>,
+        workspace_id: &str,
+    ) -> Result<(), rusqlite::Error> {
+        // Grab workspace identity fields; bail if already gone.
+        let ws_row: Option<(String, String, String)> = tx
+            .query_row(
+                "SELECT name, repository_id, created_at FROM workspaces WHERE id = ?1",
+                params![workspace_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((ws_name, repo_id, ws_created_at)) = ws_row else {
+            return Ok(());
+        };
+
+        // Session aggregates. duration_ms is computed from ISO timestamps.
+        let (sessions_started, sessions_completed, total_turns, total_duration_ms): (
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = tx.query_row(
+            "SELECT
+                    COUNT(*),
+                    COALESCE(SUM(completed_ok), 0),
+                    COALESCE(SUM(turn_count), 0),
+                    COALESCE(SUM(
+                        CAST(
+                            (julianday(COALESCE(ended_at, last_message_at)) - julianday(started_at))
+                            * 86400000.0
+                        AS INTEGER)
+                    ), 0)
+                 FROM agent_sessions WHERE workspace_id = ?1",
+            params![workspace_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
+
+        // Commit aggregates.
+        let (commits_made, total_additions, total_deletions, total_files_changed): (
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = tx.query_row(
+            "SELECT
+                    COUNT(*),
+                    COALESCE(SUM(additions), 0),
+                    COALESCE(SUM(deletions), 0),
+                    COALESCE(SUM(files_changed), 0)
+                 FROM agent_commits WHERE workspace_id = ?1",
+            params![workspace_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
+
+        // Message aggregates by role + cost + date range.
+        let (msgs_user, msgs_assistant, msgs_system, total_cost_usd, first_msg, last_msg): (
+            i64,
+            i64,
+            i64,
+            f64,
+            Option<String>,
+            Option<String>,
+        ) = tx.query_row(
+            "SELECT
+                SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN role = 'system' THEN 1 ELSE 0 END),
+                COALESCE(SUM(cost_usd), 0),
+                MIN(created_at),
+                MAX(created_at)
+             FROM chat_messages WHERE workspace_id = ?1",
+            params![workspace_id],
+            |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                    r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                    r.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            },
+        )?;
+
+        // Slash command aggregate.
+        let slash_commands_used: i64 = tx.query_row(
+            "SELECT COALESCE(SUM(use_count), 0) FROM slash_command_usage WHERE workspace_id = ?1",
+            params![workspace_id],
+            |r| r.get(0),
+        )?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO deleted_workspace_summaries (
+                id, workspace_id, workspace_name, repository_id, workspace_created_at,
+                sessions_started, sessions_completed, total_turns, total_session_duration_ms,
+                commits_made, total_additions, total_deletions, total_files_changed,
+                messages_user, messages_assistant, messages_system, total_cost_usd,
+                first_message_at, last_message_at, slash_commands_used
+             ) VALUES (
+                ?1, ?2, ?3, ?4, ?5,
+                ?6, ?7, ?8, ?9,
+                ?10, ?11, ?12, ?13,
+                ?14, ?15, ?16, ?17,
+                ?18, ?19, ?20
+             )",
+            params![
+                id,
+                workspace_id,
+                ws_name,
+                repo_id,
+                ws_created_at,
+                sessions_started,
+                sessions_completed,
+                total_turns,
+                total_duration_ms,
+                commits_made,
+                total_additions,
+                total_deletions,
+                total_files_changed,
+                msgs_user,
+                msgs_assistant,
+                msgs_system,
+                total_cost_usd,
+                first_msg,
+                last_msg,
+                slash_commands_used,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Hard-delete a workspace, materializing a frozen summary row first so
+    /// lifetime dashboard stats survive the cascade.
+    pub fn delete_workspace_with_summary(&self, id: &str) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        Self::materialize_workspace_summary_tx(&tx, id)?;
+        tx.execute("DELETE FROM workspaces WHERE id = ?1", params![id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Hard-delete a repository, materializing summaries for all its
+    /// workspaces first. One atomic transaction — either every affected
+    /// workspace produces a summary or none of the delete happens.
+    pub fn delete_repository_with_summaries(&self, id: &str) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        let ws_ids: Vec<String> = {
+            let mut stmt = tx.prepare("SELECT id FROM workspaces WHERE repository_id = ?1")?;
+            let rows = stmt.query_map(params![id], |r| r.get::<_, String>(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        for ws_id in &ws_ids {
+            Self::materialize_workspace_summary_tx(&tx, ws_id)?;
+        }
+        tx.execute("DELETE FROM repositories WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -2871,5 +3218,320 @@ mod tests {
         // Replace with empty vec — should clear all.
         db.replace_repository_mcp_servers("r1", &[]).unwrap();
         assert!(db.list_repository_mcp_servers("r1").unwrap().is_empty());
+    }
+
+    // --- Metrics capture tests ---
+
+    fn count_rows(db: &Database, sql: &str) -> i64 {
+        db.conn.query_row(sql, [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn test_agent_session_lifecycle() {
+        let db = setup_db_with_workspace();
+        db.insert_agent_session("s1", "w1", "r1").unwrap();
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_sessions"), 1);
+
+        // Idempotent insert.
+        db.insert_agent_session("s1", "w1", "r1").unwrap();
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_sessions"), 1);
+
+        db.update_agent_session_turn("s1", 3).unwrap();
+        let tc: i64 = db
+            .conn
+            .query_row(
+                "SELECT turn_count FROM agent_sessions WHERE id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tc, 3);
+
+        db.end_agent_session("s1", true).unwrap();
+        let (ended_at, completed): (Option<String>, i64) = db
+            .conn
+            .query_row(
+                "SELECT ended_at, completed_ok FROM agent_sessions WHERE id = 's1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert!(ended_at.is_some());
+        assert_eq!(completed, 1);
+
+        // Idempotent end: second call with completed_ok=false must NOT overwrite.
+        db.end_agent_session("s1", false).unwrap();
+        let completed_after: i64 = db
+            .conn
+            .query_row(
+                "SELECT completed_ok FROM agent_sessions WHERE id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(completed_after, 1);
+
+        // Turn bump on an ended session is a no-op.
+        db.update_agent_session_turn("s1", 99).unwrap();
+        let tc_after: i64 = db
+            .conn
+            .query_row(
+                "SELECT turn_count FROM agent_sessions WHERE id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tc_after, 3);
+    }
+
+    #[test]
+    fn test_agent_commits_idempotent() {
+        let db = setup_db_with_workspace();
+        let commit = crate::model::AgentCommit {
+            commit_hash: "abc123".into(),
+            workspace_id: Some("w1".into()),
+            repository_id: "r1".into(),
+            session_id: Some("s1".into()),
+            additions: 10,
+            deletions: 2,
+            files_changed: 3,
+            committed_at: "2026-04-17T12:00:00Z".into(),
+        };
+        db.insert_agent_commits_batch("w1", "r1", Some("s1"), std::slice::from_ref(&commit))
+            .unwrap();
+        db.insert_agent_commits_batch("w1", "r1", Some("s1"), &[commit])
+            .unwrap();
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_commits"), 1);
+    }
+
+    #[test]
+    fn test_agent_commits_same_hash_across_workspaces() {
+        let db = setup_db_with_workspace();
+        db.insert_workspace(&make_workspace("w2", "r1", "other"))
+            .unwrap();
+        let shared_hash = "deadbeef".to_string();
+        let commit_w1 = crate::model::AgentCommit {
+            commit_hash: shared_hash.clone(),
+            workspace_id: Some("w1".into()),
+            repository_id: "r1".into(),
+            session_id: Some("s1".into()),
+            additions: 1,
+            deletions: 0,
+            files_changed: 1,
+            committed_at: "2026-04-17T12:00:00Z".into(),
+        };
+        let commit_w2 = crate::model::AgentCommit {
+            commit_hash: shared_hash,
+            workspace_id: Some("w2".into()),
+            repository_id: "r1".into(),
+            session_id: Some("s2".into()),
+            additions: 1,
+            deletions: 0,
+            files_changed: 1,
+            committed_at: "2026-04-17T12:00:00Z".into(),
+        };
+        db.insert_agent_commits_batch("w1", "r1", Some("s1"), &[commit_w1])
+            .unwrap();
+        db.insert_agent_commits_batch("w2", "r1", Some("s2"), &[commit_w2])
+            .unwrap();
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_commits"), 2);
+    }
+
+    #[test]
+    fn test_materialize_summary_on_hard_delete() {
+        let db = setup_db_with_workspace();
+        // Seed: one session, one commit, a few messages, a slash command.
+        db.insert_agent_session("s1", "w1", "r1").unwrap();
+        db.update_agent_session_turn("s1", 5).unwrap();
+        db.end_agent_session("s1", true).unwrap();
+
+        let commit = crate::model::AgentCommit {
+            commit_hash: "h1".into(),
+            workspace_id: Some("w1".into()),
+            repository_id: "r1".into(),
+            session_id: Some("s1".into()),
+            additions: 50,
+            deletions: 10,
+            files_changed: 4,
+            committed_at: "2026-04-17T12:00:00Z".into(),
+        };
+        db.insert_agent_commits_batch("w1", "r1", Some("s1"), &[commit])
+            .unwrap();
+
+        for (id, role) in [
+            ("m1", "user"),
+            ("m2", "assistant"),
+            ("m3", "user"),
+            ("m4", "system"),
+        ] {
+            db.conn
+                .execute(
+                    "INSERT INTO chat_messages (id, workspace_id, role, content, cost_usd)
+                     VALUES (?1, 'w1', ?2, 'x', 0.01)",
+                    params![id, role],
+                )
+                .unwrap();
+        }
+        db.conn
+            .execute(
+                "INSERT INTO slash_command_usage (workspace_id, command_name, use_count)
+                 VALUES ('w1', '/foo', 7)",
+                [],
+            )
+            .unwrap();
+
+        // Hard-delete with materialization.
+        db.delete_workspace_with_summary("w1").unwrap();
+
+        // Workspace and child rows gone; summary present.
+        assert_eq!(
+            count_rows(&db, "SELECT COUNT(*) FROM workspaces WHERE id = 'w1'"),
+            0
+        );
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_sessions"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_commits"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM chat_messages"), 0);
+        assert_eq!(
+            count_rows(&db, "SELECT COUNT(*) FROM slash_command_usage"),
+            0
+        );
+        assert_eq!(
+            count_rows(&db, "SELECT COUNT(*) FROM deleted_workspace_summaries"),
+            1
+        );
+
+        let (sessions, turns, commits, adds, dels, msgs_u, msgs_a, msgs_s, slash_used): (
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = db
+            .conn
+            .query_row(
+                "SELECT sessions_started, total_turns, commits_made, total_additions,
+                        total_deletions, messages_user, messages_assistant, messages_system,
+                        slash_commands_used
+                 FROM deleted_workspace_summaries WHERE workspace_id = 'w1'",
+                [],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                        r.get(8)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(sessions, 1);
+        assert_eq!(turns, 5);
+        assert_eq!(commits, 1);
+        assert_eq!(adds, 50);
+        assert_eq!(dels, 10);
+        assert_eq!(msgs_u, 2);
+        assert_eq!(msgs_a, 1);
+        assert_eq!(msgs_s, 1);
+        assert_eq!(slash_used, 7);
+    }
+
+    #[test]
+    fn test_archive_leaves_metrics_untouched() {
+        let db = setup_db_with_workspace();
+        db.insert_agent_session("s1", "w1", "r1").unwrap();
+        db.end_agent_session("s1", true).unwrap();
+        let commit = crate::model::AgentCommit {
+            commit_hash: "h1".into(),
+            workspace_id: Some("w1".into()),
+            repository_id: "r1".into(),
+            session_id: Some("s1".into()),
+            additions: 1,
+            deletions: 0,
+            files_changed: 1,
+            committed_at: "2026-04-17T12:00:00Z".into(),
+        };
+        db.insert_agent_commits_batch("w1", "r1", Some("s1"), &[commit])
+            .unwrap();
+
+        db.update_workspace_status("w1", &WorkspaceStatus::Archived, None)
+            .unwrap();
+
+        // Archive is soft-delete: metric rows stay put, no summary is written.
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_sessions"), 1);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_commits"), 1);
+        assert_eq!(
+            count_rows(&db, "SELECT COUNT(*) FROM deleted_workspace_summaries"),
+            0
+        );
+    }
+
+    #[test]
+    fn test_delete_repository_materializes_summary_for_each_workspace() {
+        let db = setup_db_with_workspace();
+        db.insert_workspace(&make_workspace("w2", "r1", "feature"))
+            .unwrap();
+
+        // Seed both workspaces with a session + a commit so the per-workspace
+        // aggregates are non-trivially distinct.
+        for (sid, wid, turns, adds) in [("s1", "w1", 4, 12), ("s2", "w2", 9, 30)] {
+            db.insert_agent_session(sid, wid, "r1").unwrap();
+            db.update_agent_session_turn(sid, turns).unwrap();
+            db.end_agent_session(sid, true).unwrap();
+            let commit = crate::model::AgentCommit {
+                commit_hash: format!("hash-{wid}"),
+                workspace_id: Some(wid.into()),
+                repository_id: "r1".into(),
+                session_id: Some(sid.into()),
+                additions: adds,
+                deletions: 1,
+                files_changed: 1,
+                committed_at: "2026-04-17T12:00:00Z".into(),
+            };
+            db.insert_agent_commits_batch(wid, "r1", Some(sid), &[commit])
+                .unwrap();
+        }
+
+        db.delete_repository_with_summaries("r1").unwrap();
+
+        // Repository + both workspaces gone, raw metric rows cascaded away.
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM repositories"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM workspaces"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_sessions"), 0);
+        assert_eq!(count_rows(&db, "SELECT COUNT(*) FROM agent_commits"), 0);
+        // One frozen summary per pre-existing workspace.
+        assert_eq!(
+            count_rows(&db, "SELECT COUNT(*) FROM deleted_workspace_summaries"),
+            2
+        );
+        // Per-workspace aggregates are preserved distinctly (not co-mingled).
+        let (turns_w1, adds_w1): (i64, i64) = db
+            .conn
+            .query_row(
+                "SELECT total_turns, total_additions FROM deleted_workspace_summaries
+                 WHERE workspace_id = 'w1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let (turns_w2, adds_w2): (i64, i64) = db
+            .conn
+            .query_row(
+                "SELECT total_turns, total_additions FROM deleted_workspace_summaries
+                 WHERE workspace_id = 'w2'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((turns_w1, adds_w1), (4, 12));
+        assert_eq!((turns_w2, adds_w2), (9, 30));
     }
 }

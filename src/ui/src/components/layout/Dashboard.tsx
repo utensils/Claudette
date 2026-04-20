@@ -1,9 +1,10 @@
 import { memo, useMemo, useEffect, useState } from "react";
-import { GitBranch, Layers, Globe, BadgeCheck, BadgeInfo, BadgeQuestionMark } from "lucide-react";
+import { GitBranch, Layers, Globe, BadgeCheck, BadgeInfo, BadgeQuestionMark, ChevronDown, ChevronRight } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { useSpinnerFrame } from "../../hooks/useSpinnerFrame";
 import { RepoIcon } from "../shared/RepoIcon";
 import { PanelToggles } from "../shared/PanelToggles";
+import { StatsStrip, AnalyticsSection, MicroStats } from "../metrics";
 import styles from "./Dashboard.module.css";
 
 /** Strip markdown syntax for a clean one-line preview. */
@@ -175,6 +176,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
       ) : (
         <div className={styles.noMessages}>No messages yet</div>
       )}
+      <MicroStats workspaceId={ws.id} />
     </button>
   );
 });
@@ -190,6 +192,14 @@ export function Dashboard() {
   const planApprovals = useAppStore((s) => s.planApprovals);
   const unreadCompletions = useAppStore((s) => s.unreadCompletions);
 
+  const fetchDashboardMetrics = useAppStore((s) => s.fetchDashboardMetrics);
+  const fetchAnalyticsMetrics = useAppStore((s) => s.fetchAnalyticsMetrics);
+  const fetchWorkspaceMetricsBatch = useAppStore(
+    (s) => s.fetchWorkspaceMetricsBatch
+  );
+
+  const [workspacesOpen, setWorkspacesOpen] = useState(true);
+
   const repoMap = useMemo(
     () => new Map(repositories.map((r) => [r.id, r])),
     [repositories]
@@ -204,6 +214,34 @@ export function Dashboard() {
     () => workspaces.filter((ws) => ws.status === "Active"),
     [workspaces],
   );
+
+  useEffect(() => {
+    fetchDashboardMetrics();
+    fetchAnalyticsMetrics();
+    const interval = setInterval(() => {
+      fetchDashboardMetrics();
+      fetchAnalyticsMetrics();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchDashboardMetrics, fetchAnalyticsMetrics]);
+
+  const workspaceIdsKey = useMemo(
+    () =>
+      activeWorkspaces
+        .map((ws) => ws.id)
+        .sort()
+        .join(","),
+    [activeWorkspaces]
+  );
+
+  useEffect(() => {
+    const ids = workspaceIdsKey ? workspaceIdsKey.split(",") : [];
+    fetchWorkspaceMetricsBatch(ids);
+    const interval = setInterval(() => {
+      fetchWorkspaceMetricsBatch(ids);
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [workspaceIdsKey, fetchWorkspaceMetricsBatch]);
 
   const anyRunning = useMemo(
     () => activeWorkspaces.some((ws) => ws.agent_status === "Running"),
@@ -233,16 +271,20 @@ export function Dashboard() {
     return (
       <div className={styles.dashboard}>
         <div className={styles.toolbar} data-tauri-drag-region>
-          <div className={styles.header}>Active Workspaces</div>
+          <div className={styles.header}>Dashboard</div>
           <PanelToggles />
         </div>
-        <div className={styles.empty}>
-          <Layers size={40} className={styles.emptyIcon} />
-          <span className={styles.emptyTitle}>No active workspaces</span>
-          <p className={styles.hint}>
-            Create a workspace from a repository in the sidebar, or press{" "}
-            <kbd className={styles.hintKey}>+</kbd> next to a repo name.
-          </p>
+        <div className={styles.scrollBody}>
+          <StatsStrip />
+          <AnalyticsSection />
+          <div className={styles.empty}>
+            <Layers size={40} className={styles.emptyIcon} />
+            <span className={styles.emptyTitle}>No active workspaces</span>
+            <p className={styles.hint}>
+              Create a workspace from a repository in the sidebar, or press{" "}
+              <kbd className={styles.hintKey}>+</kbd> next to a repo name.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -255,34 +297,49 @@ export function Dashboard() {
   return (
     <div className={styles.dashboard}>
       <div className={styles.toolbar} data-tauri-drag-region>
-        <div className={styles.header}>
-          Active Workspaces
-          {runningCount > 0 && (
-            <span className={styles.headerCount}>
-              {runningCount} running
-            </span>
-          )}
-        </div>
+        <div className={styles.header}>Dashboard</div>
         <PanelToggles />
       </div>
-      <div className={styles.grid}>
-        {sortedWorkspaces.map(({ ws, badge }, i) => {
-          const repo = repoMap.get(ws.repository_id);
-          return (
-            <WorkspaceCard
-              key={ws.id}
-              ws={ws}
-              repo={repo}
-              baseBranch={repo ? defaultBranches[repo.id] : undefined}
-              lastMsg={lastMessages[ws.id]}
-              remoteName={ws.remote_connection_id ? remoteNameMap.get(ws.remote_connection_id) : undefined}
-              badge={badge}
-              spinnerChar={ws.agent_status === "Running" ? spinnerChar : ""}
-              onClick={selectWorkspace}
-              index={i}
-            />
-          );
-        })}
+      <div className={styles.scrollBody}>
+        <StatsStrip />
+        <AnalyticsSection />
+        <div className={styles.workspacesSection}>
+          <button
+            type="button"
+            className={styles.workspacesHeader}
+            onClick={() => setWorkspacesOpen((v) => !v)}
+            aria-expanded={workspacesOpen}
+          >
+            {workspacesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span className={styles.workspacesTitle}>Active Workspaces</span>
+            {runningCount > 0 && (
+              <span className={styles.headerCount}>
+                {runningCount} running
+              </span>
+            )}
+          </button>
+          {workspacesOpen && (
+            <div className={styles.grid}>
+              {sortedWorkspaces.map(({ ws, badge }, i) => {
+                const repo = repoMap.get(ws.repository_id);
+                return (
+                  <WorkspaceCard
+                    key={ws.id}
+                    ws={ws}
+                    repo={repo}
+                    baseBranch={repo ? defaultBranches[repo.id] : undefined}
+                    lastMsg={lastMessages[ws.id]}
+                    remoteName={ws.remote_connection_id ? remoteNameMap.get(ws.remote_connection_id) : undefined}
+                    badge={badge}
+                    spinnerChar={ws.agent_status === "Running" ? spinnerChar : ""}
+                    onClick={selectWorkspace}
+                    index={i}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

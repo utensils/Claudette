@@ -375,6 +375,114 @@ pub async fn current_branch(repo_path: &str) -> Result<String, GitError> {
     Ok(branch)
 }
 
+/// A commit observed in a worktree, with line-change stats.
+///
+/// `committed_at` is the committer date in RFC3339 form (from `%cI`).
+/// Parsed from `git log --pretty=format:"%H|%cI" --numstat`.
+#[derive(Debug, Clone)]
+pub struct CommitInfo {
+    pub hash: String,
+    pub committed_at: String,
+    pub additions: i64,
+    pub deletions: i64,
+    pub files_changed: i64,
+}
+
+/// Returns `since` with an explicit UTC marker appended if it lacks one,
+/// so `git log --since` doesn't fall back to local-time interpretation.
+/// Recognizes trailing `Z`/`z` and `±HH:MM` / `±HHMM` offsets.
+fn ensure_utc_tz(since: &str) -> String {
+    let s = since.trim();
+    if s.ends_with('Z') || s.ends_with('z') {
+        return s.to_string();
+    }
+    let b = s.as_bytes();
+    let has_colon_offset = b.len() >= 6 && {
+        let t = &b[b.len() - 6..];
+        (t[0] == b'+' || t[0] == b'-')
+            && t[1].is_ascii_digit()
+            && t[2].is_ascii_digit()
+            && t[3] == b':'
+            && t[4].is_ascii_digit()
+            && t[5].is_ascii_digit()
+    };
+    let has_compact_offset = b.len() >= 5 && {
+        let t = &b[b.len() - 5..];
+        (t[0] == b'+' || t[0] == b'-') && t[1..].iter().all(|c| c.is_ascii_digit())
+    };
+    if has_colon_offset || has_compact_offset {
+        s.to_string()
+    } else {
+        format!("{s} UTC")
+    }
+}
+
+/// List commits in a worktree whose committer date is after `since`, with
+/// per-commit aggregated additions/deletions/files_changed from numstat.
+///
+/// `since` is passed to `git log --since` and accepts any format git's
+/// approxidate understands — RFC3339, ISO-8601, or SQLite's
+/// `datetime('now')` output (`YYYY-MM-DD HH:MM:SS` UTC). Naive strings
+/// (no `Z` or `±HH:MM` offset) are assumed UTC, since that matches how
+/// SQLite stores timestamps; git's default interpretation would be local
+/// time, which silently shifts the window.
+///
+/// Used for post-turn metric scraping in the agent lifecycle. Committer
+/// date (not author date) is used so commits that were cherry-picked or
+/// rebased into the worktree during the session are attributed to the
+/// session that landed them, not the one that originally wrote them.
+/// Binary files (numstat emits "-\t-\t") contribute 0 additions/deletions
+/// but still count toward `files_changed`.
+pub async fn commits_since(worktree_path: &str, since: &str) -> Result<Vec<CommitInfo>, GitError> {
+    let since_utc = ensure_utc_tz(since);
+    let raw = run_git(
+        worktree_path,
+        &[
+            "log",
+            &format!("--since={since_utc}"),
+            "--pretty=format:COMMIT|%H|%cI",
+            "--numstat",
+        ],
+    )
+    .await?;
+
+    let mut commits: Vec<CommitInfo> = Vec::new();
+    let mut current: Option<CommitInfo> = None;
+
+    for line in raw.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("COMMIT|") {
+            if let Some(c) = current.take() {
+                commits.push(c);
+            }
+            let mut parts = rest.splitn(2, '|');
+            let hash = parts.next().unwrap_or_default().to_string();
+            let committed_at = parts.next().unwrap_or_default().to_string();
+            current = Some(CommitInfo {
+                hash,
+                committed_at,
+                additions: 0,
+                deletions: 0,
+                files_changed: 0,
+            });
+        } else if let Some(c) = current.as_mut() {
+            // numstat line: "<added>\t<deleted>\t<path>", binary files use "-".
+            let mut cols = line.split('\t');
+            let adds = cols.next().unwrap_or("0");
+            let dels = cols.next().unwrap_or("0");
+            c.additions += adds.parse::<i64>().unwrap_or(0);
+            c.deletions += dels.parse::<i64>().unwrap_or(0);
+            c.files_changed += 1;
+        }
+    }
+    if let Some(c) = current {
+        commits.push(c);
+    }
+    Ok(commits)
+}
+
 /// Information about a single git worktree, parsed from `git worktree list --porcelain`.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorktreeInfo {
@@ -883,5 +991,114 @@ mod tests {
         // not error.
         let result = list_worktrees(bare_path).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_commits_since_captures_new_commits_with_numstat() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        // Note the time BEFORE making new commits.
+        let since = run_git(path, &["log", "-1", "--pretty=format:%aI"])
+            .await
+            .unwrap();
+
+        // Two new commits: one adds lines, one deletes.
+        let f1 = dir.path().join("a.txt");
+        std::fs::write(&f1, "one\ntwo\nthree\n").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "add a.txt"]).await.unwrap();
+
+        std::fs::write(&f1, "one\n").unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "shrink a.txt"])
+            .await
+            .unwrap();
+
+        let commits = commits_since(path, &since).await.unwrap();
+        // --since is inclusive by timestamp, so the initial commit might or
+        // might not appear depending on second resolution. Assert we got at
+        // least the two new ones with numstat populated.
+        assert!(commits.len() >= 2);
+        let total_adds: i64 = commits.iter().map(|c| c.additions).sum();
+        let total_dels: i64 = commits.iter().map(|c| c.deletions).sum();
+        assert!(total_adds >= 3, "expected >=3 additions, got {total_adds}");
+        assert!(total_dels >= 2, "expected >=2 deletions, got {total_dels}");
+        for c in &commits {
+            assert!(!c.hash.is_empty());
+            assert!(!c.committed_at.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_commits_since_empty_when_nothing_new() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        // Use a future timestamp so no commits qualify.
+        let commits = commits_since(path, "2099-01-01T00:00:00Z").await.unwrap();
+        assert!(commits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_commits_since_handles_binary_files() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+
+        let since = run_git(path, &["log", "-1", "--pretty=format:%aI"])
+            .await
+            .unwrap();
+
+        // Commit a binary file (contains null bytes) — git --numstat emits
+        // "-\t-\t<path>" for these, which must parse as 0 adds / 0 dels but
+        // still bump files_changed.
+        let bin = dir.path().join("data.bin");
+        std::fs::write(&bin, [0u8, 1, 2, 3, 0, 5, 6, 0, 255]).unwrap();
+        run_git(path, &["add", "-A"]).await.unwrap();
+        run_git(path, &["commit", "-m", "add binary"])
+            .await
+            .unwrap();
+        let bin_hash = run_git(path, &["rev-parse", "HEAD"]).await.unwrap();
+
+        let commits = commits_since(path, &since).await.unwrap();
+        let bin_commit = commits
+            .iter()
+            .find(|c| c.hash == bin_hash)
+            .expect("binary commit should appear in results");
+        assert_eq!(bin_commit.additions, 0, "binary file adds must be 0");
+        assert_eq!(bin_commit.deletions, 0, "binary file dels must be 0");
+        assert_eq!(
+            bin_commit.files_changed, 1,
+            "binary file must still count toward files_changed"
+        );
+    }
+
+    #[test]
+    fn test_ensure_utc_tz() {
+        // Already-qualified strings pass through unchanged.
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10Z"),
+            "2026-04-18T03:36:10Z"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10+00:00"),
+            "2026-04-18T03:36:10+00:00"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-17T23:36:10-04:00"),
+            "2026-04-17T23:36:10-04:00"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10+0000"),
+            "2026-04-18T03:36:10+0000"
+        );
+        // Naive SQLite format gets a UTC suffix.
+        assert_eq!(
+            ensure_utc_tz("2026-04-18 03:36:10"),
+            "2026-04-18 03:36:10 UTC"
+        );
+        assert_eq!(
+            ensure_utc_tz("2026-04-18T03:36:10"),
+            "2026-04-18T03:36:10 UTC"
+        );
     }
 }
