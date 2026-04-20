@@ -30,6 +30,7 @@ export function useAgentStream() {
   const setPlanApproval = useAppStore((s) => s.setPlanApproval);
   const finalizeTurn = useAppStore((s) => s.finalizeTurn);
   const setPlanMode = useAppStore((s) => s.setPlanMode);
+  const addCompactionEvent = useAppStore((s) => s.addCompactionEvent);
 
   // Map content block index → { toolUseId, toolName } for the current turn.
   // Reset on process exit.
@@ -107,6 +108,42 @@ export function useAgentStream() {
       // Handle different stream event types based on the Rust enum serialization
       if ("type" in streamEvent) {
         switch (streamEvent.type) {
+          case "system": {
+            // Compaction lifecycle: status -> "compacting" marks start;
+            // compact_boundary marks end. The divider renders via the
+            // existing addChatMessage path when the sentinel system
+            // message from Task 4's bridge arrives.
+            if (
+              streamEvent.subtype === "status" &&
+              streamEvent.status === "compacting"
+            ) {
+              updateWorkspace(wsId, { agent_status: "Compacting" });
+              break;
+            }
+            if (
+              streamEvent.subtype === "compact_boundary" &&
+              streamEvent.compact_metadata
+            ) {
+              const m = streamEvent.compact_metadata;
+              addCompactionEvent(wsId, {
+                timestamp: new Date().toISOString(),
+                trigger: m.trigger,
+                preTokens: m.pre_tokens,
+                postTokens: m.post_tokens,
+                durationMs: m.duration_ms,
+                // afterMessageIndex is set to the current end-of-list;
+                // the Task 4 bridge inserts the sentinel system message
+                // which will land via the existing addChatMessage path
+                // right after.
+                afterMessageIndex:
+                  (useAppStore.getState().chatMessages[wsId] ?? []).length,
+              });
+              updateWorkspace(wsId, { agent_status: "Running" });
+              break;
+            }
+            // Other system subtypes (init, hook_*, etc.) — no action.
+            break;
+          }
           case "stream_event": {
             const inner = streamEvent.event;
             if ("type" in inner) {
@@ -359,6 +396,7 @@ export function useAgentStream() {
     setPlanApproval,
     finalizeTurn,
     setPlanMode,
+    addCompactionEvent,
   ]);
 
   // Listen for `agent-permission-prompt` — emitted by the Rust bridge the
