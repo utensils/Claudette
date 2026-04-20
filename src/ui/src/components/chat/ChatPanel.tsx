@@ -1,4 +1,5 @@
 import React, { createContext, memo, useContext, useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { isAgentBusy } from "../../utils/agentStatus";
 import Markdown from "react-markdown";
 import { preprocessContent, MARKDOWN_COMPONENTS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../utils/markdown";
 import { FileText, GitBranch, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
@@ -245,7 +246,7 @@ export function ChatPanel() {
   const clearQueuedMessage = useAppStore((s) => s.clearQueuedMessage);
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
-  const isRunning = ws?.agent_status === "Running";
+  const isRunning = isAgentBusy(ws?.agent_status);
 
   const isRemote = !!ws?.remote_connection_id;
 
@@ -388,7 +389,7 @@ export function ChatPanel() {
         // finalizeTurn() is more current than the DB and must not be overwritten.
         if (isLocal) {
           const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId);
-          const isRunning = ws?.agent_status === "Running";
+          const isRunning = isAgentBusy(ws?.agent_status);
           debugChat("ChatPanel", "load-completed-turns:gate", {
             wsId,
             isRunning,
@@ -1051,7 +1052,7 @@ const StreamingMessage = memo(function StreamingMessage({
     (s) => s.pendingTypewriter[workspaceId]?.text ?? ""
   );
   const isStreaming = useAppStore(
-    (s) => s.workspaces.find((w) => w.id === workspaceId)?.agent_status === "Running"
+    (s) => isAgentBusy(s.workspaces.find((w) => w.id === workspaceId)?.agent_status)
   );
   const finishTypewriterDrain = useAppStore((s) => s.finishTypewriterDrain);
   const { handleContentChanged } = useContext(ScrollContext);
