@@ -1,6 +1,9 @@
 // Built-in theme metadata. Palettes live in styles/theme.css as
 // `[data-theme="..."]` blocks — this file only carries what the settings
 // switcher needs: id, display name, description, color-scheme hint.
+//
+// Order: Default Dark and Default Light are pinned at the top as the
+// canonical entry points; the remainder is sorted alphabetically by name.
 
 export interface BuiltinThemeMeta {
   id: string;
@@ -23,9 +26,9 @@ export const BUILTIN_THEME_META: BuiltinThemeMeta[] = [
     colorScheme: "light",
   },
   {
-    id: "jellybeans",
-    name: "Jellybeans",
-    description: "Dark Vim-inspired palette with cool slate accent",
+    id: "brink",
+    name: "Brink",
+    description: "Mid-tone warm chrome with Ristretto-style gold accent",
     colorScheme: "dark",
   },
   {
@@ -35,39 +38,9 @@ export const BUILTIN_THEME_META: BuiltinThemeMeta[] = [
     colorScheme: "dark",
   },
   {
-    id: "rose-pine",
-    name: "Rosé Pine",
-    description: "Soho-vibes dark with iris accent",
-    colorScheme: "dark",
-  },
-  {
-    id: "rose-pine-moon",
-    name: "Rosé Pine Moon",
-    description: "Rosé Pine on warmer navy base",
-    colorScheme: "dark",
-  },
-  {
-    id: "rose-pine-dawn",
-    name: "Rosé Pine Dawn",
-    description: "Rosé Pine light — cream parchment with iris accent",
-    colorScheme: "light",
-  },
-  {
-    id: "solarized-dark",
-    name: "Solarized Dark",
-    description: "Schoonover's canonical dark with blue accent",
-    colorScheme: "dark",
-  },
-  {
-    id: "solarized-light",
-    name: "Solarized Light",
-    description: "Solarized inverted monotones with identical accents",
-    colorScheme: "light",
-  },
-  {
-    id: "brink",
-    name: "Brink",
-    description: "Mid-tone warm chrome with Ristretto-style gold accent",
+    id: "jellybeans",
+    name: "Jellybeans",
+    description: "Dark Vim-inspired palette with cool slate accent",
     colorScheme: "dark",
   },
   {
@@ -83,15 +56,45 @@ export const BUILTIN_THEME_META: BuiltinThemeMeta[] = [
     colorScheme: "dark",
   },
   {
-    id: "warm-ember",
-    name: "Warm Ember",
-    description: "Warm amber-toned dark theme",
+    id: "rose-pine",
+    name: "Rosé Pine",
+    description: "Soho-vibes dark with iris accent",
+    colorScheme: "dark",
+  },
+  {
+    id: "rose-pine-dawn",
+    name: "Rosé Pine Dawn",
+    description: "Rosé Pine light — cream parchment with iris accent",
+    colorScheme: "light",
+  },
+  {
+    id: "rose-pine-moon",
+    name: "Rosé Pine Moon",
+    description: "Rosé Pine on warmer navy base",
     colorScheme: "dark",
   },
   {
     id: "sidekick",
     name: "Sidekick",
     description: "Ship Sidekick brand — deep navy with electric violet",
+    colorScheme: "dark",
+  },
+  {
+    id: "solarized-dark",
+    name: "Solarized Dark",
+    description: "Schoonover's canonical dark with blue accent",
+    colorScheme: "dark",
+  },
+  {
+    id: "solarized-light",
+    name: "Solarized Light",
+    description: "Solarized inverted monotones with identical accents",
+    colorScheme: "light",
+  },
+  {
+    id: "warm-ember",
+    name: "Warm Ember",
+    description: "Warm amber-toned dark theme",
     colorScheme: "dark",
   },
 ];
