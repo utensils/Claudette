@@ -151,6 +151,10 @@ interface AppState {
    *  when the timeline doesn't record one. */
   latestTurnUsage: Record<string, TurnUsage>;
   setLatestTurnUsage: (wsId: string, usage: TurnUsage) => void;
+  /** Delete the meter's usage entry for a workspace. Used when a
+   *  rollback or empty load leaves no assistant message with token data —
+   *  clearing hides the meter rather than leaving a stale value. */
+  clearLatestTurnUsage: (wsId: string) => void;
   setChatMessages: (wsId: string, messages: ChatMessage[]) => void;
   addChatMessage: (wsId: string, message: ChatMessage) => void;
   setStreamingContent: (wsId: string, content: string) => void;
@@ -557,6 +561,13 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({
       latestTurnUsage: { ...s.latestTurnUsage, [wsId]: usage },
     })),
+  clearLatestTurnUsage: (wsId) =>
+    set((s) => {
+      if (!(wsId in s.latestTurnUsage)) return {};
+      const next = { ...s.latestTurnUsage };
+      delete next[wsId];
+      return { latestTurnUsage: next };
+    }),
   setChatMessages: (wsId, messages) =>
     set((s) => ({
       chatMessages: { ...s.chatMessages, [wsId]: messages },

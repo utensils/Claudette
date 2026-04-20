@@ -1004,3 +1004,35 @@ describe("hydrateCompletedTurns seeds latestTurnUsage", () => {
     expect(useAppStore.getState().latestTurnUsage.ws1).toBeUndefined();
   });
 });
+
+describe("clearLatestTurnUsage", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      latestTurnUsage: {
+        ws1: {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 10_000,
+          cacheCreationTokens: 500,
+        },
+        ws2: {
+          inputTokens: 200,
+          outputTokens: 75,
+        },
+      },
+    });
+  });
+
+  it("deletes the entry for the specified workspace only", () => {
+    useAppStore.getState().clearLatestTurnUsage("ws1");
+    const slice = useAppStore.getState().latestTurnUsage;
+    expect(slice.ws1).toBeUndefined();
+    expect(slice.ws2).toEqual({ inputTokens: 200, outputTokens: 75 });
+  });
+
+  it("is a no-op for workspaces not in the slice", () => {
+    useAppStore.getState().clearLatestTurnUsage("ws-never-set");
+    expect(useAppStore.getState().latestTurnUsage.ws1).toBeDefined();
+    expect(useAppStore.getState().latestTurnUsage.ws2).toBeDefined();
+  });
+});
