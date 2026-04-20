@@ -280,15 +280,22 @@ export function useAgentStream() {
               pendingMessageCount: turnMessageCountRef.current[wsId] || 0,
               pendingToolCount: (useAppStore.getState().toolActivities[wsId] || []).length,
             });
+            // The top-level `result.usage.*` aggregates across all inner
+            // tool-use iterations. For the meter we want the FINAL call's
+            // per-call usage; the CLI emits that in `iterations[0]`. Fall
+            // back to the aggregate if the CLI doesn't emit iterations
+            // (older versions). See Phase 2.5 spec.
+            const lastCall =
+              streamEvent.usage?.iterations?.[0] ?? streamEvent.usage;
             finalizeTurn(
               wsId,
               turnMessageCountRef.current[wsId] || 0,
               turnCheckpointIdRef.current[wsId],
               streamEvent.duration_ms,
-              streamEvent.usage?.input_tokens,
-              streamEvent.usage?.output_tokens,
-              streamEvent.usage?.cache_read_input_tokens ?? undefined,
-              streamEvent.usage?.cache_creation_input_tokens ?? undefined,
+              lastCall?.input_tokens,
+              lastCall?.output_tokens,
+              lastCall?.cache_read_input_tokens ?? undefined,
+              lastCall?.cache_creation_input_tokens ?? undefined,
             );
             turnMessageCountRef.current[wsId] = 0;
             turnFinalizedRef.current[wsId] = true;
