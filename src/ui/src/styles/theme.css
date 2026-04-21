@@ -1,120 +1,890 @@
+/* ============================================================
+   Claudette — Colors, Type, Space, Radii, Motion.
+   Canonical design-system foundations. Every token lives here;
+   component CSS should reference `var(--*)` and never hardcode
+   hex, rgb, px sizes, or font families.
+
+   Built-in themes are expressed as `[data-theme="..."]` blocks
+   below. The `<html>` element's `data-theme` attribute selects
+   the active theme; user themes layer on top via inline
+   `style.setProperty("--*", value)` (see utils/theme.ts).
+   ============================================================ */
+
+/* ============================================================
+   DEFAULT-DARK — Claudette's signature theme.
+   Coral accent on warm charcoal.
+   ============================================================ */
 :root {
-  /* System color scheme — controls native UI elements (selects, scrollbars) */
-  --color-scheme: dark;
-  color-scheme: var(--color-scheme);
+  /* ---- Brand accent (coral) ---- */
+  --accent-primary:      #e07850;
+  --accent-primary-rgb:  224, 120, 80;
+  --accent-dim:          #c45a35;
+  --accent-bg:           rgba(224, 120, 80, 0.08);
+  --accent-bg-strong:    rgba(224, 120, 80, 0.15);
+  --accent-glow:         0 0 12px rgba(224, 120, 80, 0.25);
+  /* Text color to pair with an --accent-primary background. Dark text on
+     our bright/medium accents; light themes override below. */
+  --on-accent:           #1c1815;
 
-  /* Brand accent — Claudette teal */
-  --accent-primary: #00e5cc;
-  --accent-primary-rgb: 0, 229, 204;
-  --accent-dim: #00b3a0;
-  --accent-bg: rgba(0, 229, 204, 0.08);
-  --accent-bg-strong: rgba(0, 229, 204, 0.15);
-  --accent-glow: 0 0 12px rgba(0, 229, 204, 0.25);
+  /* ---- Mascot pink (the bow) ---- */
+  --mascot-pink:         #f5a0b8;
+  --mascot-pink-dim:     #d97a95;
 
-  /* Sidebar */
-  --sidebar-bg: rgb(22, 22, 28);
-  --sidebar-border: rgb(40, 40, 50);
-  --sidebar-width: 260px;
+  /* ---- Surfaces ---- */
+  --app-bg:              #1c1815;
+  --sidebar-bg:          #26221f;
+  --sidebar-border:      #3d3832;
+  --chat-input-bg:       #2a2520;
+  --chat-header-bg:      #26221f;
+  --terminal-bg:         #1c1815;
+  --terminal-tab-bg:     #2a2520;
+  --terminal-tab-active-bg: #3d3832;
 
-  /* Text */
-  --text-primary: rgb(235, 235, 240);
-  --text-muted: rgb(140, 140, 150);
-  --text-dim: rgb(110, 110, 125);
-  --text-faint: rgb(85, 85, 100);
-  --text-separator: rgb(65, 65, 80);
+  /* ---- Foreground / text ramp ---- */
+  --text-primary:        #f0ebe5;
+  --text-muted:          #b8afa5;
+  --text-dim:            #908880;
+  --text-faint:          #686058;
+  --text-separator:      #3d3832;
 
-  /* Interactive */
-  --hover-bg: rgba(255, 255, 255, 0.06);
-  --hover-bg-subtle: rgba(255, 255, 255, 0.04);
-  --selected-bg: rgba(0, 229, 204, 0.1);
-  --divider: rgb(42, 42, 54);
+  /* ---- Interactive ---- */
+  --hover-bg:            rgba(240, 235, 229, 0.06);
+  --hover-bg-subtle:     rgba(240, 235, 229, 0.04);
+  --selected-bg:         rgba(224, 120, 80, 0.10);
+  --divider:             #3d3832;
 
-  /* Agent status */
-  --status-running: #00e5cc;
-  --status-idle: rgb(110, 110, 120);
-  --status-stopped: #f04848;
+  /* ---- Agent status ---- */
+  --status-running:      #e07850;
+  /* Derived so idle status dots follow each theme's text ramp instead
+     of always rendering the default-dark gray. */
+  --status-idle:         var(--text-dim);
+  --status-stopped:      #e85050;
 
-  /* Context meter (used by the chat toolbar's ContextMeter component).
-   * Theme JSONs can override these keys to match their palette; missing
-   * overrides fall through to these defaults. */
-  --context-meter-normal: var(--accent-primary);
-  --context-meter-warn: #d4a84a;
-  --context-meter-near-full: #e07030;
-  --context-meter-critical: var(--status-stopped);
+  /* ---- Context meter (chat toolbar) — mapped to palette ---- */
+  --context-meter-normal:    var(--accent-primary);
+  --context-meter-warn:      var(--badge-ask);
+  --context-meter-near-full: var(--accent-dim);
+  --context-meter-critical:  var(--status-stopped);
 
-  /* Attention badges */
-  --badge-done: #00e5cc;
-  --badge-plan: rgb(100, 160, 240);
-  --badge-ask: #f0a050;
+  /* ---- Metrics — negative counterpoint to accent ---- */
+  --metric-negative:      var(--status-stopped);
+  --metric-negative-soft: var(--diff-removed-text);
 
-  /* Diff */
-  --diff-added-bg: rgba(0, 180, 80, 0.12);
-  --diff-removed-bg: rgba(220, 40, 40, 0.12);
-  --diff-added-text: rgb(80, 220, 120);
-  --diff-removed-text: rgb(240, 100, 100);
-  --diff-hunk-header: rgb(100, 160, 240);
-  --diff-line-number: rgb(85, 85, 100);
+  /* ---- Attention badges ---- */
+  --badge-done:          #6ccc80;
+  --badge-plan:          #8cb8e0;
+  --badge-ask:           #f5a0b8;
 
-  /* Metrics — paired with --accent-primary for additions/deletions, success/fail
-     dots, and any chart series needing a negative counterpoint. */
-  --metric-negative: rgb(200, 72, 72);
-  --metric-negative-soft: rgb(200, 110, 110);
+  /* ---- Tool activity — per-category hues used in chat tool chips.
+     Intentionally brand-invariant: tool chips keep the same hue across
+     every theme so users build a stable read/write/bash/etc. muscle
+     memory. Only :root defines these; the other [data-theme] blocks
+     inherit and do not override. ---- */
+  --tool-read:           #6cb6ff;  /* reads: Read, Glob, Grep */
+  --tool-write:          #f0a050;  /* writes: Write */
+  --tool-edit:           #e0c050;  /* edits: Edit */
+  --tool-bash:           #7ee07e;  /* shell: Bash */
+  --tool-web:            #c0a0f0;  /* web: WebSearch, WebFetch */
+  --tool-agent:          #f08080;  /* sub-agent dispatch */
+  --tool-task:           #e6c84d;  /* in-progress tasks */
 
-  /* Chat */
-  --chat-user-bg: rgba(255, 255, 255, 0.05);
-  --chat-system-bg: rgba(255, 255, 255, 0.03);
-  --chat-input-bg: rgb(26, 26, 33);
-  --chat-header-bg: rgb(22, 22, 28);
+  /* ---- Diff ---- */
+  --diff-added-bg:       rgba(60, 180, 90, 0.12);
+  --diff-removed-bg:     rgba(220, 60, 60, 0.12);
+  --diff-added-text:     #6ccc80;
+  --diff-removed-text:   #f07070;
+  --diff-hunk-header:    #8cb8e0;
+  --diff-line-number:    #686058;
 
-  /* Terminal */
-  --terminal-tab-bg: rgb(26, 26, 33);
-  --terminal-tab-active-bg: rgb(38, 38, 48);
-  --terminal-bg: #121216;
-  --terminal-fg: #e6e6eb;
-  --terminal-cursor: #e6e6eb;
-  --terminal-selection: rgba(230, 230, 235, 0.3);
+  /* ---- Chat surfaces ---- */
+  --chat-user-bg:        rgba(240, 235, 229, 0.05);
+  --chat-system-bg:      rgba(224, 120, 80, 0.06);
 
-  /* Toolbar */
-  --toolbar-active: rgba(0, 229, 204, 0.12);
+  /* ---- Toolbar ---- */
+  --toolbar-active:      rgba(224, 120, 80, 0.12);
   --toolbar-active-text: var(--accent-primary);
 
-  /* Error states */
-  --error-bg: rgba(240, 72, 72, 0.10);
-  --error-border: rgba(240, 72, 72, 0.25);
-  --error-hover: rgba(240, 72, 72, 0.15);
+  /* ---- Errors ---- */
+  --error-bg:            rgba(232, 80, 80, 0.10);
+  --error-border:        rgba(232, 80, 80, 0.25);
+  --error-hover:         rgba(232, 80, 80, 0.15);
 
-  /* Overlays */
-  --overlay-bg: rgba(0, 0, 0, 0.5);
-  --overlay-bg-heavy: rgba(0, 0, 0, 0.65);
+  /* ---- Overlays ---- */
+  --overlay-bg:          rgba(0, 0, 0, 0.50);
+  --overlay-bg-heavy:    rgba(0, 0, 0, 0.65);
 
-  /* General */
-  --app-bg: rgb(14, 14, 18);
-  --border-radius: 8px;
+  /* ---- Terminal ----
+     Derived from the text ramp and accent so the terminal tracks each
+     active theme. Per-theme blocks override only when they want the
+     terminal to diverge (e.g. a different cursor hue or selection
+     alpha). */
+  --terminal-fg:         var(--text-primary);
+  --terminal-cursor:     var(--accent-primary);
+  --terminal-selection:  rgba(var(--accent-primary-rgb), 0.25);
 
-  /* Elevation / shadows */
+  /* ---- Elevation ---- */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 229, 204, 0.15);
+  --shadow-card-hover:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(224, 120, 80, 0.15);
 
-  /* Typography */
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  /* ---- Radii ---- */
+  --radius-xs:  3px;   /* tags, inline code */
+  --radius-sm:  4px;   /* input fields, small badges */
+  --radius-md:  6px;   /* buttons */
+  --radius-lg:  8px;   /* cards, panels — default */
+  --radius-xl:  12px;  /* modals, large cards */
+  --radius-pill: 999px;
+  --border-radius: var(--radius-lg); /* legacy alias */
 
-  /* Transitions */
-  --transition-fast: 0.12s ease;
-  --transition-normal: 0.2s ease;
-  --transition-slow: 0.3s ease;
+  /* ---- Spacing (4px grid) ---- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- Motion ---- */
+  --transition-fast:   0.12s ease;
+  --transition-normal: 0.2s  ease;
+  --transition-slow:   0.3s  ease;
+  --ease-out-quick:    cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ---- Layout ---- */
+  --sidebar-width: 260px;
+
+  /* ---- Typography ---- */
+  --font-sans:    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --font-display: "Silkscreen", "Inter", sans-serif;
+
+  --fs-xs:   11px;  /* chrome labels, keyboard hints */
+  --fs-sm:   12px;  /* sidebar items, metadata */
+  --fs-base: 13px;  /* app default */
+  --fs-md:   14px;  /* chat body */
+  --fs-lg:   16px;  /* headings inside panels */
+  --fs-xl:   20px;  /* modal / section title */
+  --fs-2xl:  26px;  /* page hero */
+  --fs-3xl:  36px;  /* marketing h1 */
+  --fs-4xl:  48px;  /* hero on landing */
+
+  --lh-tight: 1.25;
+  --lh-snug:  1.4;
+  --lh-body:  1.55;
+  --lh-loose: 1.7;
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* ---- Semantic element tokens ---- */
+  --h1-size: var(--fs-3xl);  --h1-weight: var(--fw-bold);     --h1-line: var(--lh-tight);
+  --h2-size: var(--fs-2xl);  --h2-weight: var(--fw-semibold); --h2-line: var(--lh-tight);
+  --h3-size: var(--fs-xl);   --h3-weight: var(--fw-semibold); --h3-line: var(--lh-snug);
+  --h4-size: var(--fs-lg);   --h4-weight: var(--fw-semibold); --h4-line: var(--lh-snug);
+
+  --body-size: var(--fs-base); --body-weight: var(--fw-regular); --body-line: var(--lh-body);
+  --caption-size: var(--fs-sm); --caption-weight: var(--fw-regular); --caption-line: var(--lh-snug);
+  --code-size: 12.5px; --code-weight: var(--fw-regular); --code-line: 1.5;
+
+  /* ---- Window chrome / scheme ---- */
+  --color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 
+/* ============================================================
+   DEFAULT-LIGHT — cream background, deep-coral accents.
+   ============================================================ */
+[data-theme="default-light"] {
+  --color-scheme: light;
+  --accent-primary: #c45a35;
+  --accent-primary-rgb: 196, 90, 53;
+  --accent-dim: #a04828;
+  --accent-bg: rgba(196, 90, 53, 0.08);
+  --accent-bg-strong: rgba(196, 90, 53, 0.14);
+  --accent-glow: 0 0 8px rgba(196, 90, 53, 0.15);
+  /* Dark accent needs light foreground for on-accent text. */
+  --on-accent: #fff8f0;
+
+  --app-bg: #fff8f0;
+  --sidebar-bg: #f5efe8;
+  --sidebar-border: #ddd5cc;
+  --chat-input-bg: #f5efe8;
+  --chat-header-bg: #f5efe8;
+  --terminal-bg: #fff8f0;
+  --terminal-tab-bg: #f5efe8;
+  --terminal-tab-active-bg: #ddd5cc;
+
+  --text-primary: #2a2520;
+  --text-muted:   #686058;
+  --text-dim:     #908880;
+  --text-faint:   #b8afa5;
+  --text-separator: #ddd5cc;
+
+  --hover-bg: rgba(42, 37, 32, 0.06);
+  --hover-bg-subtle: rgba(42, 37, 32, 0.04);
+  --selected-bg: rgba(196, 90, 53, 0.08);
+  --divider: #ddd5cc;
+
+  --status-running: #c45a35;
+  --status-stopped: #c42020;
+  --badge-done: #1a7f37;
+  --badge-plan: #6848a8;
+  --badge-ask:  #a04828;
+
+  --diff-added-bg:   rgba(26, 127, 55, 0.10);
+  --diff-removed-bg: rgba(196, 32, 32, 0.10);
+  --diff-added-text: #1a7f37;
+  --diff-removed-text: #c42020;
+  --diff-hunk-header: #3d6da0;
+  --diff-line-number: #b8afa5;
+
+  --chat-user-bg: rgba(42, 37, 32, 0.04);
+  --chat-system-bg: rgba(196, 90, 53, 0.05);
+  --toolbar-active: rgba(196, 90, 53, 0.10);
+
+  /* Cursor inherits from :root (derived from --accent-primary). Selection
+     uses a lighter alpha on cream paper for legibility. */
+  --terminal-selection: rgba(var(--accent-primary-rgb), 0.18);
+
+  --error-bg:     rgba(196, 32, 32, 0.08);
+  --error-border: rgba(196, 32, 32, 0.25);
+  --error-hover:  rgba(196, 32, 32, 0.12);
+
+  --overlay-bg:       rgba(42, 37, 32, 0.5);
+  --overlay-bg-heavy: rgba(42, 37, 32, 0.7);
+
+  --shadow-sm: 0 1px 2px rgba(42, 37, 32, 0.06);
+  --shadow-md: 0 4px 12px rgba(42, 37, 32, 0.08);
+  --shadow-lg: 0 8px 24px rgba(42, 37, 32, 0.12);
+  --shadow-card-hover:
+    0 8px 24px rgba(42, 37, 32, 0.12),
+    0 0 0 1px rgba(196, 90, 53, 0.20);
+}
+
+/* ============================================================
+   JELLYBEANS — dark Vim-style, cool slate accent.
+   ============================================================ */
+[data-theme="jellybeans"] {
+  --accent-primary: #8197bf;
+  --accent-primary-rgb: 129, 151, 191;
+  --accent-dim: #668799;
+  --accent-bg: rgba(129, 151, 191, 0.10);
+  --accent-bg-strong: rgba(129, 151, 191, 0.18);
+  --accent-glow: 0 0 12px rgba(129, 151, 191, 0.25);
+
+  --app-bg: #151515;
+  --sidebar-bg: #1c1c1c;
+  --sidebar-border: #333;
+  --chat-input-bg: #1c1c1c;
+  --chat-header-bg: #1c1c1c;
+  --terminal-bg: #151515;
+  --terminal-tab-bg: #1c1c1c;
+  --terminal-tab-active-bg: #333;
+
+  --text-primary: #e8e8d3;
+  --text-muted:   #888;
+  --text-dim:     #848484;
+  --text-faint:   #686160;
+  --text-separator: #403c41;
+  --divider: #333;
+
+  --status-running: #99ad6a;
+  --status-stopped: #cf6a4c;
+  --badge-done: #99ad6a;
+  --badge-plan: #8fbfdc;
+  --badge-ask:  #fad07a;
+
+  --diff-added-bg: rgba(67, 112, 25, 0.25);
+  --diff-removed-bg: rgba(112, 0, 9, 0.25);
+  --diff-added-text: #d2ebbe;
+  --diff-removed-text: #cf6a4c;
+  --diff-hunk-header: #8fbfdc;
+}
+
+/* ============================================================
+   HIGH-CONTRAST — maximum legibility, cyan accent.
+   ============================================================ */
+[data-theme="high-contrast"] {
+  --accent-primary: #00ffdd;
+  --accent-primary-rgb: 0, 255, 221;
+  --accent-dim: #00ccb0;
+
+  --app-bg: #040408;
+  --sidebar-bg: #0a0a0e;
+  --sidebar-border: #3c3c4b;
+  --chat-input-bg: #0e0e12;
+  --chat-header-bg: #0a0a0e;
+  --terminal-bg: #040408;
+
+  --text-primary: #fff;
+  --text-muted: #b4b4c3;
+  --text-dim: #9696a8;
+  --text-faint: #78788c;
+  --text-separator: #5a5a6e;
+
+  --status-running: #00ffdd;
+  --status-stopped: #ff4444;
+  --badge-done: #00ffdd;
+  --badge-plan: #66bbff;
+  --badge-ask:  #ffbb44;
+}
+
+/* ============================================================
+   ROSÉ PINE — soho-vibes dark, muted mauve base, iris accent.
+   ============================================================ */
+[data-theme="rose-pine"] {
+  --accent-primary: #c4a7e7;
+  --accent-primary-rgb: 196, 167, 231;
+  --accent-dim: #a98ecf;
+  --accent-bg: rgba(196, 167, 231, 0.10);
+  --accent-bg-strong: rgba(196, 167, 231, 0.18);
+  --accent-glow: 0 0 12px rgba(196, 167, 231, 0.28);
+
+  --app-bg: #191724;
+  --sidebar-bg: #1f1d2e;
+  --sidebar-border: #26233a;
+  --chat-input-bg: #1f1d2e;
+  --chat-header-bg: #1f1d2e;
+  --chat-user-bg: #26233a;
+  --terminal-bg: #191724;
+  --terminal-tab-bg: #1f1d2e;
+  --terminal-tab-active-bg: #26233a;
+
+  --text-primary: #e0def4;
+  --text-muted:   #908caa;
+  --text-dim:     #6e6a86;
+  --text-faint:   #524f67;
+  --text-separator: #403d52;
+  --divider: #26233a;
+
+  --hover-bg: #21202e;
+  --selected-bg: rgba(196, 167, 231, 0.14);
+  --toolbar-active: rgba(196, 167, 231, 0.14);
+  --toolbar-active-text: #c4a7e7;
+
+  --status-running: #9ccfd8;
+  --status-stopped: #eb6f92;
+  --badge-done: #31748f;
+  --badge-plan: #9ccfd8;
+  --badge-ask:  #f6c177;
+
+  --mascot-pink: #ebbcba;
+
+  --diff-added-bg:   rgba(49, 116, 143, 0.22);
+  --diff-removed-bg: rgba(235, 111, 146, 0.18);
+  --diff-added-text:   #9ccfd8;
+  --diff-removed-text: #eb6f92;
+  --diff-hunk-header:  #c4a7e7;
+}
+
+/* ============================================================
+   ROSÉ PINE MOON — warmer navy base.
+   ============================================================ */
+[data-theme="rose-pine-moon"] {
+  --accent-primary: #c4a7e7;
+  --accent-primary-rgb: 196, 167, 231;
+  --accent-dim: #a98ecf;
+  --accent-bg: rgba(196, 167, 231, 0.10);
+  --accent-bg-strong: rgba(196, 167, 231, 0.20);
+  --accent-glow: 0 0 12px rgba(196, 167, 231, 0.28);
+
+  --app-bg: #232136;
+  --sidebar-bg: #2a273f;
+  --sidebar-border: #393552;
+  --chat-input-bg: #2a273f;
+  --chat-header-bg: #2a273f;
+  --chat-user-bg: #393552;
+  --terminal-bg: #232136;
+  --terminal-tab-bg: #2a273f;
+  --terminal-tab-active-bg: #393552;
+
+  --text-primary: #e0def4;
+  --text-muted:   #908caa;
+  --text-dim:     #6e6a86;
+  --text-faint:   #56526e;
+  --text-separator: #44415a;
+  --divider: #393552;
+
+  --hover-bg: #2a283e;
+  --selected-bg: rgba(196, 167, 231, 0.14);
+  --toolbar-active: rgba(196, 167, 231, 0.14);
+  --toolbar-active-text: #c4a7e7;
+
+  --status-running: #9ccfd8;
+  --status-stopped: #eb6f92;
+  --badge-done: #3e8fb0;
+  --badge-plan: #9ccfd8;
+  --badge-ask:  #f6c177;
+
+  --mascot-pink: #ea9a97;
+
+  --diff-added-bg:   rgba(62, 143, 176, 0.22);
+  --diff-removed-bg: rgba(235, 111, 146, 0.18);
+  --diff-added-text:   #9ccfd8;
+  --diff-removed-text: #eb6f92;
+  --diff-hunk-header:  #c4a7e7;
+}
+
+/* ============================================================
+   ROSÉ PINE DAWN — light variant, cream paper, iris accent.
+   ============================================================ */
+[data-theme="rose-pine-dawn"] {
+  --color-scheme: light;
+  --accent-primary: #907aa9;
+  --accent-primary-rgb: 144, 122, 169;
+  --accent-dim: #7a6894;
+  --accent-bg: rgba(144, 122, 169, 0.12);
+  --accent-bg-strong: rgba(144, 122, 169, 0.22);
+  --accent-glow: 0 0 12px rgba(144, 122, 169, 0.22);
+  /* Dark iris accent → cream foreground. */
+  --on-accent: #faf4ed;
+
+  --app-bg: #faf4ed;
+  --sidebar-bg: #fffaf3;
+  --sidebar-border: #dfdad9;
+  --chat-input-bg: #fffaf3;
+  --chat-header-bg: #fffaf3;
+  --chat-user-bg: #f2e9e1;
+  --terminal-bg: #faf4ed;
+  --terminal-tab-bg: #fffaf3;
+  --terminal-tab-active-bg: #f2e9e1;
+
+  --text-primary: #575279;
+  --text-muted:   #797593;
+  --text-dim:     #9893a5;
+  --text-faint:   #cecacd;
+  --text-separator: #dfdad9;
+  --divider: #f2e9e1;
+
+  --hover-bg: #f4ede8;
+  --selected-bg: rgba(144, 122, 169, 0.14);
+  --toolbar-active: rgba(144, 122, 169, 0.14);
+  --toolbar-active-text: #907aa9;
+
+  --status-running: #56949f;
+  --status-stopped: #b4637a;
+  --badge-done: #286983;
+  --badge-plan: #56949f;
+  --badge-ask:  #ea9d34;
+
+  --mascot-pink: #d7827e;
+
+  --diff-added-bg:   rgba(40, 105, 131, 0.12);
+  --diff-removed-bg: rgba(180, 99, 122, 0.12);
+  --diff-added-text:   #286983;
+  --diff-removed-text: #b4637a;
+  --diff-hunk-header:  #907aa9;
+}
+
+/* ============================================================
+   SOLARIZED DARK — blue accent on base03.
+   ============================================================ */
+[data-theme="solarized-dark"] {
+  --accent-primary: #268bd2;
+  --accent-primary-rgb: 38, 139, 210;
+  --accent-dim: #1e6fa8;
+  --accent-bg: rgba(38, 139, 210, 0.12);
+  --accent-bg-strong: rgba(38, 139, 210, 0.22);
+  --accent-glow: 0 0 12px rgba(38, 139, 210, 0.28);
+  /* Solarized blue is dark enough to need base3 foreground. */
+  --on-accent: #fdf6e3;
+
+  --app-bg: #002b36;
+  --sidebar-bg: #073642;
+  --sidebar-border: #094b5a;
+  --chat-input-bg: #073642;
+  --chat-header-bg: #073642;
+  --chat-user-bg: #094b5a;
+  --terminal-bg: #002b36;
+  --terminal-tab-bg: #073642;
+  --terminal-tab-active-bg: #094b5a;
+
+  --text-primary: #839496;
+  --text-muted:   #93a1a1;
+  --text-dim:     #657b83;
+  --text-faint:   #586e75;
+  --text-separator: #094b5a;
+  --divider: #094b5a;
+
+  --hover-bg: rgba(147, 161, 161, 0.08);
+  --selected-bg: rgba(38, 139, 210, 0.18);
+  --toolbar-active: rgba(38, 139, 210, 0.18);
+  --toolbar-active-text: #268bd2;
+
+  --status-running: #859900;
+  --status-stopped: #dc322f;
+  --badge-done: #859900;
+  --badge-plan: #2aa198;
+  --badge-ask:  #b58900;
+
+  --mascot-pink: #d33682;
+
+  --diff-added-bg:   rgba(133, 153, 0, 0.18);
+  --diff-removed-bg: rgba(220, 50, 47, 0.18);
+  --diff-added-text:   #859900;
+  --diff-removed-text: #dc322f;
+  --diff-hunk-header:  #2aa198;
+}
+
+/* ============================================================
+   SOLARIZED LIGHT — identical accents on base3 ground.
+   ============================================================ */
+[data-theme="solarized-light"] {
+  --color-scheme: light;
+  --accent-primary: #268bd2;
+  --accent-primary-rgb: 38, 139, 210;
+  --accent-dim: #1e6fa8;
+  --accent-bg: rgba(38, 139, 210, 0.10);
+  --accent-bg-strong: rgba(38, 139, 210, 0.20);
+  --accent-glow: 0 0 12px rgba(38, 139, 210, 0.22);
+  /* Solarized blue is dark enough to need base3 foreground. */
+  --on-accent: #fdf6e3;
+
+  --app-bg: #fdf6e3;
+  --sidebar-bg: #eee8d5;
+  --sidebar-border: #ddd6c1;
+  --chat-input-bg: #eee8d5;
+  --chat-header-bg: #eee8d5;
+  --chat-user-bg: #ddd6c1;
+  --terminal-bg: #fdf6e3;
+  --terminal-tab-bg: #eee8d5;
+  --terminal-tab-active-bg: #ddd6c1;
+
+  --text-primary: #657b83;
+  --text-muted:   #586e75;
+  --text-dim:     #839496;
+  --text-faint:   #93a1a1;
+  --text-separator: #ddd6c1;
+  --divider: #ddd6c1;
+
+  --hover-bg: rgba(88, 110, 117, 0.06);
+  --selected-bg: rgba(38, 139, 210, 0.14);
+  --toolbar-active: rgba(38, 139, 210, 0.14);
+  --toolbar-active-text: #268bd2;
+
+  --status-running: #859900;
+  --status-stopped: #dc322f;
+  --badge-done: #859900;
+  --badge-plan: #2aa198;
+  --badge-ask:  #b58900;
+
+  --mascot-pink: #d33682;
+
+  --diff-added-bg:   rgba(133, 153, 0, 0.14);
+  --diff-removed-bg: rgba(220, 50, 47, 0.14);
+  --diff-added-text:   #657b83;
+  --diff-removed-text: #dc322f;
+  --diff-hunk-header:  #2aa198;
+}
+
+/* ============================================================
+   BRINK — mid-tone warm chrome, dark chat; Ristretto-style gold.
+   ============================================================ */
+[data-theme="brink"] {
+  --accent-primary: #f9cc6c;
+  --accent-primary-rgb: 249, 204, 108;
+  --accent-dim: #d4a84a;
+  --accent-bg: rgba(249, 204, 108, 0.10);
+  --accent-bg-strong: rgba(249, 204, 108, 0.20);
+  --accent-glow: 0 0 12px rgba(249, 204, 108, 0.30);
+
+  --app-bg: #2c2525;
+  --sidebar-bg: #504646;
+  --sidebar-border: #6e6464;
+  --chat-input-bg: #241e1e;
+  --chat-header-bg: #24283b;
+  --chat-user-bg: rgba(255, 240, 235, 0.04);
+  --terminal-bg: #1e1818;
+  --terminal-tab-bg: #504646;
+  --terminal-tab-active-bg: #605454;
+
+  --text-primary: #f1e5e7;
+  --text-muted:   #d0c4c6;
+  --text-dim:     #b0a4a6;
+  --text-faint:   #907e80;
+  --text-separator: #7a6e70;
+  --divider: #6e6464;
+
+  --hover-bg: rgba(255, 255, 255, 0.10);
+  --selected-bg: rgba(249, 204, 108, 0.14);
+  --toolbar-active: rgba(249, 204, 108, 0.18);
+  --toolbar-active-text: #f9cc6c;
+
+  --status-running: #f9cc6c;
+  --status-stopped: #fd6883;
+  --badge-done: #85dacc;
+  --badge-plan: #a8a9eb;
+  --badge-ask:  #f38d70;
+
+  --mascot-pink: #fd6883;
+
+  --diff-added-bg:   rgba(173, 218, 120, 0.14);
+  --diff-removed-bg: rgba(253, 104, 131, 0.14);
+  --diff-added-text:   #adda78;
+  --diff-removed-text: #fd6883;
+  --diff-hunk-header:  #85dacc;
+}
+
+/* ============================================================
+   JELLYBEANS MUTED — softer, desaturated take on Jellybeans.
+   ============================================================ */
+[data-theme="jellybeans-muted"] {
+  --accent-primary: #7088a8;
+  --accent-primary-rgb: 112, 136, 168;
+  --accent-dim: #5a7080;
+  --accent-bg: rgba(112, 136, 168, 0.10);
+  --accent-bg-strong: rgba(112, 136, 168, 0.16);
+  --accent-glow: 0 0 12px rgba(112, 136, 168, 0.20);
+
+  --app-bg: #141414;
+  --sidebar-bg: #1a1a1a;
+  --sidebar-border: #2e2e2e;
+  --chat-input-bg: #1a1a1a;
+  --chat-header-bg: #1a1a1a;
+  --chat-user-bg: rgba(200, 200, 184, 0.04);
+  --terminal-bg: #141414;
+  --terminal-tab-bg: #1a1a1a;
+  --terminal-tab-active-bg: #2e2e2e;
+
+  --text-primary: #c8c8b8;
+  --text-muted:   #858585;
+  --text-dim:     #757575;
+  --text-faint:   #656161;
+  --text-separator: #3a3838;
+  --divider: #2e2e2e;
+
+  --hover-bg: rgba(200, 200, 184, 0.05);
+  --selected-bg: rgba(112, 136, 168, 0.10);
+  --toolbar-active: rgba(112, 136, 168, 0.12);
+  --toolbar-active-text: #7088a8;
+
+  --status-running: #829868;
+  --status-stopped: #b56a53;
+  --badge-done: #829868;
+  --badge-plan: #7aa8c0;
+  --badge-ask:  #d4b880;
+
+  --mascot-pink: #b56a53;
+
+  --diff-added-bg:   rgba(60, 95, 25, 0.20);
+  --diff-removed-bg: rgba(95, 10, 15, 0.20);
+  --diff-added-text:   #b8cca0;
+  --diff-removed-text: #b56a53;
+  --diff-hunk-header:  #7aa8c0;
+}
+
+/* ============================================================
+   MIDNIGHT BLUE — cool blue-tinted dark theme.
+   ============================================================ */
+[data-theme="midnight-blue"] {
+  --accent-primary: #4a9eff;
+  --accent-primary-rgb: 74, 158, 255;
+  --accent-dim: #3a7ecc;
+  --accent-bg: rgba(74, 158, 255, 0.08);
+  --accent-bg-strong: rgba(74, 158, 255, 0.15);
+  --accent-glow: 0 0 12px rgba(74, 158, 255, 0.25);
+
+  --app-bg: rgb(10, 14, 22);
+  --sidebar-bg: rgb(16, 20, 30);
+  --sidebar-border: rgb(30, 38, 55);
+  --chat-input-bg: rgb(18, 24, 36);
+  --chat-header-bg: rgb(16, 20, 30);
+  --chat-user-bg: rgba(100, 160, 255, 0.05);
+  --terminal-bg: rgb(10, 14, 22);
+  --terminal-tab-bg: rgb(18, 24, 36);
+  --terminal-tab-active-bg: rgb(28, 36, 52);
+
+  --text-primary: rgb(220, 225, 240);
+  --text-muted:   rgb(130, 140, 165);
+  --text-dim:     #727e9b;
+  --text-faint:   #535f7c;
+  --text-separator: rgb(50, 58, 78);
+  --divider: rgb(32, 40, 58);
+
+  --hover-bg: rgba(100, 160, 255, 0.06);
+  --selected-bg: rgba(74, 158, 255, 0.10);
+  --toolbar-active: rgba(74, 158, 255, 0.12);
+  --toolbar-active-text: #4a9eff;
+
+  --status-running: #4a9eff;
+  --status-stopped: #f05050;
+  --badge-done: #4a9eff;
+  --badge-plan: rgb(100, 160, 240);
+  --badge-ask:  #f0a050;
+
+  --mascot-pink: #f05080;
+
+  --diff-added-bg:   rgba(0, 180, 80, 0.12);
+  --diff-removed-bg: rgba(220, 40, 40, 0.12);
+  --diff-added-text:   rgb(80, 220, 120);
+  --diff-removed-text: rgb(240, 100, 100);
+  --diff-hunk-header:  rgb(100, 160, 240);
+}
+
+/* ============================================================
+   WARM EMBER — warm amber-toned dark theme.
+   ============================================================ */
+[data-theme="warm-ember"] {
+  --accent-primary: #f0a050;
+  --accent-primary-rgb: 240, 160, 80;
+  --accent-dim: #cc8840;
+  --accent-bg: rgba(240, 160, 80, 0.08);
+  --accent-bg-strong: rgba(240, 160, 80, 0.15);
+  --accent-glow: 0 0 12px rgba(240, 160, 80, 0.25);
+
+  --app-bg: rgb(18, 15, 12);
+  --sidebar-bg: rgb(26, 22, 18);
+  --sidebar-border: rgb(48, 40, 32);
+  --chat-input-bg: rgb(30, 26, 20);
+  --chat-header-bg: rgb(26, 22, 18);
+  --chat-user-bg: rgba(240, 160, 80, 0.05);
+  --terminal-bg: rgb(18, 15, 12);
+  --terminal-tab-bg: rgb(30, 26, 20);
+  --terminal-tab-active-bg: rgb(44, 38, 30);
+
+  --text-primary: rgb(240, 232, 220);
+  --text-muted:   rgb(160, 145, 130);
+  --text-dim:     #8f8274;
+  --text-faint:   #695e51;
+  --text-separator: rgb(75, 65, 55);
+  --divider: rgb(50, 42, 34);
+
+  --hover-bg: rgba(255, 200, 120, 0.06);
+  --selected-bg: rgba(240, 160, 80, 0.10);
+  --toolbar-active: rgba(240, 160, 80, 0.12);
+  --toolbar-active-text: #f0a050;
+
+  --status-running: #f0a050;
+  --status-stopped: #e85050;
+  --badge-done: #50d8a0;
+  --badge-plan: rgb(120, 170, 230);
+  --badge-ask:  #f0a050;
+
+  --mascot-pink: #e85080;
+
+  --diff-added-bg:   rgba(0, 180, 80, 0.12);
+  --diff-removed-bg: rgba(220, 40, 40, 0.12);
+  --diff-added-text:   rgb(80, 210, 110);
+  --diff-removed-text: rgb(235, 100, 100);
+  --diff-hunk-header:  rgb(120, 170, 230);
+}
+
+/* ============================================================
+   SIDEKICK — Ship Sidekick brand theme. Deep navy surfaces,
+   electric violet primary with soft glow, cyan info accent.
+   ============================================================ */
+[data-theme="sidekick"] {
+  --accent-primary: #8a92ff;
+  --accent-primary-rgb: 138, 146, 255;
+  --accent-dim: #666fed;
+  --accent-bg: rgba(138, 146, 255, 0.10);
+  --accent-bg-strong: rgba(138, 146, 255, 0.20);
+  --accent-glow: 0 0 15px rgba(138, 146, 255, 0.45);
+
+  --app-bg: #171326;
+  --sidebar-bg: #1f1b29;
+  --sidebar-border: #2a2438;
+  --chat-input-bg: #1f1f2a;
+  --chat-header-bg: #1f1b29;
+  --chat-user-bg: rgba(138, 146, 255, 0.06);
+  --terminal-bg: #171326;
+  --terminal-tab-bg: #1f1b29;
+  --terminal-tab-active-bg: #2a2438;
+
+  --text-primary: #fbfbfe;
+  --text-muted:   #ced2da;
+  --text-dim:     #a0a0b5;
+  --text-faint:   #6f6a82;
+  --text-separator: #2a2438;
+  --divider: #2a2438;
+
+  --hover-bg: rgba(138, 146, 255, 0.08);
+  --selected-bg: rgba(138, 146, 255, 0.14);
+  --toolbar-active: rgba(138, 146, 255, 0.18);
+  --toolbar-active-text: #dcaeff;
+
+  --status-running: #08a363;
+  --status-stopped: #d92828;
+  --badge-done: #08a363;
+  --badge-plan: #8adcff;
+  --badge-ask:  #ffba75;
+
+  --mascot-pink: #ed87ae;
+
+  --diff-added-bg:   rgba(8, 163, 99, 0.18);
+  --diff-removed-bg: rgba(217, 40, 40, 0.18);
+  --diff-added-text:   #90ed87;
+  --diff-removed-text: #ff8a8a;
+  --diff-hunk-header:  #8adcff;
+}
+
+/* ============================================================
+   Base element styles.
+   ============================================================ */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-/* Form elements don't inherit font by default — force inheritance so custom
-   fonts set via --font-sans cascade into buttons, inputs, selects, etc. */
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--app-bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--body-size);
+  line-height: var(--body-line);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1 { font-size: var(--h1-size); font-weight: var(--h1-weight); line-height: var(--h1-line); letter-spacing: -0.02em; }
+h2 { font-size: var(--h2-size); font-weight: var(--h2-weight); line-height: var(--h2-line); letter-spacing: -0.015em; }
+h3 { font-size: var(--h3-size); font-weight: var(--h3-weight); line-height: var(--h3-line); letter-spacing: -0.01em; }
+h4 { font-size: var(--h4-size); font-weight: var(--h4-weight); line-height: var(--h4-line); }
+
+p, li { font-size: var(--body-size); line-height: var(--body-line); }
+small, .caption { font-size: var(--caption-size); line-height: var(--caption-line); color: var(--text-muted); }
+
+code, pre, kbd, samp {
+  font-family: var(--font-mono);
+  font-size: var(--code-size);
+  line-height: var(--code-line);
+}
+
+code {
+  background: var(--hover-bg);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid var(--sidebar-border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--sidebar-bg);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+/* Form elements — force font inheritance so --font-sans cascades */
 button,
 input,
 select,
@@ -152,108 +922,62 @@ select:disabled {
   cursor: not-allowed;
 }
 
-html,
-body,
-#root {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-  background: var(--app-bg);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Selection */
 ::selection {
   background: rgba(var(--accent-primary-rgb), 0.3);
   color: var(--text-primary);
 }
 
-/* Focus ring */
 :focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.5);
 }
 
-/* Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+/* Scrollbars — thin, dim by default, accent on hover */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
+  background: var(--hover-bg);
+  border-radius: var(--radius-sm);
 }
-
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--accent-primary-rgb), 0.25);
 }
 
+/* Pixelated imagery — mascot + pixel accents only */
+.pixel-art {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+}
+
 /* Global keyframes */
 @keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fadeIn {
   from { opacity: 0; }
-  to { opacity: 1; }
+  to   { opacity: 1; }
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 4px rgba(var(--accent-primary-rgb), 0.4);
-  }
-  50% {
-    box-shadow: 0 0 10px rgba(var(--accent-primary-rgb), 0.7);
-  }
+  0%, 100% { box-shadow: 0 0 4px rgba(var(--accent-primary-rgb), 0.4); }
+  50%      { box-shadow: 0 0 10px rgba(var(--accent-primary-rgb), 0.7); }
 }
 
 @keyframes slideInLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 /* Window drag regions for custom titlebar (Overlay mode) */
@@ -274,17 +998,17 @@ body,
 
 /* Keyboard shortcut badge — shown when Cmd/Ctrl is held alone.
    Always rendered; visibility toggled via .shortcut-badge-visible.
-   Fade-in is a 0.5s CSS transition; fade-out is instant.
-   Use on any element with position:relative + overflow:hidden to get
-   a centered overlay badge. Also works inline (StatusBar). */
+   Fade-in is 0.5s; fade-out is instant. Use on any element with
+   position:relative + overflow:hidden for centered overlay,
+   or inline (StatusBar). */
 .shortcut-badge {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-family: inherit;
   color: var(--accent-primary);
   background: var(--accent-bg-strong);
   border: 1px solid rgba(var(--accent-primary-rgb), 0.25);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   pointer-events: none;
   white-space: nowrap;
   opacity: 0;

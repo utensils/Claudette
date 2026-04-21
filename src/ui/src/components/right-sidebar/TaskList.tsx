@@ -27,7 +27,7 @@ function statusColor(status: TaskStatus): string {
     case "completed":
       return "var(--diff-added-text)";
     case "blocked":
-      return "#e6c84d";
+      return "var(--tool-task)";
     case "cancelled":
       return "var(--text-dim)";
   }

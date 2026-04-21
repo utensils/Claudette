@@ -63,7 +63,7 @@ export function HeaderMenu({
         type="button"
       >
         <span className={styles.label}>{displayLabel}</span>
-        <ChevronDown size={10} className={styles.chevron} />
+        <ChevronDown size={12} className={styles.chevron} />
       </button>
       {open && (
         <div className={styles.menu}>

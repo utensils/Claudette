@@ -127,7 +127,7 @@ export function McpSelectionModal() {
 
   if (loading) {
     return (
-      <Modal title="MCP Servers" onClose={closeModal}>
+      <Modal title="MCP servers" onClose={closeModal}>
         <div className={styles.loading}>Detecting MCP servers...</div>
       </Modal>
     );
@@ -135,7 +135,7 @@ export function McpSelectionModal() {
 
   if (servers.length === 0) {
     return (
-      <Modal title="MCP Servers" onClose={closeModal}>
+      <Modal title="MCP servers" onClose={closeModal}>
         <p className={styles.description}>
           No non-portable MCP servers detected for this repository.
         </p>
@@ -149,7 +149,7 @@ export function McpSelectionModal() {
   }
 
   return (
-    <Modal title="MCP Servers Detected" onClose={closeModal}>
+    <Modal title="MCP servers detected" onClose={closeModal}>
       <p className={styles.description}>
         These MCP servers are configured for this project but won't be
         automatically available in workspaces. Select which to include:

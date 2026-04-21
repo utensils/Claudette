@@ -33,7 +33,7 @@ export function AddRemoteModal() {
   };
 
   return (
-    <Modal title="Add Remote Server" onClose={closeModal}>
+    <Modal title="Add remote server" onClose={closeModal}>
       <div className={shared.field}>
         <label className={shared.label}>Connection string</label>
         <input
@@ -44,7 +44,7 @@ export function AddRemoteModal() {
           onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
           autoFocus
         />
-        <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: 4 }}>
+        <div className={shared.smallHint}>
           Paste the connection string shown by claudette-server on the remote machine.
         </div>
         {error && <div className={shared.error}>{error}</div>}

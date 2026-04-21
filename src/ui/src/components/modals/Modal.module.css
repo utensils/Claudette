@@ -2,7 +2,6 @@
   position: fixed;
   inset: 0;
   background: var(--overlay-bg-heavy);
-  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -13,7 +12,7 @@
 .card {
   background: var(--app-bg);
   border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
   width: 420px;
   max-height: 80vh;
   overflow-y: auto;
@@ -22,15 +21,15 @@
 }
 
 .header {
-  padding: 16px 20px 0;
+  padding: var(--space-4) var(--space-5) 0;
 }
 
 .title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
   margin: 0;
 }
 
 .body {
-  padding: 16px 20px 20px;
+  padding: var(--space-4) var(--space-5) var(--space-5);
 }

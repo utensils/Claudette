@@ -1,11 +1,19 @@
 import type { ITheme } from "@xterm/xterm";
 import type { ThemeDefinition } from "../types/theme";
-import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../styles/themes";
+import {
+  BUILTIN_THEME_IDS,
+  BUILTIN_THEME_META,
+  DEFAULT_THEME_ID,
+} from "../styles/themes";
 import { listUserThemes } from "../services/tauri";
 
 // Vite ?url imports — resolved to asset URLs without injecting CSS
 import hljsDarkUrl from "highlight.js/styles/github-dark.min.css?url";
 import hljsLightUrl from "highlight.js/styles/github.min.css?url";
+
+// localStorage key used by index.html's pre-hydration script to set
+// data-theme before React mounts. Keep in sync with that script.
+const THEME_CACHE_KEY = "claudette.theme";
 
 const THEMEABLE_VARS = [
   "color-scheme",
@@ -15,6 +23,9 @@ const THEMEABLE_VARS = [
   "accent-bg",
   "accent-bg-strong",
   "accent-glow",
+  "on-accent",
+  "mascot-pink",
+  "mascot-pink-dim",
   "sidebar-bg",
   "sidebar-border",
   "text-primary",
@@ -62,6 +73,7 @@ const THEMEABLE_VARS = [
   "shadow-card-hover",
   "font-sans",
   "font-mono",
+  "font-display",
 ];
 
 export const DEFAULT_SANS_STACK =
@@ -80,7 +92,6 @@ export function applyUserFonts(
   uiFontSize: number,
 ): void {
   const root = document.documentElement;
-  // Escape quotes in font names to produce valid CSS.
   const esc = (s: string) => s.replace(/"/g, '\\"');
   if (fontSans) {
     root.style.setProperty("--font-sans", `"${esc(fontSans)}", ${DEFAULT_SANS_STACK}`);
@@ -88,53 +99,56 @@ export function applyUserFonts(
   if (fontMono) {
     root.style.setProperty("--font-mono", `"${esc(fontMono)}", ${DEFAULT_MONO_STACK}`);
   }
-  // Use CSS zoom to scale the entire UI proportionally. All component
-  // styles use fixed px values, so changing root font-size alone wouldn't
-  // cascade. CSS zoom scales everything — text, spacing, borders —
-  // just like browser zoom. Base size is 13px, so zoom = size/13.
+  // CSS zoom scales the entire UI proportionally. All component styles use
+  // fixed px values, so changing root font-size alone wouldn't cascade.
+  // Base size is 13px, so zoom = size/13.
   const zoomLevel = uiFontSize / 13;
   root.style.setProperty("zoom", String(zoomLevel));
 }
 
 /**
  * Clear user font override, reverting to whatever the theme (or CSS default) set.
- * Call when the user explicitly selects "Default" in settings.
  */
 export function clearUserFont(varName: "font-sans" | "font-mono"): void {
   const root = document.documentElement;
-  // Remove the inline override. Then re-apply the current theme's value if it
-  // has one, so the theme font survives. If the theme doesn't define this var,
-  // removeProperty lets the CSS :root default take over.
   root.style.removeProperty(`--${varName}`);
 }
 
 export function getTerminalTheme(): ITheme {
   const style = getComputedStyle(document.documentElement);
   return {
-    background: style.getPropertyValue("--terminal-bg").trim() || "#121216",
-    foreground: style.getPropertyValue("--terminal-fg").trim() || "#e6e6eb",
-    cursor: style.getPropertyValue("--terminal-cursor").trim() || "#e6e6eb",
+    background: style.getPropertyValue("--terminal-bg").trim() || "#1c1815",
+    foreground: style.getPropertyValue("--terminal-fg").trim() || "#f0ebe5",
+    cursor: style.getPropertyValue("--terminal-cursor").trim() || "#e07850",
     selectionBackground:
       style.getPropertyValue("--terminal-selection").trim() || undefined,
   };
 }
 
-export function applyTheme(theme: ThemeDefinition): void {
-  const root = document.documentElement;
-  for (const varName of THEMEABLE_VARS) {
-    const value = theme.colors[varName];
-    if (value) {
-      root.style.setProperty(`--${varName}`, value);
-    } else {
-      root.style.removeProperty(`--${varName}`);
-    }
-  }
-  // Set the real color-scheme property so native controls match.
-  // Default to "dark" if the theme doesn't specify (e.g. older user themes).
-  const scheme = theme.colors["color-scheme"] ?? "dark";
-  root.style.setProperty("color-scheme", scheme);
+// Keys the user may have set via applyUserFonts() — preserved across
+// theme switches so font/zoom choices don't reset when picking a theme.
+const PRESERVED_INLINE_PROPS = new Set(["--font-sans", "--font-mono", "zoom"]);
 
-  // Swap highlight.js syntax theme to match light/dark
+function clearThemeableInlineVars(): void {
+  const root = document.documentElement;
+  // Iterate every inline property and strip all `--*` overrides except
+  // the font/zoom keys managed by applyUserFonts. This is stricter than
+  // the old THEMEABLE_VARS allowlist — a user JSON theme that sets a
+  // non-standard custom property (e.g. `--my-custom-token`) will no
+  // longer leak into the next theme.
+  const toRemove: string[] = [];
+  for (let i = 0; i < root.style.length; i++) {
+    const prop = root.style.item(i);
+    if (PRESERVED_INLINE_PROPS.has(prop)) continue;
+    if (prop.startsWith("--")) toRemove.push(prop);
+  }
+  for (const prop of toRemove) {
+    root.style.removeProperty(prop);
+  }
+  root.style.removeProperty("color-scheme");
+}
+
+function updateHljsStylesheet(scheme: string): void {
   const isLight = scheme === "light";
   let link = document.getElementById("hljs-theme") as HTMLLinkElement | null;
   if (!link) {
@@ -146,6 +160,57 @@ export function applyTheme(theme: ThemeDefinition): void {
   link.href = isLight ? hljsLightUrl : hljsDarkUrl;
 }
 
+function cacheDataTheme(attr: string): void {
+  // Mirror the data-theme attribute we just wrote so the pre-hydration
+  // script in index.html can restore it before React mounts. For user JSON
+  // themes this is DEFAULT_THEME_ID (the baseline they layer on top of) —
+  // not the user theme id, which has no matching [data-theme] block.
+  try {
+    localStorage.setItem(THEME_CACHE_KEY, attr);
+  } catch {
+    // localStorage may be blocked in some sandboxes; the pre-hydration
+    // script simply falls back to the default attribute.
+  }
+}
+
+/**
+ * Apply a theme. Built-in themes flip the `data-theme` attribute on <html>
+ * and let the stylesheet's [data-theme] blocks drive the variables. User
+ * themes (loaded from the backend as JSON) layer on top via inline
+ * setProperty calls, which beat stylesheet specificity.
+ */
+export function applyTheme(theme: ThemeDefinition): void {
+  const root = document.documentElement;
+  const isBuiltin = BUILTIN_THEME_IDS.has(theme.id);
+
+  let dataThemeAttr: string;
+  if (isBuiltin) {
+    clearThemeableInlineVars();
+    dataThemeAttr = theme.id;
+    root.setAttribute("data-theme", dataThemeAttr);
+    const meta = BUILTIN_THEME_META.find((m) => m.id === theme.id);
+    updateHljsStylesheet(meta?.colorScheme ?? "dark");
+  } else {
+    // User-provided JSON theme. Mark data-theme so any default-dark rules
+    // still apply as a baseline; inline vars override.
+    dataThemeAttr = DEFAULT_THEME_ID;
+    root.setAttribute("data-theme", dataThemeAttr);
+    for (const varName of THEMEABLE_VARS) {
+      const value = theme.colors[varName];
+      if (value) {
+        root.style.setProperty(`--${varName}`, value);
+      } else {
+        root.style.removeProperty(`--${varName}`);
+      }
+    }
+    const scheme = theme.colors["color-scheme"] ?? "dark";
+    root.style.setProperty("color-scheme", scheme);
+    updateHljsStylesheet(scheme);
+  }
+
+  cacheDataTheme(dataThemeAttr);
+}
+
 export async function loadAllThemes(): Promise<ThemeDefinition[]> {
   let userThemes: ThemeDefinition[] = [];
   try {
@@ -154,8 +219,19 @@ export async function loadAllThemes(): Promise<ThemeDefinition[]> {
     console.error("Failed to load user themes:", e);
   }
   const themesById = new Map<string, ThemeDefinition>();
-  for (const theme of BUILTIN_THEMES) {
-    themesById.set(theme.id, theme);
+  // Built-ins: the full palette lives in CSS, but CommandPalette renders a
+  // per-theme accent swatch from theme.colors, so seed the two preview
+  // fields from metadata. Everything else resolves via the stylesheet.
+  for (const meta of BUILTIN_THEME_META) {
+    themesById.set(meta.id, {
+      id: meta.id,
+      name: meta.name,
+      description: meta.description,
+      colors: {
+        "accent-primary": meta.accentPreview,
+        "color-scheme": meta.colorScheme,
+      },
+    });
   }
   for (const theme of userThemes) {
     themesById.set(theme.id, theme);

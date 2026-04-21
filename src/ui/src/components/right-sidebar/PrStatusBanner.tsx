@@ -15,51 +15,51 @@ const STATUS_CONFIG: Record<
   {
     text: string;
     icon: typeof GitPullRequestArrow;
-    bg: string;
-    fg: string;
+    bannerClass: string;
+    fgClass: string;
   }
 > = {
   ready: {
     text: "Ready to merge",
     icon: GitPullRequestArrow,
-    bg: "rgba(34, 197, 94, 0.12)",
-    fg: "#22c55e",
+    bannerClass: styles.bannerReady,
+    fgClass: styles.fgReady,
   },
   "ci-pending": {
     text: "CI running",
     icon: GitPullRequestArrow,
-    bg: "rgba(234, 179, 8, 0.12)",
-    fg: "#eab308",
+    bannerClass: styles.bannerPending,
+    fgClass: styles.fgPending,
   },
   "ci-failed": {
     text: "CI failed",
     icon: GitPullRequestArrow,
-    bg: "rgba(239, 68, 68, 0.12)",
-    fg: "#ef4444",
+    bannerClass: styles.bannerFailed,
+    fgClass: styles.fgFailed,
   },
   open: {
     text: "Open",
     icon: GitPullRequestArrow,
-    bg: "rgba(34, 197, 94, 0.08)",
-    fg: "#22c55e",
+    bannerClass: styles.bannerOpen,
+    fgClass: styles.fgOpen,
   },
   draft: {
     text: "Draft",
     icon: GitPullRequestDraft,
-    bg: "var(--hover-bg)",
-    fg: "var(--text-dim)",
+    bannerClass: styles.bannerDraft,
+    fgClass: styles.fgDraft,
   },
   merged: {
     text: "Merged",
     icon: GitMerge,
-    bg: "rgba(168, 85, 247, 0.12)",
-    fg: "#a855f7",
+    bannerClass: styles.bannerMerged,
+    fgClass: styles.fgMerged,
   },
   closed: {
     text: "Closed",
     icon: GitPullRequestClosed,
-    bg: "var(--hover-bg)",
-    fg: "var(--text-dim)",
+    bannerClass: styles.bannerClosed,
+    fgClass: styles.fgClosed,
   },
 };
 
@@ -72,10 +72,9 @@ export const PrStatusBanner = memo(function PrStatusBanner() {
   const Icon = config.icon;
 
   return (
-    <div className={styles.banner} style={{ background: config.bg }}>
+    <div className={`${styles.banner} ${config.bannerClass}`}>
       <button
-        className={styles.prPill}
-        style={{ borderColor: config.fg, color: config.fg }}
+        className={`${styles.prPill} ${config.fgClass}`}
         onClick={() => openUrl(pr.url)}
         title={`Open PR #${pr.number} in browser`}
       >
@@ -83,7 +82,7 @@ export const PrStatusBanner = memo(function PrStatusBanner() {
         <span className={styles.prNumber}>#{pr.number}</span>
         <ExternalLink size={14} className={styles.externalIcon} />
       </button>
-      <span className={styles.statusText} style={{ color: config.fg }}>
+      <span className={`${styles.statusText} ${config.fgClass}`}>
         {config.text}
       </span>
     </div>

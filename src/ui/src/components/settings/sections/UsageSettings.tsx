@@ -7,7 +7,7 @@ import styles from "../Settings.module.css";
 
 function barColor(pct: number): string {
   if (pct >= 85) return "var(--status-stopped)";
-  if (pct >= 60) return "#e0a030";
+  if (pct >= 60) return "var(--context-meter-warn)";
   return "var(--accent-primary)";
 }
 
@@ -87,7 +87,7 @@ function ExtraUsageSection({ extra }: { extra: ExtraUsage }) {
         <div className={styles.usageExtraHeader}>Extra Usage</div>
         <div className={styles.usageCard}>
           <div className={styles.usageCardHeader}>
-            <span className={styles.usageCardTitle} style={{ color: "var(--text-dim)" }}>
+            <span className={`${styles.usageCardTitle} ${styles.usageDimColor}`}>
               Not enabled
             </span>
             <button
@@ -112,7 +112,7 @@ function ExtraUsageSection({ extra }: { extra: ExtraUsage }) {
 
   return (
     <>
-      <div className={styles.usageCardHeader} style={{ paddingTop: 8 }}>
+      <div className={`${styles.usageCardHeader} ${styles.usageHeaderPadded}`}>
         <div className={styles.usageExtraHeader}>Extra Usage</div>
         <button
           className={styles.usageManageLink}
@@ -211,7 +211,7 @@ export function UsageSettings() {
               <span className={styles.usagePlanBadge}>
                 {usage.subscription_type ?? "Pro"}
                 {usage.rate_limit_tier && (
-                  <span style={{ opacity: 0.7, fontWeight: 400 }}>
+                  <span className={styles.usageMetaDim}>
                     {formatTier(usage.rate_limit_tier)}
                   </span>
                 )}

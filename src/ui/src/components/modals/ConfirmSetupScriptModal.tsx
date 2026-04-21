@@ -70,42 +70,17 @@ export function ConfirmSetupScriptModal() {
   const label = source === "repo" ? ".claudette.json" : "repo settings";
 
   return (
-    <Modal title="Review Setup Script" onClose={closeModal}>
+    <Modal title="Review setup script" onClose={closeModal}>
       <div className={shared.warning}>
         This workspace has a setup script from <strong>{label}</strong> that
         will be executed. Please review it before proceeding.
       </div>
       <div className={shared.field}>
         <label className={shared.label}>Script</label>
-        <pre
-          style={{
-            background: "var(--chat-input-bg)",
-            border: "1px solid var(--divider)",
-            borderRadius: 6,
-            padding: "8px 12px",
-            fontSize: 12,
-            color: "var(--text-primary)",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-            maxHeight: 200,
-            overflow: "auto",
-            margin: 0,
-          }}
-        >
-          {script}
-        </pre>
+        <pre className={shared.scriptPreview}>{script}</pre>
       </div>
       <div className={shared.field}>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 12,
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-          }}
-        >
+        <label className={shared.checkboxRow}>
           <input
             type="checkbox"
             checked={alwaysRun}

@@ -12,6 +12,55 @@
   animation: fadeIn 0.15s ease;
 }
 
+.bannerReady,
+.bannerOpen {
+  background: color-mix(in srgb, var(--badge-done) 12%, var(--chat-header-bg));
+}
+
+.bannerPending {
+  background: color-mix(in srgb, var(--badge-ask) 12%, var(--chat-header-bg));
+}
+
+.bannerFailed {
+  background: var(--error-bg);
+}
+
+.bannerMerged {
+  background: color-mix(in srgb, var(--badge-plan) 14%, var(--chat-header-bg));
+}
+
+.bannerDraft,
+.bannerClosed {
+  background: var(--chat-header-bg);
+}
+
+.fgReady,
+.fgOpen {
+  color: var(--badge-done);
+  border-color: var(--badge-done);
+}
+
+.fgPending {
+  color: var(--badge-ask);
+  border-color: var(--badge-ask);
+}
+
+.fgFailed {
+  color: var(--status-stopped);
+  border-color: var(--status-stopped);
+}
+
+.fgMerged {
+  color: var(--badge-plan);
+  border-color: var(--badge-plan);
+}
+
+.fgDraft,
+.fgClosed {
+  color: var(--text-dim);
+  border-color: var(--divider);
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -32,7 +81,7 @@
 }
 
 .prPill:hover {
-  background: rgba(128, 128, 128, 0.1);
+  background: var(--hover-bg);
 }
 
 .prNumber {

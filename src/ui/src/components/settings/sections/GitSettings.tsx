@@ -82,7 +82,7 @@ export function GitSettings() {
 
       <div className={styles.fieldGroup}>
         <div className={styles.fieldLabel}>Branch name prefix</div>
-        <div className={styles.fieldHint} style={{ marginBottom: 12 }}>
+        <div className={`${styles.fieldHint} ${styles.fieldHintSpacedWide}`}>
           Prefix for new workspace branch names.
         </div>
 
@@ -108,12 +108,11 @@ export function GitSettings() {
 
         {prefixMode === "custom" && (
           <input
-            className={styles.input}
+            className={`${styles.input} ${styles.customPrefixInput}`}
             value={customPrefix}
             onChange={(e) => setCustomPrefix(e.target.value)}
             onBlur={handleCustomPrefixBlur}
             placeholder="e.g. feature/ or myname/"
-            style={{ marginLeft: 24, marginTop: 4, maxWidth: 260 }}
           />
         )}
 
@@ -135,10 +134,7 @@ export function GitSettings() {
             Delete the local branch when archiving a workspace.
           </div>
           {deleteBranch && (
-            <div
-              className={styles.settingDescription}
-              style={{ color: "var(--status-stopped)", marginTop: 4 }}
-            >
+            <div className={`${styles.settingDescription} ${styles.gitWarning}`}>
               The branch will be permanently deleted, including any unmerged commits.
             </div>
           )}

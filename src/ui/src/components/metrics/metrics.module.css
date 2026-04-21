@@ -157,25 +157,15 @@
 }
 
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--hover-bg-subtle) 0%,
-    rgba(255, 255, 255, 0.06) 50%,
-    var(--hover-bg-subtle) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.6s linear infinite;
-  border-radius: 4px;
+  background: var(--hover-bg);
+  animation: shimmerPulse 1.6s ease-in-out infinite;
+  border-radius: var(--radius-sm);
   min-height: 16px;
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+@keyframes shimmerPulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
 }
 
 /* Primitive shared styles ------------------------------------------------- */

@@ -27,7 +27,7 @@ export function DeleteWorkspaceModal() {
   };
 
   return (
-    <Modal title="Delete Workspace" onClose={closeModal}>
+    <Modal title="Delete workspace" onClose={closeModal}>
       <div className={shared.warning}>
         Are you sure you want to delete <strong>{wsName}</strong>? The branch
         and any unmerged commits will be permanently deleted.

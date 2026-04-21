@@ -417,32 +417,23 @@
   border-color: var(--accent-primary);
 }
 
-/* Horizontal rules — gradient */
+/* Horizontal rules */
 .content hr {
   border: none;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(var(--accent-primary-rgb), 0.2) 0%,
-    rgba(var(--accent-primary-rgb), 0.05) 100%
-  );
-  margin: 18px 0;
+  background: var(--accent-bg-strong);
+  margin: var(--space-4) 0;
 }
 
 /* Claude Code callout blocks (★ Insight, ⚠ Warning, etc.) */
 .content :global(.cc-callout) {
-  background: linear-gradient(
-    135deg,
-    rgba(var(--accent-primary-rgb), 0.07) 0%,
-    rgba(var(--accent-primary-rgb), 0.03) 100%
-  );
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.12);
+  background: var(--chat-system-bg);
+  border: 1px solid var(--accent-bg-strong);
   border-left: 3px solid var(--accent-primary);
-  border-radius: 0 8px 8px 0;
-  padding: 14px 18px;
-  margin: 16px 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15),
-              inset 0 1px 0 rgba(var(--accent-primary-rgb), 0.06);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-4) 0;
+  box-shadow: var(--shadow-sm);
 }
 
 .content :global(.cc-callout) p {
@@ -961,13 +952,13 @@
 }
 
 .sendBtnStop {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover-bg-subtle);
   border-color: var(--divider);
   color: var(--text-muted);
 }
 
 .sendBtnStop:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hover-bg);
   border-color: var(--text-dim);
   color: var(--text-primary);
   filter: none;
@@ -1012,10 +1003,10 @@
   position: absolute;
   top: 2px;
   right: 2px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
+  background: var(--overlay-bg);
+  color: var(--text-primary);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   width: 18px;
   height: 18px;
   display: flex;
@@ -1027,11 +1018,11 @@
 }
 
 .attachmentRemove:hover {
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--overlay-bg-heavy);
 }
 
 .attachBtn {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover-bg-subtle);
   border: 1px solid var(--divider);
   color: var(--text-muted);
   cursor: pointer;
@@ -1042,21 +1033,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   flex-shrink: 0;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .attachBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hover-bg);
   color: var(--text-primary);
   border-color: var(--text-dim);
 }
 
 .attachBtnActive {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--hover-bg);
   color: var(--text-primary);
   border-color: var(--text-dim);
+}
+
+.attachBtnWrap {
+  position: relative;
+}
+
+.inProgressNote {
+  color: var(--accent-dim);
 }
 
 /* -- Inline message images -- */
@@ -1084,7 +1083,7 @@
   padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--divider);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-bg-subtle);
   color: var(--text-muted);
   font-size: 13px;
 }

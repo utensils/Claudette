@@ -290,12 +290,12 @@ export const Sidebar = memo(function Sidebar() {
               : prState === "closed" ? GitPullRequestClosed
               : prState === "draft" ? GitPullRequestDraft
               : GitPullRequestArrow;
-            const color = prState === "merged" ? "var(--purple, #a855f7)"
-              : prState === "closed" ? "var(--red, #ef4444)"
+            const color = prState === "merged" ? "var(--badge-plan)"
+              : prState === "closed" ? "var(--status-stopped)"
               : prState === "draft" ? "var(--text-dim)"
-              : ciState === "failure" ? "var(--red, #ef4444)"
-              : ciState === "pending" ? "var(--yellow, #eab308)"
-              : "var(--green, #22c55e)";
+              : ciState === "failure" ? "var(--status-stopped)"
+              : ciState === "pending" ? "var(--badge-ask)"
+              : "var(--badge-done)";
             const titleText = `PR: ${prState}${ciState ? `, CI: ${ciState}` : ""}`;
             return (
               <span className={styles.statusIcon} title={titleText}>
@@ -741,8 +741,8 @@ export const Sidebar = memo(function Sidebar() {
                     {spinnerChar}
                   </span>
                   <div className={styles.wsInfo}>
-                    <span className={styles.wsName} style={{ opacity: 0.5 }}>
-                      Creating workspace...
+                    <span className={`${styles.wsName} ${styles.wsNamePlaceholder}`}>
+                      Creating workspace…
                     </span>
                   </div>
                 </div>
@@ -765,14 +765,14 @@ export const Sidebar = memo(function Sidebar() {
           onClick={() => openModal("addRepo")}
           title="Add repository"
         >
-          <Plus size={14} />
+          <Plus size={16} />
         </button>
         <button
           className={styles.footerBtn}
           onClick={() => openModal("addRemote")}
           title="Add remote"
         >
-          <Globe size={14} />
+          <Globe size={16} />
         </button>
         <ShareButton openModal={openModal} />
         <button
@@ -780,7 +780,7 @@ export const Sidebar = memo(function Sidebar() {
           onClick={() => openSettings()}
           title="Settings"
         >
-          <Settings size={14} />
+          <Settings size={16} />
         </button>
       </div>
     </div>
@@ -863,24 +863,23 @@ function RemoteSections() {
   return (
     <>
       {unpaired.length > 0 && (
-        <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
-          <div className={styles.repoHeader} style={{ opacity: 0.7, cursor: "default" }}>
-            <span className={styles.repoName} style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        <div className={styles.remoteSection}>
+          <div className={`${styles.repoHeader} ${styles.remoteHeader}`}>
+            <span className={`${styles.repoName} ${styles.sectionLabel}`}>
               Nearby
             </span>
           </div>
           {unpaired.map((server) => (
             <div key={`${server.host}:${server.port}`} className={styles.wsItem}>
-              <span className={styles.statusDot} style={{ background: "var(--status-idle)" }} />
+              <span className={`${styles.statusDot} ${styles.remoteStatusIdle}`} />
               <div className={styles.wsInfo}>
                 <span className={styles.wsName}>{server.name || server.host}</span>
                 <span className={styles.wsBranch}>{server.host}</span>
               </div>
               <button
-                className={styles.iconBtn}
+                className={`${styles.iconBtn} ${styles.smallBtn}`}
                 onClick={() => handlePair(server.host, server.port)}
                 title="Connect"
-                style={{ fontSize: 11 }}
               >
                 Connect
               </button>
@@ -890,11 +889,9 @@ function RemoteSections() {
       )}
 
       {remoteConnections.length > 0 && (
-        <div style={{ borderTop: "1px solid var(--border-subtle)" }}>
+        <div className={styles.remoteSection}>
           {connectError && (
-            <div style={{ padding: "4px 12px", fontSize: 11, color: "var(--status-error, #f55)", lineHeight: 1.3 }}>
-              {connectError}
-            </div>
+            <div className={styles.connectError}>{connectError}</div>
           )}
           {remoteConnections.map((conn) => {
             const isActive = activeRemoteIds.includes(conn.id);
@@ -1001,37 +998,33 @@ function RemoteConnectionGroup({
   return (
     <div className={styles.repoGroup}>
       {/* Connection header */}
-      <div className={styles.repoHeader} style={{ opacity: 0.8 }}>
+      <div className={`${styles.repoHeader} ${styles.remoteConnectionHeader}`}>
         <span
-          className={styles.statusDot}
-          style={{
-            background: isConnecting
-              ? "var(--status-idle)"
+          className={`${styles.statusDot} ${styles.remoteStatusDot} ${
+            isConnecting
+              ? styles.remoteStatusIdle
               : isActive
-                ? "var(--status-running)"
-                : "var(--status-stopped)",
-            marginRight: 4,
-          }}
+                ? styles.remoteStatusActive
+                : styles.remoteStatusStopped
+          }`}
         />
-        <span className={styles.repoName} style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        <span className={`${styles.repoName} ${styles.sectionLabel}`}>
           {conn.name}
         </span>
         {!isActive && !isConnecting && (
           <button
-            className={styles.iconBtn}
+            className={`${styles.iconBtn} ${styles.smallBtnDim}`}
             onClick={onRemove}
             title="Remove"
-            style={{ fontSize: 11, opacity: 0.5 }}
           >
             <X size={12} />
           </button>
         )}
         <button
-          className={styles.iconBtn}
+          className={`${styles.iconBtn} ${isConnecting ? styles.smallBtnConnecting : styles.smallBtn}`}
           onClick={() => (isActive ? onDisconnect() : onConnect())}
           disabled={isConnecting}
           title={isConnecting ? "Connecting…" : isActive ? "Disconnect" : "Connect"}
-          style={{ fontSize: 11, opacity: isConnecting ? 0.5 : 1 }}
         >
           {isConnecting ? "…" : isActive ? "×" : "→"}
         </button>
@@ -1051,9 +1044,8 @@ function RemoteConnectionGroup({
           return (
             <div key={repo.id}>
               <div
-                className={styles.repoHeader}
+                className={`${styles.repoHeader} ${styles.remoteRepoHeader}`}
                 onClick={() => toggleRepoCollapsed(repo.id)}
-                style={{ paddingLeft: 12 }}
               >
                 <span className={styles.chevron}>
                   {collapsed ? "›" : "⌄"}
@@ -1091,13 +1083,11 @@ function RemoteConnectionGroup({
                       </span>
                     ) : (
                       <span
-                        className={styles.statusDot}
-                        style={{
-                          background:
-                            ws.agent_status === "Stopped"
-                              ? "var(--status-stopped)"
-                              : "var(--status-idle)",
-                        }}
+                        className={`${styles.statusDot} ${
+                          ws.agent_status === "Stopped"
+                            ? styles.remoteStatusStopped
+                            : styles.remoteStatusIdle
+                        }`}
                       />
                     )}
                     <div className={styles.wsInfo}>
@@ -1124,7 +1114,7 @@ function RemoteConnectionGroup({
 
       {/* Show placeholder when connected but no repos */}
       {isActive && remoteRepos.length === 0 && (
-        <div className={styles.wsItem} style={{ opacity: 0.5 }}>
+        <div className={`${styles.wsItem} ${styles.remotePlaceholder}`}>
           <div className={styles.wsInfo}>
             <span className={styles.wsName}>No repositories</span>
           </div>
@@ -1162,13 +1152,12 @@ function ShareButton({ openModal }: { openModal: (name: string) => void }) {
 
   return (
     <button
-      className={styles.footerBtn}
+      className={`${styles.footerBtn}${running ? ` ${styles.shareBtnActive}` : ""}`}
       onClick={handleClick}
       title={running ? "Sharing — click to view connection string" : "Share this machine"}
       disabled={loading}
-      style={running ? { color: "var(--status-running)" } : undefined}
     >
-      <Share2 size={14} />
+      <Share2 size={16} />
     </button>
   );
 }

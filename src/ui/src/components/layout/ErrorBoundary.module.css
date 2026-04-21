@@ -1,0 +1,42 @@
+.root {
+  padding: var(--space-6);
+  color: var(--text-primary);
+  background: var(--app-bg);
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.heading {
+  color: var(--status-stopped);
+  margin-bottom: var(--space-3);
+}
+
+.message {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stack {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-dim);
+  margin-top: var(--space-3);
+  font-size: var(--fs-xs);
+}
+
+.retryBtn {
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--hover-bg);
+  border: 1px solid var(--divider);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.retryBtn:hover {
+  background: var(--hover-bg-subtle);
+  border-color: var(--text-dim);
+}
