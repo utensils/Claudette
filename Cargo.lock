@@ -690,6 +690,7 @@ dependencies = [
  "mdns-sd",
  "parking_lot",
  "portable-pty",
+ "rand 0.8.5",
  "reqwest",
  "rustls",
  "rustls-pemfile",

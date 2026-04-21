@@ -9,6 +9,7 @@ use claudette::model::WorkspaceStatus;
 use crate::state::{AppState, AttentionKind};
 
 /// Notification event types for per-event sound selection.
+#[derive(Clone, Copy)]
 pub enum NotificationEvent {
     Ask,
     Plan,
@@ -21,6 +22,14 @@ impl NotificationEvent {
             Self::Ask => "notification_sound_ask",
             Self::Plan => "notification_sound_plan",
             Self::Finished => "notification_sound_finished",
+        }
+    }
+
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Plan => "plan",
+            Self::Finished => "finished",
         }
     }
 }
@@ -375,12 +384,22 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str, kind: AttentionKind
         .map(|w| w.name.clone())
         .unwrap_or_else(|| "An agent".to_string());
 
-    let sound = resolve_notification_sound(&db, NotificationEvent::from(kind));
+    let event = NotificationEvent::from(kind);
+    let sound = resolve_notification_sound(&db, event);
 
     let title = "Claudette — Input Required";
     let body = format!("{ws_name} is waiting for your response");
 
-    send_notification(app, workspace_id, title, &body, &sound);
+    if let Some(dir_name) = sound.strip_prefix("pack:") {
+        if let Some(path) =
+            crate::commands::settings::resolve_random_pack_sound_path(dir_name, event.event_name())
+        {
+            crate::commands::settings::play_sound_file(&path);
+        }
+        send_notification(app, workspace_id, title, &body, "None");
+    } else {
+        send_notification(app, workspace_id, title, &body, &sound);
+    }
 
     // Run user-configured notification command (if set).
     // Build a best-effort WorkspaceEnv even when the workspace lookup fails
@@ -1093,5 +1112,25 @@ mod tests {
             NotificationEvent::Finished,
         );
         assert_eq!(resolved, "Default");
+    }
+
+    #[test]
+    fn resolve_sound_returns_pack_prefix_unchanged() {
+        let settings = HashMap::from([(
+            "notification_sound_ask".to_string(),
+            "pack:my-fun-pack".to_string(),
+        )]);
+        let resolved = resolve_notification_sound_with(
+            |key| settings.get(key).cloned(),
+            NotificationEvent::Ask,
+        );
+        assert_eq!(resolved, "pack:my-fun-pack");
+    }
+
+    #[test]
+    fn event_name_maps_correctly() {
+        assert_eq!(NotificationEvent::Ask.event_name(), "ask");
+        assert_eq!(NotificationEvent::Plan.event_name(), "plan");
+        assert_eq!(NotificationEvent::Finished.event_name(), "finished");
     }
 }

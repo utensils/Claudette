@@ -38,6 +38,7 @@ async-trait = "0.1"
 gethostname = "1"
 urlencoding = "2"
 parking_lot = "0.12"
+rand = "0.8"
 chrono = "0.4"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 url = "2"

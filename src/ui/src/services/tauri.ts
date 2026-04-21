@@ -688,12 +688,31 @@ export function listNotificationSounds(): Promise<string[]> {
   return invoke("list_notification_sounds");
 }
 
+export interface SoundPackInfo {
+  dir_name: string;
+  name: string;
+  author: string | null;
+  description: string | null;
+  event_counts: Record<string, number>;
+}
+
+export function listSoundPacks(): Promise<SoundPackInfo[]> {
+  return invoke("list_sound_packs");
+}
+
 export function listSystemFonts(): Promise<string[]> {
   return invoke("list_system_fonts");
 }
 
 export function playNotificationSound(sound: string): Promise<void> {
   return invoke("play_notification_sound", { sound });
+}
+
+export function previewPackSound(
+  dirName: string,
+  event: string,
+): Promise<void> {
+  return invoke("preview_pack_sound", { dirName, event });
 }
 
 export function runNotificationCommand(

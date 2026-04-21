@@ -394,8 +394,10 @@ fn main() {
             commands::settings::set_app_setting,
             commands::settings::list_user_themes,
             commands::settings::list_notification_sounds,
+            commands::settings::list_sound_packs,
             commands::settings::list_system_fonts,
             commands::settings::play_notification_sound,
+            commands::settings::preview_pack_sound,
             commands::settings::run_notification_command,
             commands::settings::get_git_username,
             // Updater

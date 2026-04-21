@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
 use claudette::db::Database;
+use claudette::model::SoundPackManifest;
 
 use crate::state::AppState;
 
@@ -346,6 +348,149 @@ pub async fn list_user_themes() -> Result<Vec<ThemeDefinition>, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[derive(Serialize)]
+pub struct SoundPackInfo {
+    pub dir_name: String,
+    pub name: String,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    pub event_counts: HashMap<String, usize>,
+}
+
+fn sound_packs_dir() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".claudette").join("sound-packs"))
+}
+
+#[tauri::command]
+pub async fn list_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let packs_dir = sound_packs_dir().ok_or("Could not determine home directory")?;
+
+        if !packs_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut packs = Vec::new();
+        let entries = std::fs::read_dir(&packs_dir).map_err(|e| e.to_string())?;
+        const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let manifest_path = path.join("pack.json");
+            if !manifest_path.exists() {
+                continue;
+            }
+            match std::fs::metadata(&manifest_path) {
+                Ok(meta) if meta.len() > MAX_MANIFEST_BYTES => {
+                    eprintln!(
+                        "[sound-packs] Skipping {}: manifest too large ({} bytes)",
+                        path.display(),
+                        meta.len()
+                    );
+                    continue;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("[sound-packs] Skipping {}: {e}", path.display());
+                    continue;
+                }
+            }
+            let content = match std::fs::read_to_string(&manifest_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[sound-packs] Skipping {}: {e}", path.display());
+                    continue;
+                }
+            };
+            let manifest: SoundPackManifest = match serde_json::from_str(&content) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("[sound-packs] Skipping {}: {e}", path.display());
+                    continue;
+                }
+            };
+            let dir_name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let event_counts = manifest
+                .events
+                .iter()
+                .map(|(event, files)| {
+                    let valid = files.iter().filter(|f| path.join(f).exists()).count();
+                    (event.clone(), valid)
+                })
+                .filter(|(_, count)| *count > 0)
+                .collect();
+            packs.push(SoundPackInfo {
+                dir_name,
+                name: manifest.name,
+                author: manifest.author,
+                description: manifest.description,
+                event_counts,
+            });
+        }
+        Ok(packs)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Play an arbitrary audio file by absolute path.
+pub(crate) fn play_sound_file(path: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(child) = std::process::Command::new("afplay").arg(path).spawn() {
+            spawn_and_reap(child);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(child) = std::process::Command::new("paplay")
+            .arg(path)
+            .spawn()
+            .or_else(|_| std::process::Command::new("aplay").arg(path).spawn())
+        {
+            spawn_and_reap(child);
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = path;
+    }
+}
+
+/// Resolve a random audio file path from a sound pack for a given event.
+pub(crate) fn resolve_random_pack_sound_path(dir_name: &str, event: &str) -> Option<String> {
+    let pack_dir = sound_packs_dir()?.join(dir_name);
+    let manifest_path = pack_dir.join("pack.json");
+    let content = std::fs::read_to_string(&manifest_path).ok()?;
+    let manifest: SoundPackManifest = serde_json::from_str(&content).ok()?;
+    let files = manifest.events.get(event)?;
+    let valid_files: Vec<_> = files
+        .iter()
+        .map(|f| pack_dir.join(f))
+        .filter(|p| p.exists())
+        .collect();
+    if valid_files.is_empty() {
+        return None;
+    }
+    let idx = rand::thread_rng().gen_range(0..valid_files.len());
+    Some(valid_files[idx].to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn preview_pack_sound(dir_name: String, event: String) -> Result<(), String> {
+    let path = resolve_random_pack_sound_path(&dir_name, &event)
+        .ok_or_else(|| format!("No sounds found for event '{event}' in pack '{dir_name}'"))?;
+    play_sound_file(&path);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,5 +599,161 @@ mod tests {
         let output = std::fs::read_to_string(&tmp).expect("Failed to read output file");
         std::fs::remove_file(&tmp).ok();
         assert_eq!(output.trim(), "my-workspace,/home/user/repo");
+    }
+
+    // --- Sound pack tests ---
+
+    fn create_test_pack(dir: &std::path::Path, name: &str, events: &[(&str, &[&str])]) {
+        let pack_dir = dir.join(name);
+        std::fs::create_dir_all(&pack_dir).unwrap();
+        let mut events_map = HashMap::new();
+        for (event, files) in events {
+            let event_dir = pack_dir.join(event);
+            std::fs::create_dir_all(&event_dir).unwrap();
+            let mut paths = Vec::new();
+            for file in *files {
+                let rel = format!("{event}/{file}");
+                std::fs::write(pack_dir.join(&rel), b"fake audio").unwrap();
+                paths.push(rel);
+            }
+            events_map.insert(
+                event.to_string(),
+                paths
+                    .iter()
+                    .map(|p| serde_json::Value::String(p.clone()))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let manifest = serde_json::json!({
+            "name": format!("Test Pack {name}"),
+            "version": "1.0.0",
+            "author": "tester",
+            "description": "A test sound pack",
+            "events": events_map,
+        });
+        std::fs::write(
+            pack_dir.join("pack.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_resolve_random_pack_sound_nonexistent_dir() {
+        assert!(resolve_random_pack_sound_path("nonexistent-pack-xyz", "ask").is_none());
+    }
+
+    #[test]
+    fn test_resolve_random_pack_sound_missing_event() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Temporarily override the packs dir by creating a pack in a known location.
+        // Since resolve_random_pack_sound_path uses sound_packs_dir() which resolves
+        // to ~/.claudette/sound-packs, we test the internal logic via a direct manifest
+        // parse instead.
+        let pack_dir = tmp.path().join("test-pack");
+        std::fs::create_dir_all(&pack_dir).unwrap();
+        let manifest = serde_json::json!({
+            "name": "Test",
+            "events": {
+                "ask": ["ask/sound.wav"]
+            }
+        });
+        std::fs::write(
+            pack_dir.join("pack.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(pack_dir.join("pack.json")).unwrap();
+        let parsed: SoundPackManifest = serde_json::from_str(&content).unwrap();
+        assert!(parsed.events.get("plan").is_none());
+        assert!(parsed.events.get("ask").is_some());
+    }
+
+    #[test]
+    fn test_sound_pack_manifest_deserializes() {
+        let json = r#"{
+            "name": "Fun Pack",
+            "version": "1.0.0",
+            "author": "someone",
+            "description": "A playful set",
+            "events": {
+                "ask": ["ask/chirp.wav", "ask/ding.wav"],
+                "plan": ["plan/tada.wav"],
+                "finished": ["finished/fanfare.wav"]
+            }
+        }"#;
+        let manifest: SoundPackManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.name, "Fun Pack");
+        assert_eq!(manifest.author.as_deref(), Some("someone"));
+        assert_eq!(manifest.events.len(), 3);
+        assert_eq!(manifest.events["ask"].len(), 2);
+    }
+
+    #[test]
+    fn test_sound_pack_manifest_optional_fields() {
+        let json = r#"{"name": "Minimal", "events": {}}"#;
+        let manifest: SoundPackManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.name, "Minimal");
+        assert!(manifest.version.is_none());
+        assert!(manifest.author.is_none());
+        assert!(manifest.description.is_none());
+        assert!(manifest.events.is_empty());
+    }
+
+    #[test]
+    fn test_sound_pack_info_event_counts_only_valid_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        create_test_pack(
+            tmp.path(),
+            "my-pack",
+            &[("ask", &["sound1.wav", "sound2.wav"])],
+        );
+
+        let pack_dir = tmp.path().join("my-pack");
+        let content = std::fs::read_to_string(pack_dir.join("pack.json")).unwrap();
+        let manifest: SoundPackManifest = serde_json::from_str(&content).unwrap();
+
+        let event_counts: HashMap<String, usize> = manifest
+            .events
+            .iter()
+            .map(|(event, files)| {
+                let valid = files.iter().filter(|f| pack_dir.join(f).exists()).count();
+                (event.clone(), valid)
+            })
+            .filter(|(_, count)| *count > 0)
+            .collect();
+
+        assert_eq!(event_counts["ask"], 2);
+        assert!(!event_counts.contains_key("plan"));
+    }
+
+    #[test]
+    fn test_sound_pack_info_skips_missing_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pack_dir = tmp.path().join("broken-pack");
+        std::fs::create_dir_all(&pack_dir).unwrap();
+        let manifest = serde_json::json!({
+            "name": "Broken",
+            "events": {
+                "ask": ["ask/exists.wav", "ask/missing.wav"]
+            }
+        });
+        std::fs::write(
+            pack_dir.join("pack.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+        let ask_dir = pack_dir.join("ask");
+        std::fs::create_dir_all(&ask_dir).unwrap();
+        std::fs::write(ask_dir.join("exists.wav"), b"fake").unwrap();
+
+        let content = std::fs::read_to_string(pack_dir.join("pack.json")).unwrap();
+        let parsed: SoundPackManifest = serde_json::from_str(&content).unwrap();
+        let valid: Vec<_> = parsed.events["ask"]
+            .iter()
+            .filter(|f| pack_dir.join(f).exists())
+            .collect();
+        assert_eq!(valid.len(), 1);
     }
 }

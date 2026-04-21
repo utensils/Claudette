@@ -5,6 +5,7 @@ pub mod diff;
 mod metrics;
 mod remote_connection;
 mod repository;
+mod sound_pack;
 mod terminal_tab;
 mod workspace;
 
@@ -17,5 +18,6 @@ pub use metrics::{
 };
 pub use remote_connection::RemoteConnection;
 pub use repository::Repository;
+pub use sound_pack::SoundPackManifest;
 pub use terminal_tab::TerminalTab;
 pub use workspace::{AgentStatus, Workspace, WorkspaceStatus};
