@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import styles from "../metrics.module.css";
 import { useAppStore } from "../../../stores/useAppStore";
+import { formatTokens } from "../../chat/formatTokens";
 
 interface MicroStatsProps {
   workspaceId: string;
@@ -15,19 +16,20 @@ function formatShort(n: number): string {
 export function MicroStats({ workspaceId }: MicroStatsProps) {
   const stats = useAppStore((s) => s.workspaceMetrics[workspaceId]);
   if (!stats) return null;
-  const { commitsCount, additions, deletions, latestSessionTurns } = stats;
+  const { commitsCount, additions, deletions, totalInputTokens, totalOutputTokens } = stats;
+  const totalTokens = totalInputTokens + totalOutputTokens;
   if (
     commitsCount === 0 &&
     additions === 0 &&
     deletions === 0 &&
-    latestSessionTurns === 0
+    totalTokens === 0
   ) {
     return null;
   }
   const parts: ReactNode[] = [];
   if (additions > 0 || deletions > 0) {
     parts.push(
-      <span key="churn">
+      <span key="churn" title="lines added / removed">
         <span className={styles.microAdd}>+{formatShort(additions)}</span>
         <span className={styles.microSep}>/</span>
         <span className={styles.microDel}>-{formatShort(deletions)}</span>
@@ -35,10 +37,10 @@ export function MicroStats({ workspaceId }: MicroStatsProps) {
     );
   }
   if (commitsCount > 0) {
-    parts.push(<span key="commits">{commitsCount}c</span>);
+    parts.push(<span key="commits" title="commits">{commitsCount}c</span>);
   }
-  if (latestSessionTurns > 0) {
-    parts.push(<span key="turns">{latestSessionTurns}t</span>);
+  if (totalTokens > 0) {
+    parts.push(<span key="tokens" title="tokens (in + out)">{formatTokens(totalTokens)}t</span>);
   }
   return (
     <div className={styles.microChip}>

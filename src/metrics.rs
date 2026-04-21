@@ -353,6 +353,30 @@ fn workspace_metrics_batch_with(
         }
     }
 
+    let token_sql = format!(
+        "SELECT workspace_id,
+                COALESCE(SUM(COALESCE(input_tokens, 0)), 0),
+                COALESCE(SUM(COALESCE(output_tokens, 0)), 0)
+         FROM chat_messages
+         WHERE workspace_id IN ({placeholders})
+         GROUP BY workspace_id"
+    );
+    let mut token_stmt = conn.prepare(&token_sql)?;
+    let token_rows = token_stmt.query_map(id_params.as_slice(), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)? as u64,
+            row.get::<_, i64>(2)? as u64,
+        ))
+    })?;
+    for row in token_rows {
+        let (id, input_tokens, output_tokens) = row?;
+        if let Some(slot) = result.get_mut(&id) {
+            slot.total_input_tokens = input_tokens;
+            slot.total_output_tokens = output_tokens;
+        }
+    }
+
     Ok(result)
 }
 
@@ -673,6 +697,14 @@ mod tests {
                     ('s_new', 'ws1', 'r', datetime('now'),           datetime('now'),           7)",
         );
 
+        exec(
+            &conn,
+            "INSERT INTO chat_messages (id, workspace_id, role, content, input_tokens, output_tokens)
+             VALUES ('m1', 'ws1', 'assistant', 'hi', 5000, 1000),
+                    ('m2', 'ws1', 'assistant', 'ok', 3000, 500),
+                    ('m3', 'ws2', 'assistant', 'yo', 2000, NULL)",
+        );
+
         let ids = vec!["ws1".to_string(), "ws2".to_string(), "missing".to_string()];
         let m = workspace_metrics_batch(&path, &ids).unwrap();
 
@@ -681,14 +713,20 @@ mod tests {
         assert_eq!(ws1.additions, 15);
         assert_eq!(ws1.deletions, 3);
         assert_eq!(ws1.latest_session_turns, 7);
+        assert_eq!(ws1.total_input_tokens, 8000);
+        assert_eq!(ws1.total_output_tokens, 1500);
 
         let ws2 = m.get("ws2").unwrap();
         assert_eq!(ws2.commits_count, 1);
         assert_eq!(ws2.latest_session_turns, 0);
+        assert_eq!(ws2.total_input_tokens, 2000);
+        assert_eq!(ws2.total_output_tokens, 0);
 
         let missing = m.get("missing").unwrap();
         assert_eq!(missing.commits_count, 0);
         assert_eq!(missing.latest_session_turns, 0);
+        assert_eq!(missing.total_input_tokens, 0);
+        assert_eq!(missing.total_output_tokens, 0);
     }
 
     #[test]

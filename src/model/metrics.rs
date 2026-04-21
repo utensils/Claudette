@@ -88,6 +88,8 @@ pub struct WorkspaceMetrics {
     pub additions: u64,
     pub deletions: u64,
     pub latest_session_turns: u32,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
 }
 
 /// One row in the repo leaderboard widget.

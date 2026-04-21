@@ -23,6 +23,8 @@ export interface WorkspaceMetrics {
   additions: number;
   deletions: number;
   latestSessionTurns: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
 }
 
 export interface RepoLeaderRow {
