@@ -53,7 +53,7 @@ export function useKeyboardShortcuts() {
         } else if (activeModal) {
           closeModal();
         } else if (useAppStore.getState().settingsOpen) {
-          useAppStore.getState().closeSettings();
+          return;
         } else if (fuzzyFinderOpen) {
           toggleFuzzyFinder();
         } else if (diffSelectedFile) {
