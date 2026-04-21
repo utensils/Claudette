@@ -776,6 +776,7 @@ export function ChatPanel() {
         filename: a.filename,
         media_type: a.media_type,
         data_base64: a.data_base64,
+        text_content: a.text_content ?? null,
         width: null,
         height: null,
         size_bytes: Math.ceil(a.data_base64.length * 0.75),
