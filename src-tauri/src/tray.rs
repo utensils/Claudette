@@ -6,7 +6,50 @@ use tauri::{AppHandle, Emitter, Manager};
 use claudette::db::Database;
 use claudette::model::WorkspaceStatus;
 
-use crate::state::AppState;
+use crate::state::{AppState, AttentionKind};
+
+/// Notification event types for per-event sound selection.
+pub enum NotificationEvent {
+    Ask,
+    Plan,
+    Finished,
+}
+
+impl NotificationEvent {
+    fn setting_key(&self) -> &'static str {
+        match self {
+            Self::Ask => "notification_sound_ask",
+            Self::Plan => "notification_sound_plan",
+            Self::Finished => "notification_sound_finished",
+        }
+    }
+}
+
+impl From<AttentionKind> for NotificationEvent {
+    fn from(kind: AttentionKind) -> Self {
+        match kind {
+            AttentionKind::Ask => Self::Ask,
+            AttentionKind::Plan => Self::Plan,
+        }
+    }
+}
+
+/// Resolve the notification sound for a given event.
+///
+/// Fallback: per-event key -> global `notification_sound` -> legacy `audio_notifications` -> "Default"
+pub fn resolve_notification_sound(db: &Database, event: NotificationEvent) -> String {
+    db.get_app_setting(event.setting_key())
+        .ok()
+        .flatten()
+        .or_else(|| db.get_app_setting("notification_sound").ok().flatten())
+        .or_else(
+            || match db.get_app_setting("audio_notifications").ok().flatten() {
+                Some(v) if v == "false" => Some("None".to_string()),
+                _ => None,
+            },
+        )
+        .unwrap_or_else(|| "Default".to_string())
+}
 
 // Baseline tray icons (the ones shipped for the Auto style).
 //
@@ -310,7 +353,7 @@ pub fn rebuild_tray(app: &AppHandle) {
 
 /// Called when an agent starts waiting for user input.
 /// Updates the tray icon and sends a native notification.
-pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
+pub fn notify_attention(app: &AppHandle, workspace_id: &str, kind: AttentionKind) {
     rebuild_tray(app);
 
     let state = app.state::<AppState>();
@@ -329,19 +372,7 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str) {
         .map(|w| w.name.clone())
         .unwrap_or_else(|| "An agent".to_string());
 
-    // Read notification sound preference (default: "Default").
-    // Honour legacy audio_notifications=false for users who haven't opened settings yet.
-    let sound = db
-        .get_app_setting("notification_sound")
-        .ok()
-        .flatten()
-        .or_else(
-            || match db.get_app_setting("audio_notifications").ok().flatten() {
-                Some(v) if v == "false" => Some("None".to_string()),
-                _ => None,
-            },
-        )
-        .unwrap_or_else(|| "Default".to_string());
+    let sound = resolve_notification_sound(&db, NotificationEvent::from(kind));
 
     let title = "Claudette — Input Required";
     let body = format!("{ws_name} is waiting for your response");
