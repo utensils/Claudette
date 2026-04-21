@@ -1102,17 +1102,7 @@ pub async fn send_chat_message(
                         &db,
                         crate::tray::NotificationEvent::Finished,
                     );
-                    if let Some(dir_name) = sound.strip_prefix("pack:") {
-                        if let Some(path) =
-                            crate::commands::settings::resolve_random_pack_sound_path(
-                                dir_name, "finished",
-                            )
-                        {
-                            crate::commands::settings::play_sound_file(&path);
-                        }
-                    } else if sound != "None" {
-                        crate::commands::settings::play_notification_sound(sound);
-                    }
+                    crate::commands::settings::play_resolved_notification_sound(&sound, "finished");
                     // Run notification command if configured — uses the same
                     // tested helper as the settings test button and tray path.
                     // Rebuild WorkspaceEnv from the DB so it reflects any

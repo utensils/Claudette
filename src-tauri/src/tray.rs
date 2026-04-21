@@ -390,16 +390,9 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str, kind: AttentionKind
     let title = "Claudette — Input Required";
     let body = format!("{ws_name} is waiting for your response");
 
-    if let Some(dir_name) = sound.strip_prefix("pack:") {
-        if let Some(path) =
-            crate::commands::settings::resolve_random_pack_sound_path(dir_name, event.event_name())
-        {
-            crate::commands::settings::play_sound_file(&path);
-        }
-        send_notification(app, workspace_id, title, &body, "None");
-    } else {
-        send_notification(app, workspace_id, title, &body, &sound);
-    }
+    let notification_sound =
+        crate::commands::settings::play_resolved_notification_sound(&sound, event.event_name());
+    send_notification(app, workspace_id, title, &body, &notification_sound);
 
     // Run user-configured notification command (if set).
     // Build a best-effort WorkspaceEnv even when the workspace lookup fails

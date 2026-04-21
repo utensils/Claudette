@@ -688,16 +688,9 @@ async fn auto_archive_workspace(
         }
         None => format!("Workspace \u{2018}{ws_name}\u{2019} archived \u{2014} PR merged"),
     };
-    if let Some(dir_name) = sound.strip_prefix("pack:") {
-        if let Some(path) =
-            crate::commands::settings::resolve_random_pack_sound_path(dir_name, "finished")
-        {
-            crate::commands::settings::play_sound_file(&path);
-        }
-        crate::tray::send_notification(handle, "", "Claudette", &body, "None");
-    } else {
-        crate::tray::send_notification(handle, "", "Claudette", &body, &sound);
-    }
+    let notification_sound =
+        crate::commands::settings::play_resolved_notification_sound(&sound, "finished");
+    crate::tray::send_notification(handle, "", "Claudette", &body, &notification_sound);
 
     let mut payload = serde_json::json!({
         "workspace_id": ws_id,

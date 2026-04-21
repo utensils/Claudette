@@ -358,6 +358,10 @@ pub struct SoundPackInfo {
 }
 
 fn sound_packs_dir() -> Option<std::path::PathBuf> {
+    #[cfg(test)]
+    if let Ok(override_dir) = std::env::var("CLAUDETTE_SOUND_PACKS_DIR") {
+        return Some(std::path::PathBuf::from(override_dir));
+    }
     dirs::home_dir().map(|h| h.join(".claudette").join("sound-packs"))
 }
 
@@ -492,6 +496,27 @@ pub(crate) fn resolve_random_pack_sound_path(dir_name: &str, event: &str) -> Opt
     }
     let idx = rand::thread_rng().gen_range(0..valid_files.len());
     Some(valid_files[idx].to_string_lossy().to_string())
+}
+
+/// Play the appropriate sound for a notification setting value.
+///
+/// Handles `pack:<dir>` values by resolving a random sound from the pack,
+/// and falls back to `play_notification_sound` for system/named sounds.
+/// Returns the sound value to pass to `send_notification` — `"None"` if a
+/// pack sound was played (so the notification itself stays silent), or the
+/// original value for system sounds.
+pub(crate) fn play_resolved_notification_sound(sound_setting: &str, event_name: &str) -> String {
+    if let Some(dir_name) = sound_setting.strip_prefix("pack:") {
+        if let Some(path) = resolve_random_pack_sound_path(dir_name, event_name) {
+            play_sound_file(&path);
+        }
+        "None".to_string()
+    } else {
+        if sound_setting != "None" {
+            play_notification_sound(sound_setting.to_string());
+        }
+        sound_setting.to_string()
+    }
 }
 
 #[tauri::command]
@@ -656,7 +681,16 @@ mod tests {
 
     #[test]
     fn test_resolve_random_pack_sound_nonexistent_dir() {
-        assert!(resolve_random_pack_sound_path("nonexistent-pack-xyz", "ask").is_none());
+        let tmp = tempfile::tempdir().unwrap();
+        // SAFETY: test-only, single-threaded access to this env var.
+        unsafe {
+            std::env::set_var("CLAUDETTE_SOUND_PACKS_DIR", tmp.path());
+        }
+        let result = resolve_random_pack_sound_path("nonexistent-pack", "ask");
+        unsafe {
+            std::env::remove_var("CLAUDETTE_SOUND_PACKS_DIR");
+        }
+        assert!(result.is_none());
     }
 
     #[test]
@@ -682,8 +716,8 @@ mod tests {
 
         let content = std::fs::read_to_string(pack_dir.join("pack.json")).unwrap();
         let parsed: SoundPackManifest = serde_json::from_str(&content).unwrap();
-        assert!(parsed.events.get("plan").is_none());
-        assert!(parsed.events.get("ask").is_some());
+        assert!(!parsed.events.contains_key("plan"));
+        assert!(parsed.events.contains_key("ask"));
     }
 
     #[test]
