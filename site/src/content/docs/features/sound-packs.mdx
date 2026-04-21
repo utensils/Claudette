@@ -1,0 +1,136 @@
+---
+title: Sound Packs
+description: Install custom notification sound packs with random selection.
+---
+
+Sound packs let you bundle multiple sounds per notification event. When a pack is selected, Claudette randomly picks one sound each time — adding variety and personality to notifications.
+
+## How It Works
+
+Each notification event — **Agent question**, **Plan ready**, and **Work complete** — can be assigned a sound pack instead of a single system sound. When a notification fires, Claudette picks a random sound from that event's array in the pack.
+
+If an event has no sounds defined in the pack, the notification is silent for that event.
+
+## Installing Sound Packs
+
+Place sound pack directories in:
+
+```
+~/.claudette/sound-packs/
+```
+
+Each pack is a directory containing a `pack.json` manifest and audio files:
+
+```
+~/.claudette/sound-packs/my-pack/
+  pack.json
+  ask/
+    curious-chirp.wav
+    hey-listen.wav
+    gentle-ding.wav
+  plan/
+    tada.wav
+    ready-set.wav
+  finished/
+    victory-fanfare.wav
+    job-done.wav
+    applause.wav
+```
+
+Claudette detects installed packs on the next visit to `Settings > Notifications` — no restart required.
+
+## Manifest Format
+
+The `pack.json` manifest maps event names to arrays of relative audio file paths:
+
+```json
+{
+  "name": "My Fun Pack",
+  "version": "1.0.0",
+  "author": "someone",
+  "description": "A playful set of notification sounds",
+  "events": {
+    "ask": ["ask/curious-chirp.wav", "ask/hey-listen.wav", "ask/gentle-ding.wav"],
+    "plan": ["plan/tada.wav", "plan/ready-set.wav"],
+    "finished": ["finished/victory-fanfare.wav", "finished/job-done.wav", "finished/applause.wav"]
+  }
+}
+```
+
+### Required Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Display name shown in the sound picker |
+| `events` | object | Map of event names to arrays of audio file paths |
+
+### Optional Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | string | Pack version |
+| `author` | string | Pack author name |
+| `description` | string | Brief description |
+
+### Event Names
+
+| Event | Triggers when |
+|-------|--------------|
+| `ask` | An agent needs your input (AskUserQuestion) |
+| `plan` | An agent has a plan for review (ExitPlanMode) |
+| `finished` | An agent finishes its task |
+
+A pack does not need to define sounds for every event. Only events with valid audio files appear as options in the settings.
+
+### Supported Audio Formats
+
+- **macOS**: `.aiff`, `.wav`, `.mp3`, `.m4a`, `.aac`, `.caf` (via `afplay`)
+- **Linux**: `.wav`, `.ogg`, `.flac` (via `paplay`)
+
+### File Limits
+
+- Maximum manifest size: **1 MB**
+- Audio file paths in the manifest are relative to the pack directory
+- Files referenced in the manifest but missing on disk are silently skipped
+
+## Selecting a Sound Pack
+
+Open `Settings > Notifications`. Each event dropdown shows two groups:
+
+- **System Sounds** — individual system sounds (Default, None, Glass, etc.)
+- **Sound Packs** — installed packs that have sounds for that event, labeled with "(random)"
+
+Select a pack to use random selection for that event. You can mix and match — for example, use a sound pack for "Agent question" and a system sound for "Work complete".
+
+The preview button plays a random sound from the selected pack so you can hear what it sounds like.
+
+## Example: Creating a Pack
+
+1. Create the directory structure:
+
+```bash
+mkdir -p ~/.claudette/sound-packs/office-sounds/{ask,plan,finished}
+```
+
+2. Add audio files to each event folder.
+
+3. Create `~/.claudette/sound-packs/office-sounds/pack.json`:
+
+```json
+{
+  "name": "Office Sounds",
+  "version": "1.0.0",
+  "author": "Your Name",
+  "description": "Familiar office notification sounds",
+  "events": {
+    "ask": ["ask/knock.wav", "ask/doorbell.wav"],
+    "finished": ["finished/applause.wav", "finished/cha-ching.wav"]
+  }
+}
+```
+
+4. Open `Settings > Notifications` and select "Office Sounds (random)" from any event dropdown.
+
+:::note
+This pack defines sounds for `ask` and `finished` but not `plan`. It will only appear in the dropdown for events it covers.
+:::

@@ -39,19 +39,22 @@ See [Theming](/claudette/features/theming/) for details on built-in themes and c
 
 ## Notifications
 
+Each notification event has its own sound setting:
+
 | Setting | Description | Default |
 |---------|-------------|---------|
-| Notification sound | Sound played when an agent needs input or finishes | Default |
+| Agent question | Sound when an agent needs your input | Default |
+| Plan ready | Sound when an agent has a plan for review | Default |
+| Work complete | Sound when an agent finishes its task | Default |
 | Notification command | Custom shell command to run on notification | — |
 
-### Notification Sound
+### Notification Sounds
 
-Choose from built-in sounds or your system's sound library:
+Each event can use a system sound or a [sound pack](/claudette/features/sound-packs/):
 
-- **macOS**: System sounds from `/System/Library/Sounds/`
-- **Linux**: XDG sound theme sounds
-
-Select **None** to disable notification sounds.
+- **System sounds** — choose from your platform's sound library (macOS: `/System/Library/Sounds/`, Linux: XDG sound theme)
+- **Sound packs** — install custom sound bundles with random selection per event
+- **None** — disable sound for that event
 
 ### Notification Command
 

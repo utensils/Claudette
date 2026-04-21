@@ -53,6 +53,7 @@ export default defineConfig({
             { slug: 'features/remote-workspaces' },
             { slug: 'features/agent-configuration' },
             { slug: 'features/theming' },
+            { slug: 'features/sound-packs' },
             { slug: 'features/shell-integration' },
             { slug: 'features/keyboard-shortcuts' },
             { slug: 'features/per-repo-settings' },
