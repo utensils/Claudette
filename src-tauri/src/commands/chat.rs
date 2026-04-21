@@ -677,6 +677,27 @@ pub async fn send_chat_message(
         .and_then(|r| r.branch_rename_preferences.clone());
     let rename_ws_env = ws_env.clone();
 
+    // Atomically claim the one-shot auto-rename slot here — on the calling
+    // task's existing DB handle — so the spawned bridge doesn't need to
+    // reopen the database just to flip a flag, and so any SQLite error
+    // surfaces as a visible log rather than silently skipping the rename.
+    // The flag is a persistent per-workspace marker; a session that restarts
+    // for any reason (app reopen, stop_agent, spawn failure, `!got_init`
+    // early exit) can't re-trigger a rename on a later prompt because the
+    // claim has already been taken. The flag tracks the claim, not the
+    // outcome: a Haiku/git failure below intentionally does not release it.
+    let claimed_rename = if has_repo {
+        match db.claim_branch_auto_rename(&workspace_id) {
+            Ok(claimed) => claimed,
+            Err(e) => {
+                eprintln!("[chat] claim_branch_auto_rename failed for {workspace_id}: {e}");
+                false
+            }
+        }
+    } else {
+        false
+    };
+
     crate::tray::rebuild_tray(&app);
 
     // Bridge: read from mpsc receiver, emit Tauri events.
@@ -687,18 +708,6 @@ pub async fn send_chat_message(
     let repo_id_for_mcp = ws.repository_id.clone();
     drop(ws_env); // consumed by rename_ws_env; notification path rebuilds from DB
     tokio::spawn(async move {
-        // Auto-rename the branch via Haiku exactly once per workspace — on
-        // the first prompt. The gate is a persistent per-workspace flag
-        // (`workspaces.branch_auto_renamed`) claimed via a conditional
-        // UPDATE, so a session that restarts for any reason (app reopen,
-        // stop_agent, spawn failure, !got_init early exit) can't re-trigger
-        // a rename based on a later prompt. `claim_branch_auto_rename`
-        // returns true only for the caller that flips 0→1.
-        let claimed_rename = has_repo
-            && Database::open(&db_path)
-                .ok()
-                .and_then(|db| db.claim_branch_auto_rename(&ws_id).ok())
-                .unwrap_or(false);
         if claimed_rename {
             let ws_id2 = ws_id.clone();
             let wt_path2 = wt_path.clone();
