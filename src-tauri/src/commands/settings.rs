@@ -361,6 +361,48 @@ fn sound_packs_dir() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|h| h.join(".claudette").join("sound-packs"))
 }
 
+const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+
+fn load_sound_pack_manifest(pack_dir: &std::path::Path) -> Option<SoundPackManifest> {
+    let manifest_path = pack_dir.join("pack.json");
+    let meta = std::fs::metadata(&manifest_path).ok()?;
+    if meta.len() > MAX_MANIFEST_BYTES {
+        eprintln!(
+            "[sound-packs] Skipping {}: manifest too large ({} bytes)",
+            pack_dir.display(),
+            meta.len()
+        );
+        return None;
+    }
+    let content = std::fs::read_to_string(&manifest_path).ok()?;
+    match serde_json::from_str(&content) {
+        Ok(m) => Some(m),
+        Err(e) => {
+            eprintln!("[sound-packs] Skipping {}: {e}", pack_dir.display());
+            None
+        }
+    }
+}
+
+fn is_safe_pack_path(pack_dir: &std::path::Path, relative: &str) -> Option<std::path::PathBuf> {
+    let rel = std::path::Path::new(relative);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+    {
+        return None;
+    }
+    let candidate = pack_dir.join(rel);
+    let canonical = candidate.canonicalize().ok()?;
+    let canonical_base = pack_dir.canonicalize().ok()?;
+    if canonical.starts_with(&canonical_base) {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 #[tauri::command]
 pub async fn list_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -372,45 +414,14 @@ pub async fn list_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
 
         let mut packs = Vec::new();
         let entries = std::fs::read_dir(&packs_dir).map_err(|e| e.to_string())?;
-        const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
-            let manifest_path = path.join("pack.json");
-            if !manifest_path.exists() {
+            let Some(manifest) = load_sound_pack_manifest(&path) else {
                 continue;
-            }
-            match std::fs::metadata(&manifest_path) {
-                Ok(meta) if meta.len() > MAX_MANIFEST_BYTES => {
-                    eprintln!(
-                        "[sound-packs] Skipping {}: manifest too large ({} bytes)",
-                        path.display(),
-                        meta.len()
-                    );
-                    continue;
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("[sound-packs] Skipping {}: {e}", path.display());
-                    continue;
-                }
-            }
-            let content = match std::fs::read_to_string(&manifest_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("[sound-packs] Skipping {}: {e}", path.display());
-                    continue;
-                }
-            };
-            let manifest: SoundPackManifest = match serde_json::from_str(&content) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("[sound-packs] Skipping {}: {e}", path.display());
-                    continue;
-                }
             };
             let dir_name = path
                 .file_name()
@@ -421,7 +432,10 @@ pub async fn list_sound_packs() -> Result<Vec<SoundPackInfo>, String> {
                 .events
                 .iter()
                 .map(|(event, files)| {
-                    let valid = files.iter().filter(|f| path.join(f).exists()).count();
+                    let valid = files
+                        .iter()
+                        .filter(|f| is_safe_pack_path(&path, f).is_some_and(|p| p.exists()))
+                        .count();
                     (event.clone(), valid)
                 })
                 .filter(|(_, count)| *count > 0)
@@ -464,16 +478,13 @@ pub(crate) fn play_sound_file(path: &str) {
     }
 }
 
-/// Resolve a random audio file path from a sound pack for a given event.
 pub(crate) fn resolve_random_pack_sound_path(dir_name: &str, event: &str) -> Option<String> {
     let pack_dir = sound_packs_dir()?.join(dir_name);
-    let manifest_path = pack_dir.join("pack.json");
-    let content = std::fs::read_to_string(&manifest_path).ok()?;
-    let manifest: SoundPackManifest = serde_json::from_str(&content).ok()?;
+    let manifest = load_sound_pack_manifest(&pack_dir)?;
     let files = manifest.events.get(event)?;
     let valid_files: Vec<_> = files
         .iter()
-        .map(|f| pack_dir.join(f))
+        .filter_map(|f| is_safe_pack_path(&pack_dir, f))
         .filter(|p| p.exists())
         .collect();
     if valid_files.is_empty() {
@@ -484,9 +495,14 @@ pub(crate) fn resolve_random_pack_sound_path(dir_name: &str, event: &str) -> Opt
 }
 
 #[tauri::command]
-pub fn preview_pack_sound(dir_name: String, event: String) -> Result<(), String> {
-    let path = resolve_random_pack_sound_path(&dir_name, &event)
-        .ok_or_else(|| format!("No sounds found for event '{event}' in pack '{dir_name}'"))?;
+pub async fn preview_pack_sound(dir_name: String, event: String) -> Result<(), String> {
+    let dir = dir_name.clone();
+    let evt = event.clone();
+    let path =
+        tauri::async_runtime::spawn_blocking(move || resolve_random_pack_sound_path(&dir, &evt))
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("No sounds found for event '{event}' in pack '{dir_name}'"))?;
     play_sound_file(&path);
     Ok(())
 }

@@ -92,11 +92,16 @@ export function NotificationsSettings() {
     }
   };
 
-  const handlePreview = (eventName: string, sound: string) => {
-    if (sound.startsWith("pack:")) {
-      previewPackSound(sound.slice(5), eventName);
-    } else {
-      playNotificationSound(sound);
+  const handlePreview = async (eventName: string, sound: string) => {
+    try {
+      setError(null);
+      if (sound.startsWith("pack:")) {
+        await previewPackSound(sound.slice(5), eventName);
+      } else {
+        playNotificationSound(sound);
+      }
+    } catch (e) {
+      setError(String(e));
     }
   };
 
