@@ -61,6 +61,7 @@
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
+  min-width: max-content;
 }
 
 .hunkHeader {
@@ -117,8 +118,12 @@
 .lineContent {
   flex: 1;
   white-space: pre;
-  overflow-x: auto;
   padding-left: 4px;
+}
+
+.sbsCell .lineContent {
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* ---- Side-by-Side Mode ---- */

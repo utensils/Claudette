@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.17.0](https://github.com/utensils/claudette/compare/v0.16.0...v0.17.0) (2026-04-22)
+
+
+### Features
+
+* **chat:** honor 200k context window for non-[1m] model variants ([#343](https://github.com/utensils/claudette/issues/343)) ([4ef17ad](https://github.com/utensils/claudette/commit/4ef17ad0f0645f804ff5d71366ec44727b17fff9))
+* **chat:** redesign composer with pill toolbar and segmented context meter ([#348](https://github.com/utensils/claudette/issues/348)) ([75113ba](https://github.com/utensils/claudette/commit/75113ba9dc6e62430b1a949e4de52a5236b73c6e))
+* **chat:** support drag-and-drop and attachment of any file type ([#339](https://github.com/utensils/claudette/issues/339)) ([9251e7a](https://github.com/utensils/claudette/commit/9251e7a5a0f2ad5a798f1cd91990f57c3ad6afcb))
+* **metrics:** show total tokens on workspace cards with hover tooltips ([#346](https://github.com/utensils/claudette/issues/346)) ([027e8c0](https://github.com/utensils/claudette/commit/027e8c050503c02bc425d0afd809fbd5ae4c76fc))
+* **metrics:** token usage analytics on dashboard ([#345](https://github.com/utensils/claudette/issues/345)) ([3859189](https://github.com/utensils/claudette/commit/3859189b0f8d9d416b7ab78b7542c17e0e75b045))
+* **notifications:** per-event notification sound selection ([#333](https://github.com/utensils/claudette/issues/333)) ([2a1d9e5](https://github.com/utensils/claudette/commit/2a1d9e500ff7fb32a6fe4d77a70b524cd28f9f38))
+* **sidebar:** sort workspaces by SCM status in repo-grouped view ([#350](https://github.com/utensils/claudette/issues/350)) ([dd6d50b](https://github.com/utensils/claudette/commit/dd6d50b1e389037875caf839bfaef49284d527b9))
+
+
+### Bug Fixes
+
+* **chat:** gate first-turn auto-rename on persistent workspace flag ([#344](https://github.com/utensils/claudette/issues/344)) ([b3994ce](https://github.com/utensils/claudette/commit/b3994ce78dacb577a3370e4f7a85458e6f171a7f))
+* **diff:** don't overflow individual diff lines ([#347](https://github.com/utensils/claudette/issues/347)) ([f2cba74](https://github.com/utensils/claudette/commit/f2cba740f800dada63a078bed6ed417b4997dfba))
+* **settings:** prevent Escape from closing settings UI ([#338](https://github.com/utensils/claudette/issues/338)) ([8264c8b](https://github.com/utensils/claudette/commit/8264c8b2755baf9befb79c3413de1f0489cc1abf))
+
 ## [0.16.0](https://github.com/utensils/claudette/compare/v0.15.0...v0.16.0) (2026-04-21)
 
 
