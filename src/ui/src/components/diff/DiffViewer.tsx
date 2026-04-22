@@ -2,12 +2,32 @@ import { useEffect, useMemo } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { loadFileDiff } from "../../services/tauri";
 import { PanelToggles } from "../shared/PanelToggles";
+import { highlightLine, languageForFile } from "../../utils/syntaxHighlight";
 import type { DiffLine } from "../../types/diff";
 import styles from "./DiffViewer.module.css";
 
 interface SideBySideRow {
   left: DiffLine | null;
   right: DiffLine | null;
+}
+
+function LineContent({
+  content,
+  language,
+}: {
+  content: string;
+  language: string | null;
+}) {
+  const html = highlightLine(content, language);
+  if (html !== null) {
+    return (
+      <span
+        className={`${styles.lineContent} hljs`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+  return <span className={styles.lineContent}>{content}</span>;
 }
 
 /** Pair unified diff lines into side-by-side rows.
@@ -90,6 +110,11 @@ export function DiffViewer() {
     }));
   }, [diffContent]);
 
+  const language = useMemo(
+    () => languageForFile(diffSelectedFile),
+    [diffSelectedFile],
+  );
+
   return (
     <div className={styles.viewer}>
       <div className={styles.header} data-tauri-drag-region>
@@ -142,9 +167,7 @@ export function DiffViewer() {
                           ? "-"
                           : " "}
                     </span>
-                    <span className={styles.lineContent}>
-                      {line.content}
-                    </span>
+                    <LineContent content={line.content} language={language} />
                   </div>
                 ))}
               </div>
@@ -172,9 +195,10 @@ export function DiffViewer() {
                       <span className={styles.linePrefix}>
                         {row.left?.line_type === "Removed" ? "-" : row.left ? " " : ""}
                       </span>
-                      <span className={styles.lineContent}>
-                        {row.left?.content ?? ""}
-                      </span>
+                      <LineContent
+                        content={row.left?.content ?? ""}
+                        language={language}
+                      />
                     </div>
                     <div
                       className={`${styles.sbsCell} ${
@@ -191,9 +215,10 @@ export function DiffViewer() {
                       <span className={styles.linePrefix}>
                         {row.right?.line_type === "Added" ? "+" : row.right ? " " : ""}
                       </span>
-                      <span className={styles.lineContent}>
-                        {row.right?.content ?? ""}
-                      </span>
+                      <LineContent
+                        content={row.right?.content ?? ""}
+                        language={language}
+                      />
                     </div>
                   </div>
                 ))}
