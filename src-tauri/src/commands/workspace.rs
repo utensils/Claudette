@@ -156,6 +156,16 @@ pub async fn create_workspace(
 
     crate::tray::rebuild_tray(&app);
 
+    let app_state = app.state::<crate::state::AppState>();
+    let resolved = crate::tray::resolve_notification(
+        &db,
+        &app_state.cesp_playback,
+        crate::tray::NotificationEvent::SessionStart,
+    );
+    if resolved.sound != "None" {
+        crate::commands::settings::play_notification_sound(resolved.sound, Some(resolved.volume));
+    }
+
     Ok(CreateWorkspaceResult {
         workspace: ws,
         setup_result,

@@ -1145,17 +1145,20 @@ pub async fn send_chat_message(
                 // This runs on the Rust side so it works even when the webview
                 // is suspended (window hidden / close-to-tray).
                 let needs_attention_now = agents.get(&ws_id).is_some_and(|s| s.needs_attention);
+                let app_state = app.state::<crate::state::AppState>();
+                let viewing_this =
+                    app_state.viewing_workspace_id.read().await.as_deref() == Some(ws_id.as_str());
                 let window_focused = app
                     .get_webview_window("main")
                     .and_then(|w| w.is_focused().ok())
                     .unwrap_or(false);
-                // Skip if user is actively watching (window focused) or if this
-                // is an attention event (notify_attention already handled it).
-                if !window_focused
+                // Skip if user is actively viewing this workspace (window
+                // focused AND this workspace selected) or if this is an
+                // attention event (notify_attention already handled it).
+                if !(window_focused && viewing_this)
                     && !needs_attention_now
                     && let Ok(db) = Database::open(&db_path)
                 {
-                    let app_state = app.state::<crate::state::AppState>();
                     let resolved = crate::tray::resolve_notification(
                         &db,
                         &app_state.cesp_playback,

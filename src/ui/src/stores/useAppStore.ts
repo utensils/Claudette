@@ -34,6 +34,7 @@ import {
   getAnalyticsMetrics,
   getDashboardMetrics,
   getWorkspaceMetricsBatch,
+  setViewingWorkspace,
 } from "../services/tauri";
 import type { SlashCommand } from "../services/tauri";
 import type {
@@ -558,8 +559,10 @@ export const useAppStore = create<AppState>((set) => ({
         workspaceTerminalCommands: newWorkspaceTerminalCommands,
       };
     }),
-  selectWorkspace: (id) =>
-    set({ selectedWorkspaceId: id, rightSidebarTab: "changes" }),
+  selectWorkspace: (id) => {
+    set({ selectedWorkspaceId: id, rightSidebarTab: "changes" });
+    setViewingWorkspace(id).catch(() => {});
+  },
 
   // -- Chat --
   chatMessages: {},

@@ -651,6 +651,12 @@ export function setAppSetting(key: string, value: string): Promise<void> {
   return invoke("set_app_setting", { key, value });
 }
 
+export function setViewingWorkspace(
+  workspaceId: string | null,
+): Promise<void> {
+  return invoke("set_viewing_workspace", { workspaceId });
+}
+
 // -- Updater --
 
 export type UpdateChannel = "stable" | "nightly";

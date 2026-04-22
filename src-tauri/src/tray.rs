@@ -15,7 +15,6 @@ pub enum NotificationEvent {
     Finished,
     #[allow(dead_code)]
     Error,
-    #[allow(dead_code)]
     SessionStart,
 }
 
