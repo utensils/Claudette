@@ -243,6 +243,10 @@ export function NotificationsSettings() {
     }
   };
 
+  const isOpenPeon = soundSource === "openpeon";
+  const hasPacks = installed.length > 0;
+  const noPacks = isOpenPeon && !hasPacks;
+
   return (
     <div>
       <h2 className={styles.sectionTitle}>Notifications</h2>
@@ -260,7 +264,7 @@ export function NotificationsSettings() {
             <input
               type="radio"
               name="sound-source"
-              checked={soundSource === "system"}
+              checked={!isOpenPeon}
               onChange={() => handleSoundSourceChange("system")}
             />
             System sounds
@@ -269,7 +273,7 @@ export function NotificationsSettings() {
             <input
               type="radio"
               name="sound-source"
-              checked={soundSource === "openpeon"}
+              checked={isOpenPeon}
               onChange={() => handleSoundSourceChange("openpeon")}
             />
             Sound packs (OpenPeon)
@@ -277,34 +281,98 @@ export function NotificationsSettings() {
         </div>
       </div>
 
-      {/* 2. Active pack (OpenPeon only) */}
-      {soundSource === "openpeon" && (
-        <div className={styles.settingRow}>
-          <div className={styles.settingInfo}>
-            <div className={styles.settingLabel}>Active pack</div>
-            <div className={styles.settingDescription}>
-              {installed.length === 0
-                ? "No sound packs installed. Browse packs to get started."
-                : "Choose which installed sound pack to use."}
-            </div>
-          </div>
-          <div className={styles.settingControl}>
-            <select
-              className={styles.select}
-              value={activePack}
-              onChange={(e) => handlePackChange(e.target.value)}
-              disabled={installed.length === 0}
+      {/* 2. Mode-specific block */}
+      <div
+        className={`${styles.modeBlock} ${!isOpenPeon ? styles.modeBlockCollapsed : ""}`}
+      >
+        <div className={styles.modeBlockInner}>
+          {isOpenPeon && !hasPacks ? (
+            /* Mode B: empty-state card */
+            <div
+              className={styles.emptyStateCard}
+              onClick={() => setShowBrowser(true)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setShowBrowser(true);
+                }
+              }}
             >
-              {installed.length === 0 && <option value="">None</option>}
-              {installed.map((p) => (
-                <option key={p.name} value={p.name}>
-                  {p.display_name}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className={styles.emptyStateTitle}>
+                No sound packs installed yet
+              </div>
+              <div className={styles.emptyStateSubtitle}>
+                Browse 100+ community sound packs to customize your
+                notifications.
+              </div>
+              <span className={styles.emptyStateCta}>Browse packs →</span>
+            </div>
+          ) : isOpenPeon ? (
+            /* Mode C: active pack selector + browse link */
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <div className={styles.settingLabel}>Active pack</div>
+                <div className={styles.settingDescription}>
+                  Choose which installed sound pack to use.
+                </div>
+              </div>
+              <div className={styles.settingControl}>
+                <div className={styles.inlineControl}>
+                  <select
+                    className={styles.select}
+                    value={activePack}
+                    onChange={(e) => handlePackChange(e.target.value)}
+                  >
+                    {installed.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.display_name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className={styles.browseMoreLink}
+                    onClick={() => setShowBrowser(true)}
+                  >
+                    Browse more →
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {isOpenPeon && showBrowser && (
+            <>
+              <div
+                className={styles.settingRow}
+                style={{ borderBottom: "none", paddingBottom: 0 }}
+              >
+                <div className={styles.settingInfo}>
+                  <div className={styles.settingLabel}>
+                    Sound pack registry
+                  </div>
+                  <div className={styles.settingDescription}>
+                    Install, update, or remove sound packs from the OpenPeon
+                    registry.
+                  </div>
+                </div>
+                <div className={styles.settingControl}>
+                  <button
+                    className={styles.iconBtn}
+                    onClick={() => setShowBrowser(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <SoundPackBrowser
+                installed={installed}
+                onChanged={loadInstalled}
+              />
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 3. Volume */}
       <div className={styles.settingRow}>
@@ -354,21 +422,32 @@ export function NotificationsSettings() {
       </div>
 
       {/* 5. Event sounds */}
-      <div className={styles.settingRow} style={{ borderBottom: "none", paddingBottom: 4 }}>
+      <div
+        className={styles.settingRow}
+        style={{ borderBottom: "none", paddingBottom: 4 }}
+      >
         <div className={styles.settingInfo}>
           <div className={styles.settingLabel}>Event sounds</div>
           <div className={styles.settingDescription}>
-            Configure the sound played for each notification event.
+            {noPacks
+              ? "Install a pack to configure event sounds."
+              : "Configure the sound played for each notification event."}
           </div>
         </div>
       </div>
       {SOUND_EVENTS.map((event) => (
-        <div key={event.key} className={styles.settingRow} style={{ padding: "10px 0" }}>
+        <div
+          key={event.key}
+          className={`${styles.settingRow} ${noPacks ? styles.eventRowDisabled : ""}`}
+          style={{ padding: "10px 0" }}
+        >
           <div className={styles.settingInfo}>
             <div className={styles.settingLabel} style={{ fontSize: 13 }}>
               {event.label}
             </div>
-            <div className={styles.settingDescription}>{event.description}</div>
+            <div className={styles.settingDescription}>
+              {event.description}
+            </div>
           </div>
           <div className={styles.settingControl}>
             <div className={styles.inlineControl}>
@@ -387,19 +466,24 @@ export function NotificationsSettings() {
                   ))}
                 </select>
               ) : (
-                <span className={styles.settingDescription} style={{ margin: 0 }}>
-                  From active pack
+                <span
+                  className={styles.settingDescription}
+                  style={{ margin: 0 }}
+                >
+                  {noPacks ? "— no pack —" : "From active pack"}
                 </span>
               )}
-              <button
-                className={styles.iconBtn}
-                onClick={() => handlePreview(event)}
-                disabled={soundSource === "openpeon" && !activePack}
-                title={`Preview ${event.label}`}
-                aria-label={`Preview ${event.label} sound`}
-              >
-                &#9654;
-              </button>
+              {!noPacks && (
+                <button
+                  className={styles.iconBtn}
+                  onClick={() => handlePreview(event)}
+                  disabled={isOpenPeon && !activePack}
+                  title={`Preview ${event.label}`}
+                  aria-label={`Preview ${event.label} sound`}
+                >
+                  &#9654;
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -441,35 +525,6 @@ export function NotificationsSettings() {
           </div>
         </div>
       </div>
-
-      {/* 7. Sound pack registry (OpenPeon only) */}
-      {soundSource === "openpeon" && (
-        <>
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <div className={styles.settingLabel}>
-                {showBrowser ? "Sound pack registry" : "Browse & install packs"}
-              </div>
-              <div className={styles.settingDescription}>
-                {showBrowser
-                  ? "Install, update, or remove sound packs from the OpenPeon registry."
-                  : "Browse 100+ community sound packs."}
-              </div>
-            </div>
-            <div className={styles.settingControl}>
-              <button
-                className={styles.iconBtn}
-                onClick={() => setShowBrowser(!showBrowser)}
-              >
-                {showBrowser ? "Close" : "Browse packs"}
-              </button>
-            </div>
-          </div>
-          {showBrowser && (
-            <SoundPackBrowser installed={installed} onChanged={loadInstalled} />
-          )}
-        </>
-      )}
     </div>
   );
 }

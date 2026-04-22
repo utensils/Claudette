@@ -1156,3 +1156,95 @@
   margin-top: var(--space-1);
   max-width: 260px;
 }
+
+/* ── Mode-specific block (animated height) ── */
+
+.modeBlock {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 180ms ease;
+}
+
+.modeBlockCollapsed {
+  grid-template-rows: 0fr;
+}
+
+.modeBlockInner {
+  overflow: hidden;
+}
+
+/* ── Empty-state card (Mode B: sound packs, none installed) ── */
+
+.emptyStateCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 24px;
+  margin: 8px 0;
+  border-radius: var(--radius-lg);
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.20);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.emptyStateCard:hover {
+  background: rgba(139, 92, 246, 0.13);
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.emptyStateTitle {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.emptyStateSubtitle {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.emptyStateCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: rgba(139, 92, 246, 0.20);
+  color: #c4b5fd;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.15s ease;
+}
+
+.emptyStateCta:hover {
+  background: rgba(139, 92, 246, 0.30);
+}
+
+/* ── Browse more link (Mode C: text link next to pack dropdown) ── */
+
+.browseMoreLink {
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+  transition: color 0.12s ease;
+  white-space: nowrap;
+}
+
+.browseMoreLink:hover {
+  color: var(--text-muted);
+}
+
+/* ── De-emphasized event rows (Mode B: no pack installed) ── */
+
+.eventRowDisabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
