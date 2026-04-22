@@ -574,6 +574,18 @@
   font-family: var(--font-mono);
 }
 
+.compactingLabel {
+  color: var(--accent-primary);
+  font-size: 12px;
+  font-weight: 500;
+  animation: compactingPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes compactingPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 /* Tool activities — compact inline annotations */
 .toolActivities {
   display: flex;

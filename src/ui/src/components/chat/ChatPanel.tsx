@@ -985,9 +985,16 @@ export function ChatPanel() {
                   ref={processingRef}
                   className={styles.processing}
                   role="status"
-                  aria-label={`Processing, ${formatElapsed(elapsed)} elapsed`}
+                  aria-label={
+                    ws?.agent_status === "Compacting"
+                      ? `Compacting context, ${formatElapsed(elapsed)} elapsed`
+                      : `Processing, ${formatElapsed(elapsed)} elapsed`
+                  }
                 >
                   <span className={styles.spinner} aria-hidden="true">{SPINNER_FRAMES[spinnerIdx]}</span>
+                  {ws?.agent_status === "Compacting" && (
+                    <span className={styles.compactingLabel}>Compacting context…</span>
+                  )}
                   <span className={styles.elapsed}>{formatElapsed(elapsed)}</span>
                 </div>
               )}
