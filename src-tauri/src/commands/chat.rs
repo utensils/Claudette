@@ -1155,7 +1155,7 @@ pub async fn send_chat_message(
                     && !needs_attention_now
                     && let Ok(db) = Database::open(&db_path)
                 {
-                    let app_state = app_handle.state::<crate::state::AppState>();
+                    let app_state = app.state::<crate::state::AppState>();
                     let resolved = crate::tray::resolve_notification(
                         &db,
                         &app_state.cesp_playback,
