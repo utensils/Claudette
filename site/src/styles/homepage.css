@@ -352,13 +352,13 @@
   gap: 2rem;
 }
 
-.screenshot {
+.screenshots-grid .screenshot {
   margin: 0;
   display: flex;
   flex-direction: column;
 }
 
-.screenshot img {
+.screenshots-grid .screenshot img {
   width: 100%;
   height: auto;
   border-radius: 8px;
@@ -368,19 +368,19 @@
   display: block;
 }
 
-.screenshot figcaption {
+.screenshots-grid .screenshot figcaption {
   margin-top: 1rem;
   text-align: center;
 }
 
-.screenshot figcaption h3 {
+.screenshots-grid .screenshot figcaption h3 {
   font-size: 1.05rem;
   font-weight: 600;
   margin: 0 0 0.25rem;
   color: var(--sl-color-white);
 }
 
-.screenshot figcaption p {
+.screenshots-grid .screenshot figcaption p {
   font-size: 0.95rem;
   color: var(--sl-color-gray-3);
   line-height: 1.5;
