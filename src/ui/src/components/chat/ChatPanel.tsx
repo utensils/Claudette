@@ -1832,9 +1832,9 @@ function ChatInputArea({
   selectedWorkspaceId: string;
   repoId: string | undefined;
   projectPath: string | undefined;
-  historyRef: React.MutableRefObject<Record<string, string[]>>;
-  historyIndexRef: React.MutableRefObject<number>;
-  draftRef: React.MutableRefObject<string>;
+  historyRef: React.RefObject<Record<string, string[]>>;
+  historyIndexRef: React.RefObject<number>;
+  draftRef: React.RefObject<string>;
 }) {
   const chatInput = useAppStore(
     (s) => s.chatDrafts[selectedWorkspaceId] ?? "",
