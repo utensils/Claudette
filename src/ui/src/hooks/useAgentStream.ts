@@ -187,6 +187,28 @@ export function useAgentStream() {
             const inner = streamEvent.event;
             if ("type" in inner) {
               switch (inner.type) {
+                case "message_delta": {
+                  // Live meter update during streaming. Usage here is
+                  // per-assistant-message cumulative — input_tokens reflects
+                  // the prompt size for the current API call (grows across
+                  // tool-use iterations as context accumulates), and
+                  // output_tokens grows as the model generates. The `result`
+                  // event later overwrites this with iterations[0] for the
+                  // canonical per-call end-of-turn reading; this case just
+                  // fills the gap in between so the meter doesn't sit stale.
+                  if (inner.usage) {
+                    const { setLatestTurnUsage } = useAppStore.getState();
+                    setLatestTurnUsage(wsId, {
+                      inputTokens: inner.usage.input_tokens,
+                      outputTokens: inner.usage.output_tokens,
+                      cacheReadTokens:
+                        inner.usage.cache_read_input_tokens ?? undefined,
+                      cacheCreationTokens:
+                        inner.usage.cache_creation_input_tokens ?? undefined,
+                    });
+                  }
+                  break;
+                }
                 case "content_block_delta": {
                   const delta = inner.delta;
                   if ("type" in delta && delta.type === "text_delta") {
