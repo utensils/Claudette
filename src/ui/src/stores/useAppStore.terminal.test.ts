@@ -81,6 +81,8 @@ describe("terminal slice: removeTerminalTab", () => {
     useAppStore.setState({
       terminalTabs: {},
       activeTerminalTabId: {},
+      selectedWorkspaceId: null,
+      terminalPanelVisible: false,
     });
   });
 
