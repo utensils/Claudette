@@ -179,7 +179,10 @@ pub fn play_notification_sound(sound: String, volume: Option<f64>) {
     if sound == "None" {
         return;
     }
-    let vol = volume.unwrap_or(1.0).clamp(0.0, 1.0);
+    let vol = volume
+        .filter(|v| v.is_finite())
+        .unwrap_or(1.0)
+        .clamp(0.0, 1.0);
     if vol <= 0.0 {
         return;
     }

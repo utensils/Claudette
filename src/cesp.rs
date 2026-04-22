@@ -12,7 +12,7 @@ const META_FILE: &str = "_meta.json";
 const MAX_ALIAS_DEPTH: usize = 5;
 const NO_REPEAT_WINDOW: usize = 3;
 
-fn validate_pack_name(name: &str) -> Result<(), String> {
+pub fn validate_pack_name(name: &str) -> Result<(), String> {
     if name.is_empty()
         || name.contains('/')
         || name.contains('\\')
@@ -155,9 +155,11 @@ pub fn install_pack(
         return Err(format!("Failed to write {META_FILE}: {e}"));
     }
 
-    if pack_dir.exists() {
-        std::fs::remove_dir_all(&pack_dir)
-            .map_err(|e| format!("Failed to remove existing pack: {e}"))?;
+    if pack_dir.exists()
+        && let Err(e) = std::fs::remove_dir_all(&pack_dir)
+    {
+        cleanup_staging();
+        return Err(format!("Failed to remove existing pack: {e}"));
     }
     std::fs::rename(&staging_dir, &pack_dir).map_err(|e| {
         cleanup_staging();

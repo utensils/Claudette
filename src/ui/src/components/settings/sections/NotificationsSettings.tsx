@@ -168,10 +168,13 @@ export function NotificationsSettings() {
     }
   };
 
-  const handleVolumeChange = async (val: number) => {
+  const handleVolumeChange = (val: number) => {
     setVolume(val);
+  };
+
+  const handleVolumeCommit = async () => {
     try {
-      await setAppSetting("cesp_volume", (val / 100).toFixed(2));
+      await setAppSetting("cesp_volume", (volume / 100).toFixed(2));
     } catch {
       // best-effort
     }
@@ -320,6 +323,7 @@ export function NotificationsSettings() {
               max={100}
               value={volume}
               onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              onPointerUp={handleVolumeCommit}
               aria-label="Notification volume"
             />
             <span className={styles.volumeValue}>{volume}%</span>

@@ -104,6 +104,7 @@ pub async fn cesp_preview_sound(
         .and_then(|v| v.parse().ok())
         .unwrap_or(1.0);
 
+    cesp::validate_pack_name(&pack_name)?;
     let pack_dir = cesp::packs_dir().join(&pack_name);
     let manifest = cesp::load_manifest(&pack_dir)?;
     let sounds = cesp::resolve_category(&manifest, &category)
@@ -152,6 +153,9 @@ pub async fn cesp_play_for_event(
         .and_then(|v| v.parse().ok())
         .unwrap_or(1.0);
 
+    if cesp::validate_pack_name(&pack_name).is_err() {
+        return Ok(());
+    }
     let pack_dir = cesp::packs_dir().join(&pack_name);
     let manifest = match cesp::load_manifest(&pack_dir) {
         Ok(m) => m,
