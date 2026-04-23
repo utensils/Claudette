@@ -564,15 +564,34 @@
                 name = "build-win-arm64";
                 command = ''
                   set -euo pipefail
-                  # Rebuild the frontend — tauri-build bakes src/ui/dist/
-                  # into the .exe via include_str!(), so a stale dist
-                  # silently produces a stale binary.
+                  # Rebuild the frontend — tauri-codegen bakes src/ui/dist/
+                  # into the .exe at build time, so a stale dist silently
+                  # produces a stale binary.
                   (cd src/ui && bun install --frozen-lockfile && bun run build)
-                  # Cross-compile the Tauri binary. Default clang-cl mode:
-                  # the devshell's clangXwinShim rewrites /imsvc → -imsvc
-                  # so ring's direct-clang .S compile doesn't choke on the
-                  # MSVC-style flags cargo-xwin injects into CFLAGS.
+                  # Cross-compile the Tauri binary. Three things make this
+                  # the correct invocation:
+                  #
+                  # 1. --features tauri/custom-protocol — without this,
+                  #    tauri-build emits cargo:rustc-cfg=dev and the
+                  #    resulting binary loads http://localhost:1420 at
+                  #    runtime instead of the embedded asset protocol.
+                  #    `cargo tauri build` passes this automatically;
+                  #    plain `cargo build`/`cargo xwin build` do not.
+                  # 2. Default cargo-xwin mode (clang-cl) — the devshell's
+                  #    clangXwinShim rewrites /imsvc → -isystem so ring's
+                  #    direct-clang .S assembly compile doesn't choke on
+                  #    MSVC-style include flags leaked into CFLAGS.
+                  # 3. --release — tauri-codegen embeds the frontend only
+                  #    when the binary isn't in debug profile.
+                  #
+                  # We skip `cargo tauri build --runner` because tauri-cli
+                  # shells out to rustup to verify the target is installed,
+                  # and our fenix toolchain supplies the rust-std outside
+                  # rustup's knowledge. Driving `cargo xwin build` directly
+                  # sidesteps the check; asset embedding is handled by
+                  # the feature flag above.
                   cargo xwin build --release \
+                    --features tauri/custom-protocol \
                     --target aarch64-pc-windows-msvc -p claudette-tauri
                   echo ""
                   echo "Built: $PWD/target/aarch64-pc-windows-msvc/release/claudette.exe"
@@ -586,6 +605,7 @@
                   set -euo pipefail
                   (cd src/ui && bun install --frozen-lockfile && bun run build)
                   cargo xwin build --release \
+                    --features tauri/custom-protocol \
                     --target x86_64-pc-windows-msvc -p claudette-tauri
                   echo ""
                   echo "Built: $PWD/target/x86_64-pc-windows-msvc/release/claudette.exe"
