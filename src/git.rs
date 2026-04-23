@@ -242,14 +242,18 @@ pub async fn validate_repo(path: &str) -> Result<(), GitError> {
 /// checked-out branch). The last fallback is a best-effort guess for local-only
 /// repos with non-standard branch names — it may not reflect the true default
 /// if HEAD has been moved to a feature branch.
-pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
-    // Resolve the primary remote name (usually "origin", but could be "upstream"
-    // in fork-and-PR workflows).
-    let remote = run_git(repo_path, &["remote"])
-        .await
-        .ok()
-        .and_then(|out| out.lines().next().map(|l| l.to_string()))
-        .unwrap_or_else(|| "origin".to_string());
+pub async fn default_branch(
+    repo_path: &str,
+    remote_override: Option<&str>,
+) -> Result<String, GitError> {
+    let remote = match remote_override {
+        Some(r) => r.to_string(),
+        None => run_git(repo_path, &["remote"])
+            .await
+            .ok()
+            .and_then(|out| out.lines().next().map(|l| l.to_string()))
+            .unwrap_or_else(|| "origin".to_string()),
+    };
 
     // Try symbolic-ref of <remote>/HEAD first (returns e.g. "origin/main")
     if let Ok(remote_head) = run_git(
@@ -324,16 +328,19 @@ pub async fn default_branch(repo_path: &str) -> Result<String, GitError> {
 /// Resolves the first configured remote and runs `git fetch` with a 15-second
 /// timeout. Failures are logged but never propagated — callers can proceed with
 /// potentially stale refs when the network is unavailable.
-pub async fn fetch_remote(repo_path: &str) -> Result<(), GitError> {
-    let remote = match run_git(repo_path, &["remote"]).await {
-        Ok(output) => match output.lines().next() {
-            Some(r) => r.to_string(),
-            None => return Ok(()),
+pub async fn fetch_remote(repo_path: &str, remote_override: Option<&str>) -> Result<(), GitError> {
+    let remote = match remote_override {
+        Some(r) => r.to_string(),
+        None => match run_git(repo_path, &["remote"]).await {
+            Ok(output) => match output.lines().next() {
+                Some(r) => r.to_string(),
+                None => return Ok(()),
+            },
+            Err(e) => {
+                eprintln!("[git] failed to list remotes: {e}");
+                return Ok(());
+            }
         },
-        Err(e) => {
-            eprintln!("[git] failed to list remotes: {e}");
-            return Ok(());
-        }
     };
 
     // Spawn with kill_on_drop so the child is terminated if the timeout fires.
@@ -373,10 +380,14 @@ pub async fn create_worktree(
     repo_path: &str,
     branch_name: &str,
     worktree_path: &str,
+    base_branch_override: Option<&str>,
+    remote_override: Option<&str>,
 ) -> Result<String, GitError> {
-    // Fetch latest remote state before branching (best-effort).
-    let _ = fetch_remote(repo_path).await;
-    let base = default_branch(repo_path).await?;
+    let _ = fetch_remote(repo_path, remote_override).await;
+    let base = match base_branch_override {
+        Some(b) => b.to_string(),
+        None => default_branch(repo_path, remote_override).await?,
+    };
 
     // Verify the base ref points to a real commit (symbolic-ref HEAD returns
     // a branch name even on unborn branches with zero commits).
@@ -514,16 +525,41 @@ pub async fn rename_branch(path: &str, old_name: &str, new_name: &str) -> Result
     Ok(())
 }
 
-/// Get the remote URL for a repository (typically `origin`).
-pub async fn get_remote_url(repo_path: &str) -> Result<String, GitError> {
-    let output = run_git(repo_path, &["remote"]).await?;
-    let remote = output
-        .lines()
-        .next()
-        .map(|l| l.to_string())
-        .ok_or_else(|| GitError::CommandFailed("No remote configured".into()))?;
+/// Get the remote URL for a repository. When `remote_override` is provided,
+/// uses that remote name; otherwise falls back to the first configured remote.
+pub async fn get_remote_url(
+    repo_path: &str,
+    remote_override: Option<&str>,
+) -> Result<String, GitError> {
+    let remote = match remote_override {
+        Some(r) => r.to_string(),
+        None => {
+            let output = run_git(repo_path, &["remote"]).await?;
+            output
+                .lines()
+                .next()
+                .map(|l| l.to_string())
+                .ok_or_else(|| GitError::CommandFailed("No remote configured".into()))?
+        }
+    };
 
     run_git(repo_path, &["remote", "get-url", &remote]).await
+}
+
+/// List all configured remotes for a repository.
+pub async fn list_remotes(repo_path: &str) -> Result<Vec<String>, GitError> {
+    let output = run_git(repo_path, &["remote"]).await?;
+    Ok(output.lines().map(|l| l.to_string()).collect())
+}
+
+/// List all remote-tracking branches (e.g. "origin/main", "upstream/develop").
+pub async fn list_remote_tracking_branches(repo_path: &str) -> Result<Vec<String>, GitError> {
+    let output = run_git(repo_path, &["branch", "-r", "--format=%(refname:short)"]).await?;
+    Ok(output
+        .lines()
+        .filter(|l| !l.contains("/HEAD"))
+        .map(|l| l.to_string())
+        .collect())
 }
 
 /// Resolve HEAD to a commit hash for a worktree or repository. Works even in
@@ -848,7 +884,7 @@ mod tests {
         // Create a branch via create_worktree, then remove the worktree.
         let wt_dir = tempfile::tempdir().unwrap();
         let wt_path = wt_dir.path().to_str().unwrap();
-        create_worktree(repo_path, "claudette/restore-test", wt_path)
+        create_worktree(repo_path, "claudette/restore-test", wt_path, None, None)
             .await
             .unwrap();
         remove_worktree(repo_path, wt_path, true).await.unwrap();
@@ -898,7 +934,7 @@ mod tests {
         // Create a worktree which checks out the branch.
         let wt_dir = tempfile::tempdir().unwrap();
         let wt_path = wt_dir.path().to_str().unwrap();
-        create_worktree(repo_path, "claudette/feature", wt_path)
+        create_worktree(repo_path, "claudette/feature", wt_path, None, None)
             .await
             .unwrap();
 
@@ -939,7 +975,7 @@ mod tests {
         // fetch_remote should succeed (best-effort) even with no remote.
         let dir = setup_temp_repo().await;
         let path = dir.path().to_str().unwrap();
-        fetch_remote(path).await.unwrap();
+        fetch_remote(path, None).await.unwrap();
     }
 
     #[tokio::test]
@@ -949,7 +985,7 @@ mod tests {
         run_git(path, &["init", "-b", "main"]).await.unwrap();
 
         let wt = dir.path().join("worktree");
-        let err = create_worktree(path, "test-branch", wt.to_str().unwrap())
+        let err = create_worktree(path, "test-branch", wt.to_str().unwrap(), None, None)
             .await
             .unwrap_err();
         assert!(
@@ -974,7 +1010,7 @@ mod tests {
         run_git(path, &["add", "-A"]).await.unwrap();
         run_git(path, &["commit", "-m", "initial"]).await.unwrap();
 
-        let branch = default_branch(path).await.unwrap();
+        let branch = default_branch(path, None).await.unwrap();
         assert_eq!(branch, "trunk");
     }
 
@@ -982,7 +1018,7 @@ mod tests {
     async fn test_get_remote_url_no_remote() {
         let dir = setup_temp_repo().await;
         let path = dir.path().to_str().unwrap();
-        let err = get_remote_url(path).await.unwrap_err();
+        let err = get_remote_url(path, None).await.unwrap_err();
         assert!(
             err.to_string().contains("No remote configured"),
             "expected 'No remote configured', got: {err}"
@@ -1058,7 +1094,7 @@ mod tests {
         // create_worktree should fetch and branch from the latest commit.
         let wt_dir = tempfile::tempdir().unwrap();
         let wt_path = wt_dir.path().to_str().unwrap();
-        create_worktree(clone_path, "test/fresh-branch", wt_path)
+        create_worktree(clone_path, "test/fresh-branch", wt_path, None, None)
             .await
             .unwrap();
 
@@ -1087,12 +1123,24 @@ mod tests {
         // Add two linked worktrees.
         let wt1 = tempfile::tempdir().unwrap();
         let wt2 = tempfile::tempdir().unwrap();
-        create_worktree(repo_path, "feature-a", wt1.path().to_str().unwrap())
-            .await
-            .unwrap();
-        create_worktree(repo_path, "feature-b", wt2.path().to_str().unwrap())
-            .await
-            .unwrap();
+        create_worktree(
+            repo_path,
+            "feature-a",
+            wt1.path().to_str().unwrap(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        create_worktree(
+            repo_path,
+            "feature-b",
+            wt2.path().to_str().unwrap(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         let wts = list_worktrees(repo_path).await.unwrap();
         assert_eq!(wts.len(), 3);

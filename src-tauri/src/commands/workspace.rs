@@ -107,9 +107,10 @@ pub async fn create_workspace(
         .find(|r| r.id == repo_id)
         .ok_or("Repository not found")?;
 
-    // Capture setup script info before moving repo fields.
     let repo_path = repo.path.clone();
     let settings_setup_script = repo.setup_script.clone();
+    let repo_base_branch = repo.base_branch.clone();
+    let repo_default_remote = repo.default_remote.clone();
 
     let (prefix_mode, prefix_custom) = read_branch_prefix_settings(&db);
     let prefix = resolve_branch_prefix(&prefix_mode, &prefix_custom).await;
@@ -118,9 +119,15 @@ pub async fn create_workspace(
     let worktree_path: PathBuf = worktree_base.join(&repo.path_slug).join(&name);
     let worktree_path_str = worktree_path.to_string_lossy().to_string();
 
-    let actual_path = git::create_worktree(&repo_path, &branch_name, &worktree_path_str)
-        .await
-        .map_err(|e| e.to_string())?;
+    let actual_path = git::create_worktree(
+        &repo_path,
+        &branch_name,
+        &worktree_path_str,
+        repo.base_branch.as_deref(),
+        repo.default_remote.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     let ws = Workspace {
         id: uuid::Uuid::new_v4().to_string(),
@@ -151,6 +158,8 @@ pub async fn create_workspace(
             Path::new(&repo_path),
             Path::new(&actual_path),
             settings_setup_script.as_deref(),
+            repo_base_branch.as_deref(),
+            repo_default_remote.as_deref(),
         )
         .await
     };
@@ -227,6 +236,8 @@ async fn resolve_and_run_setup(
     repo_path: &Path,
     worktree_path: &Path,
     settings_script: Option<&str>,
+    base_branch: Option<&str>,
+    default_remote: Option<&str>,
 ) -> Option<SetupResult> {
     // 1. Check .claudette.json
     let (script, source) = match config::load_config(repo_path) {
@@ -266,9 +277,12 @@ async fn resolve_and_run_setup(
 
     // 2. Build workspace env vars now that we know a script will run.
     let repo_path_str = repo_path.to_string_lossy();
-    let default_branch = git::default_branch(&repo_path_str)
-        .await
-        .unwrap_or_else(|_| "main".to_string());
+    let default_branch = match base_branch {
+        Some(b) => b.to_string(),
+        None => git::default_branch(&repo_path_str, default_remote)
+            .await
+            .unwrap_or_else(|_| "main".to_string()),
+    };
     let ws_env = WorkspaceEnv::from_workspace(ws, &repo_path_str, default_branch);
 
     // 3. Execute the script in its own process group so we can kill the
@@ -412,6 +426,8 @@ pub async fn run_workspace_setup(
         Path::new(&repo.path),
         Path::new(worktree_path),
         repo.setup_script.as_deref(),
+        repo.base_branch.as_deref(),
+        repo.default_remote.as_deref(),
     )
     .await;
 

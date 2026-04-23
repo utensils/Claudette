@@ -61,7 +61,9 @@ export function updateRepositorySettings(
   setupScript: string | null,
   customInstructions: string | null,
   branchRenamePreferences: string | null,
-  setupScriptAutoRun: boolean
+  setupScriptAutoRun: boolean,
+  baseBranch: string | null,
+  defaultRemote: string | null
 ): Promise<void> {
   return invoke("update_repository_settings", {
     id,
@@ -71,6 +73,8 @@ export function updateRepositorySettings(
     customInstructions,
     branchRenamePreferences,
     setupScriptAutoRun,
+    baseBranch,
+    defaultRemote,
   });
 }
 
@@ -88,6 +92,14 @@ export function getRepoConfig(repoId: string): Promise<RepoConfigInfo> {
 
 export function getDefaultBranch(repoId: string): Promise<string | null> {
   return invoke("get_default_branch", { repoId });
+}
+
+export function listGitRemotes(repoId: string): Promise<string[]> {
+  return invoke("list_git_remotes", { repoId });
+}
+
+export function listGitRemoteBranches(repoId: string): Promise<string[]> {
+  return invoke("list_git_remote_branches", { repoId });
 }
 
 export function reorderRepositories(ids: string[]): Promise<void> {

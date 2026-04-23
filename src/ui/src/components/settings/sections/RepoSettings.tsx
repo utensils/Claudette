@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAppStore } from "../../../stores/useAppStore";
-import { updateRepositorySettings, getRepoConfig, getAppSetting, setAppSetting } from "../../../services/tauri";
+import { updateRepositorySettings, getRepoConfig, getAppSetting, setAppSetting, listGitRemotes, listGitRemoteBranches, getDefaultBranch } from "../../../services/tauri";
 import {
   loadRepositoryMcps,
   detectMcpServers,
@@ -41,11 +41,17 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
     repo?.branch_rename_preferences ?? ""
   );
   const [autoRunSetup, setAutoRunSetup] = useState(repo?.setup_script_auto_run ?? false);
+  const [baseBranch, setBaseBranch] = useState(repo?.base_branch ?? "");
+  const [defaultRemote, setDefaultRemote] = useState(repo?.default_remote ?? "");
+  const [availableRemotes, setAvailableRemotes] = useState<string[]>([]);
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repoConfig, setRepoConfig] = useState<RepoConfigInfo | null>(null);
   const [mcpServers, setMcpServers] = useState<SavedMcpServer[]>([]);
   const [archiveOnMerge, setArchiveOnMerge] = useState<"inherit" | "true" | "false">("inherit");
+  const defaultBranches = useAppStore((s) => s.defaultBranches);
+  const setDefaultBranches = useAppStore((s) => s.setDefaultBranches);
   const iconPopoverRef = useRef<HTMLDivElement>(null);
 
   // Reset local state only when switching to a different repo
@@ -57,6 +63,8 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
       setCustomInstructions(repo.custom_instructions ?? "");
       setBranchRenamePreferences(repo.branch_rename_preferences ?? "");
       setAutoRunSetup(repo.setup_script_auto_run ?? false);
+      setBaseBranch(repo.base_branch ?? "");
+      setDefaultRemote(repo.default_remote ?? "");
       setArchiveOnMerge("inherit");
       setError(null);
     }
@@ -66,6 +74,15 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
     getRepoConfig(repoId)
       .then(setRepoConfig)
       .catch(() => setRepoConfig(null));
+  }, [repoId]);
+
+  useEffect(() => {
+    listGitRemotes(repoId)
+      .then(setAvailableRemotes)
+      .catch(() => setAvailableRemotes([]));
+    listGitRemoteBranches(repoId)
+      .then(setAvailableBranches)
+      .catch(() => setAvailableBranches([]));
   }, [repoId]);
 
   useEffect(() => {
@@ -138,12 +155,16 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
   const customInstructionsRef = useRef(customInstructions);
   const branchRenamePreferencesRef = useRef(branchRenamePreferences);
   const autoRunSetupRef = useRef(autoRunSetup);
+  const baseBranchRef = useRef(baseBranch);
+  const defaultRemoteRef = useRef(defaultRemote);
   nameRef.current = name;
   iconRef.current = icon;
   setupScriptRef.current = setupScript;
   customInstructionsRef.current = customInstructions;
   branchRenamePreferencesRef.current = branchRenamePreferences;
   autoRunSetupRef.current = autoRunSetup;
+  baseBranchRef.current = baseBranch;
+  defaultRemoteRef.current = defaultRemote;
 
   const save = useCallback(
     async (updates: {
@@ -153,6 +174,8 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
       custom_instructions?: string | null;
       branch_rename_preferences?: string | null;
       setup_script_auto_run?: boolean;
+      base_branch?: string | null;
+      default_remote?: string | null;
     }) => {
       const finalName = (updates.name ?? nameRef.current).trim();
       if (!finalName) return;
@@ -176,6 +199,14 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
         updates.setup_script_auto_run !== undefined
           ? updates.setup_script_auto_run
           : autoRunSetupRef.current;
+      const finalBaseBranch =
+        updates.base_branch !== undefined
+          ? updates.base_branch
+          : baseBranchRef.current || null;
+      const finalDefaultRemote =
+        updates.default_remote !== undefined
+          ? updates.default_remote
+          : defaultRemoteRef.current || null;
 
       try {
         setError(null);
@@ -186,7 +217,9 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           finalScript,
           finalInstructions,
           finalBranchPrefs,
-          finalAutoRun
+          finalAutoRun,
+          finalBaseBranch,
+          finalDefaultRemote
         );
         updateRepo(repoId, {
           name: finalName,
@@ -195,12 +228,22 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           custom_instructions: finalInstructions,
           branch_rename_preferences: finalBranchPrefs,
           setup_script_auto_run: finalAutoRun,
+          base_branch: finalBaseBranch,
+          default_remote: finalDefaultRemote,
         });
+        // Refresh the displayed default branch when base_branch changes.
+        if (updates.base_branch !== undefined) {
+          getDefaultBranch(repoId).then((branch) => {
+            if (branch) {
+              setDefaultBranches({ ...defaultBranches, [repoId]: branch });
+            }
+          });
+        }
       } catch (e) {
         setError(String(e));
       }
     },
-    [repoId, updateRepo]
+    [repoId, updateRepo, defaultBranches, setDefaultBranches]
   );
 
   if (!repo) {
@@ -252,6 +295,60 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           onBlur={() => save({ name })}
           aria-label="Repository display name"
         />
+      </div>
+
+      <div className={styles.settingRow}>
+        <div className={styles.settingInfo}>
+          <div className={styles.settingLabel}>Branch new workspaces from</div>
+          <div className={styles.settingDescription}>
+            Each workspace is an isolated copy of your codebase.
+          </div>
+        </div>
+        <div className={styles.settingControl}>
+          <select
+            className={styles.select}
+            value={baseBranch}
+            onChange={(e) => {
+              const val = e.target.value;
+              setBaseBranch(val);
+              save({ base_branch: val || null });
+            }}
+          >
+            <option value="">Auto-detect</option>
+            {availableBranches.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className={styles.settingRow}>
+        <div className={styles.settingInfo}>
+          <div className={styles.settingLabel}>Remote origin</div>
+          <div className={styles.settingDescription}>
+            Where should we push, pull, and create PRs?
+          </div>
+        </div>
+        <div className={styles.settingControl}>
+          <select
+            className={styles.select}
+            value={defaultRemote}
+            onChange={(e) => {
+              const val = e.target.value;
+              setDefaultRemote(val);
+              save({ default_remote: val || null });
+            }}
+          >
+            <option value="">Auto-detect</option>
+            {availableRemotes.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className={styles.fieldGroup}>

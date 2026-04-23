@@ -48,7 +48,15 @@ pub async fn load_initial_data(state: State<'_, AppState>) -> Result<InitialData
         .map(|r| {
             let id = r.id.clone();
             let path = r.path.clone();
-            async move { git::default_branch(&path).await.ok().map(|b| (id, b)) }
+            let base = r.base_branch.clone();
+            let remote = r.default_remote.clone();
+            async move {
+                let branch = match base {
+                    Some(b) => Some(b),
+                    None => git::default_branch(&path, remote.as_deref()).await.ok(),
+                };
+                branch.map(|b| (id, b))
+            }
         })
         .collect();
     let branch_results = futures::future::join_all(branch_futures).await;

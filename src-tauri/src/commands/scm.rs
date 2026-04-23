@@ -113,7 +113,7 @@ pub async fn get_scm_provider(
     repo_id: String,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
-    let (manual_override, repo_path) = {
+    let (manual_override, repo_path, default_remote) = {
         let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
         let key = format!("repo:{repo_id}:scm_provider");
         let manual = db.get_app_setting(&key).map_err(|e| e.to_string())?;
@@ -121,7 +121,7 @@ pub async fn get_scm_provider(
             .get_repository(&repo_id)
             .map_err(|e| e.to_string())?
             .ok_or("Repository not found")?;
-        (manual, repo.path)
+        (manual, repo.path, repo.default_remote)
     };
 
     if let Some(ref provider) = manual_override
@@ -130,7 +130,9 @@ pub async fn get_scm_provider(
         return Ok(Some(provider.clone()));
     }
 
-    let remote_url = claudette::git::get_remote_url(&repo_path).await.ok();
+    let remote_url = claudette::git::get_remote_url(&repo_path, default_remote.as_deref())
+        .await
+        .ok();
     if let Some(url) = remote_url {
         let registry = state.plugins.read().await;
         return Ok(detect::detect_provider(&url, &registry.plugins));
@@ -160,19 +162,25 @@ pub async fn load_scm_detail(
 ) -> Result<ScmDetail, String> {
     let ctx = lookup_workspace_context(&state.db_path, &workspace_id).await?;
 
-    let provider_name =
-        match resolve_provider_async(&ctx.manual_override, &ctx.repo.path, &state).await {
-            Some(name) => name,
-            None => {
-                return Ok(ScmDetail {
-                    workspace_id,
-                    pull_request: None,
-                    ci_checks: vec![],
-                    provider: None,
-                    error: None,
-                });
-            }
-        };
+    let provider_name = match resolve_provider_async(
+        &ctx.manual_override,
+        &ctx.repo.path,
+        ctx.repo.default_remote.as_deref(),
+        &state,
+    )
+    .await
+    {
+        Some(name) => name,
+        None => {
+            return Ok(ScmDetail {
+                workspace_id,
+                pull_request: None,
+                ci_checks: vec![],
+                provider: None,
+                error: None,
+            });
+        }
+    };
 
     let ws_info = make_workspace_info(&ctx.workspace, &ctx.repo);
     let cache_key = (ctx.repo.id.clone(), ctx.workspace.branch_name.clone());
@@ -280,9 +288,14 @@ pub async fn scm_create_pr(
 ) -> Result<PullRequest, String> {
     let ctx = lookup_workspace_context(&state.db_path, &workspace_id).await?;
 
-    let provider = resolve_provider_async(&ctx.manual_override, &ctx.repo.path, &state)
-        .await
-        .ok_or("No SCM provider configured for this repository")?;
+    let provider = resolve_provider_async(
+        &ctx.manual_override,
+        &ctx.repo.path,
+        ctx.repo.default_remote.as_deref(),
+        &state,
+    )
+    .await
+    .ok_or("No SCM provider configured for this repository")?;
 
     let ws_info = make_workspace_info(&ctx.workspace, &ctx.repo);
     let args = serde_json::json!({
@@ -321,9 +334,14 @@ pub async fn scm_merge_pr(
 ) -> Result<serde_json::Value, String> {
     let ctx = lookup_workspace_context(&state.db_path, &workspace_id).await?;
 
-    let provider = resolve_provider_async(&ctx.manual_override, &ctx.repo.path, &state)
-        .await
-        .ok_or("No SCM provider configured for this repository")?;
+    let provider = resolve_provider_async(
+        &ctx.manual_override,
+        &ctx.repo.path,
+        ctx.repo.default_remote.as_deref(),
+        &state,
+    )
+    .await
+    .ok_or("No SCM provider configured for this repository")?;
 
     let ws_info = make_workspace_info(&ctx.workspace, &ctx.repo);
     let args = serde_json::json!({"number": pr_number});
@@ -366,6 +384,7 @@ pub async fn scm_refresh(
 async fn resolve_provider_async(
     manual_override: &Option<String>,
     repo_path: &str,
+    default_remote: Option<&str>,
     state: &State<'_, AppState>,
 ) -> Option<String> {
     if let Some(provider) = manual_override
@@ -374,7 +393,9 @@ async fn resolve_provider_async(
         return Some(provider.clone());
     }
 
-    let remote_url = claudette::git::get_remote_url(repo_path).await.ok()?;
+    let remote_url = claudette::git::get_remote_url(repo_path, default_remote)
+        .await
+        .ok()?;
     let registry = state.plugins.read().await;
     detect::detect_provider(&remote_url, &registry.plugins)
 }
@@ -401,6 +422,7 @@ fn make_workspace_info(
 async fn resolve_provider_for_polling(
     manual_override: &Option<String>,
     repo_path: &str,
+    default_remote: Option<&str>,
     app_state: &AppState,
 ) -> Option<String> {
     if let Some(provider) = manual_override
@@ -409,7 +431,9 @@ async fn resolve_provider_for_polling(
         return Some(provider.clone());
     }
 
-    let remote_url = claudette::git::get_remote_url(repo_path).await.ok()?;
+    let remote_url = claudette::git::get_remote_url(repo_path, default_remote)
+        .await
+        .ok()?;
     let registry = app_state.plugins.read().await;
     detect::detect_provider(&remote_url, &registry.plugins)
 }
@@ -420,8 +444,13 @@ async fn poll_workspace_scm(app_state: &AppState, workspace_id: &str) -> Option<
         .await
         .ok()?;
 
-    let provider_name =
-        resolve_provider_for_polling(&ctx.manual_override, &ctx.repo.path, app_state).await?;
+    let provider_name = resolve_provider_for_polling(
+        &ctx.manual_override,
+        &ctx.repo.path,
+        ctx.repo.default_remote.as_deref(),
+        app_state,
+    )
+    .await?;
 
     let ws_info = make_workspace_info(&ctx.workspace, &ctx.repo);
     let cache_key = (ctx.repo.id.clone(), ctx.workspace.branch_name.clone());
@@ -617,13 +646,14 @@ async fn auto_archive_workspace(
     pr_number: Option<u64>,
 ) {
     // All DB work in a block (Database is not Send — must not hold across .await)
-    let archive_info: Option<(
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        crate::tray::ResolvedSound,
-    )> = {
+    struct ArchiveInfo {
+        ws_id: String,
+        ws_name: String,
+        worktree_path: Option<String>,
+        repo_path: Option<String>,
+        resolved: crate::tray::ResolvedSound,
+    }
+    let archive_info: Option<ArchiveInfo> = {
         let db = match Database::open(&app_state.db_path) {
             Ok(db) => db,
             Err(e) => {
@@ -660,16 +690,23 @@ async fn auto_archive_workspace(
             None,
         );
 
-        Some((
-            ws.id.clone(),
-            ws.name.clone(),
-            ws.worktree_path.clone(),
+        Some(ArchiveInfo {
+            ws_id: ws.id.clone(),
+            ws_name: ws.name.clone(),
+            worktree_path: ws.worktree_path.clone(),
             repo_path,
             resolved,
-        ))
+        })
     };
 
-    let Some((ws_id, ws_name, wt_path, repo_path, resolved)) = archive_info else {
+    let Some(ArchiveInfo {
+        ws_id,
+        ws_name,
+        worktree_path: wt_path,
+        repo_path,
+        resolved,
+    }) = archive_info
+    else {
         return;
     };
 

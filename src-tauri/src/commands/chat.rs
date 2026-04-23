@@ -39,16 +39,21 @@ async fn fire_completion_notification(
             .ok()
             .and_then(|wss| wss.into_iter().find(|w| w.id == ws_id))
     {
-        let repo_path = db
+        let repo = db
             .get_repository(&fresh_ws.repository_id)
             .ok()
-            .flatten()
-            .map(|r| r.path)
-            .unwrap_or_default();
-        let default_branch = git::default_branch(&repo_path)
+            .flatten();
+        let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or_default();
+        let default_branch = match repo.as_ref().and_then(|r| r.base_branch.as_deref()) {
+            Some(b) => b.to_string(),
+            None => git::default_branch(
+                repo_path,
+                repo.as_ref().and_then(|r| r.default_remote.as_deref()),
+            )
             .await
-            .unwrap_or_else(|_| "main".into());
-        let fresh_env = WorkspaceEnv::from_workspace(&fresh_ws, &repo_path, default_branch);
+            .unwrap_or_else(|_| "main".into()),
+        };
+        let fresh_env = WorkspaceEnv::from_workspace(&fresh_ws, repo_path, default_branch);
         if let Some(mut command) =
             crate::commands::settings::build_notification_command(&cmd, &fresh_env)
             && let Ok(child) = command.spawn()
@@ -555,11 +560,16 @@ pub async fn send_chat_message(
     )
     .await;
 
-    // Build workspace env vars for the agent subprocess.
     let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
-    let default_branch = git::default_branch(repo_path)
+    let default_branch = match repo.as_ref().and_then(|r| r.base_branch.as_deref()) {
+        Some(b) => b.to_string(),
+        None => git::default_branch(
+            repo_path,
+            repo.as_ref().and_then(|r| r.default_remote.as_deref()),
+        )
         .await
-        .unwrap_or_else(|_| "main".to_string());
+        .unwrap_or_else(|_| "main".to_string()),
+    };
     let ws_env = WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
 
     // Use persistent session to keep MCP servers alive across turns.
@@ -1592,9 +1602,12 @@ pub async fn clear_conversation(
             .iter()
             .find(|r| r.id == ws.repository_id)
             .ok_or("Repository not found")?;
-        let base = git::default_branch(&repo.path)
-            .await
-            .map_err(|e| e.to_string())?;
+        let base = match repo.base_branch.as_deref() {
+            Some(b) => b.to_string(),
+            None => git::default_branch(&repo.path, repo.default_remote.as_deref())
+                .await
+                .map_err(|e| e.to_string())?,
+        };
         let merge_base = claudette::diff::merge_base(wt, &ws.branch_name, &base)
             .await
             .map_err(|e| e.to_string())?;

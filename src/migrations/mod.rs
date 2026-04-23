@@ -134,4 +134,9 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("20260421202734_deleted_workspace_summaries_tokens_and_chat_index.sql"),
         legacy_version: Some(24),
     },
+    Migration {
+        id: "20260423000001_repository_base_branch_and_default_remote",
+        sql: include_str!("20260423000001_repository_base_branch_and_default_remote.sql"),
+        legacy_version: None,
+    },
 ];

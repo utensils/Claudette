@@ -341,6 +341,8 @@ fn main() {
             commands::repository::remove_repository,
             commands::repository::get_repo_config,
             commands::repository::get_default_branch,
+            commands::repository::list_git_remotes,
+            commands::repository::list_git_remote_branches,
             commands::repository::reorder_repositories,
             commands::repository::set_setup_script_auto_run,
             // Workspace
