@@ -1094,7 +1094,7 @@ export function ChatPanel() {
               )}
 
               {activeSessionId && (hasStreaming || hasPendingTypewriter) && (
-                <StreamingMessage workspaceId={activeSessionId} searchQuery={searchQuery} />
+                <StreamingMessage workspaceId={activeSessionId} isStreaming={isRunning ?? false} searchQuery={searchQuery} />
               )}
 
               {activeSessionId && activitiesCount > 0 && (
@@ -1325,9 +1325,11 @@ const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
  */
 const StreamingMessage = memo(function StreamingMessage({
   workspaceId,
+  isStreaming,
   searchQuery,
 }: {
   workspaceId: string;
+  isStreaming: boolean;
   searchQuery: string;
 }) {
   const streaming = useAppStore(
@@ -1335,9 +1337,6 @@ const StreamingMessage = memo(function StreamingMessage({
   );
   const pendingText = useAppStore(
     (s) => s.pendingTypewriter[workspaceId]?.text ?? ""
-  );
-  const isStreaming = useAppStore(
-    (s) => isAgentBusy(s.workspaces.find((w) => w.id === workspaceId)?.agent_status)
   );
   const finishTypewriterDrain = useAppStore((s) => s.finishTypewriterDrain);
   const { handleContentChanged } = useContext(ScrollContext);
