@@ -39,10 +39,7 @@ async fn fire_completion_notification(
             .ok()
             .and_then(|wss| wss.into_iter().find(|w| w.id == ws_id))
     {
-        let repo = db
-            .get_repository(&fresh_ws.repository_id)
-            .ok()
-            .flatten();
+        let repo = db.get_repository(&fresh_ws.repository_id).ok().flatten();
         let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or_default();
         let default_branch = match repo.as_ref().and_then(|r| r.base_branch.as_deref()) {
             Some(b) => b.to_string(),
