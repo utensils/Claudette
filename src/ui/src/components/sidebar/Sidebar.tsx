@@ -313,6 +313,13 @@ export const Sidebar = memo(function Sidebar() {
             {spinnerChar}
           </span>
         ) : (() => {
+          if (ws.status === "Archived") {
+            return (
+              <span className={styles.statusIcon} title="Archived">
+                <Archive size={14} style={{ color: "var(--text-dim)" }} />
+              </span>
+            );
+          }
           const summary = scmSummary[ws.id];
           if (summary?.hasPr) {
             const prState = summary.prState;
