@@ -403,6 +403,19 @@
   gap: 6px;
 }
 
+.wsNameInput {
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--chat-input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: 4px;
+  padding: 0 4px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .badgeDone,
 .badgePlan,
 .badgeAsk {

@@ -134,6 +134,10 @@ export function restoreWorkspace(id: string): Promise<string> {
   return invoke("restore_workspace", { id });
 }
 
+export function renameWorkspace(id: string, newName: string): Promise<void> {
+  return invoke("rename_workspace", { id, newName });
+}
+
 export function deleteWorkspace(id: string): Promise<void> {
   return invoke("delete_workspace", { id });
 }
