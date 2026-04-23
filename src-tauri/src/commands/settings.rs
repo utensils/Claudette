@@ -121,6 +121,12 @@ pub async fn list_system_fonts() -> Vec<String> {
     if let Some(cached) = SYSTEM_FONTS.get() {
         return cached.clone();
     }
+    // `mut` is only reached from the per-target blocks below; Windows has
+    // neither branch, so the binding stays immutable there.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux")),
+        allow(unused_mut)
+    )]
     let mut families = std::collections::BTreeSet::<String>::new();
 
     #[cfg(target_os = "macos")]

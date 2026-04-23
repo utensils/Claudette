@@ -481,6 +481,7 @@ pub fn play_audio_file(path: &Path, volume: f64) {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn spawn_and_reap(mut child: std::process::Child) {
     std::thread::spawn(move || {
         let _ = child.wait();

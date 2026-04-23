@@ -151,6 +151,39 @@
             pkgs.libiconv
           ];
 
+          # Wrapper around `clang` that rewrites the MSVC-style `/imsvc`
+          # include flag to the GNU-driver-compatible `-isystem` form.
+          #
+          # cargo-xwin's default (and correct-for-STL) mode is clang-cl: it
+          # injects `/imsvc <path>` pairs into CFLAGS_<target> so that clang-cl
+          # sees the MSVC CRT + SDK + C++ STL under xwin/crt/include (which
+          # actually contains <iterator>, <vector>, ... — the alternative
+          # "sysroot" mode ships a sysroot whose include/c++/stl/ directory
+          # is empty on aarch64, so clang-cl mode is the only workable one).
+          #
+          # The snag: `ring`'s build script compiles Windows ARM64 `.S`
+          # assembly by invoking `clang` directly (not clang-cl, because
+          # clang-cl doesn't parse GAS syntax). The GNU-driver `clang` then
+          # rejects `/imsvc` (treated as a filename) and also rejects
+          # `-imsvc` (clang-cl-only spelling). The only spelling accepted by
+          # both drivers is `-isystem`, which carries the same semantics we
+          # need here (mark the directory as a system header root, suppress
+          # diagnostics from headers within it).
+          #
+          # Wrapping `clang` specifically (not clang-cl, not clang++) is
+          # sufficient because that is the exact binary ring shells out to
+          # for the .S pregenerated files.
+          clangXwinShim = pkgs.writeShellScriptBin "clang" ''
+            args=()
+            for arg in "$@"; do
+              case "$arg" in
+                /imsvc) args+=("-isystem") ;;
+                *) args+=("$arg") ;;
+              esac
+            done
+            exec ${pkgs.llvmPackages.clang-unwrapped}/bin/clang "''${args[@]}"
+          '';
+
           # Linux native deps for webkit + GTK stack.
           # NOTE: cairo / pango / harfbuzz / atk / gdk-pixbuf are propagated by
           # gtk3, so nixpkgs' pkg-config setup hook picks them up automatically
@@ -313,7 +346,13 @@
               # as the archiver; rust-lld is bundled with the fenix rustc
               # above, so no separate lld package is needed.
               #
-              # We intentionally use clang-unwrapped here rather than
+              # clangXwinShim wraps plain `clang` (see its definition above)
+              # to rewrite `/imsvc` → `-imsvc`; `lib.hiPrio` lets it win the
+              # buildEnv symlink conflict over clang-unwrapped's own
+              # `bin/clang`, while clang-unwrapped's other binaries
+              # (clang-cl, clang++, ...) pass through unchanged.
+              #
+              # We intentionally use clang-unwrapped rather than
               # llvmPackages.clang: the cc-wrapper variant only exposes the
               # `clang` / `clang++` entry points and hides the `clang-cl`
               # symlink that cargo-xwin looks up on PATH. llvmPackages.llvm
@@ -322,6 +361,7 @@
               # (`strip`, `ar`, ...) collide with same-named symlinks
               # elsewhere in the devshell's buildEnv.
               pkgs.cargo-xwin
+              (lib.hiPrio clangXwinShim)
               pkgs.llvmPackages.clang-unwrapped
               pkgs.llvmPackages.llvm
             ]
@@ -528,9 +568,12 @@
                   # into the .exe via include_str!(), so a stale dist
                   # silently produces a stale binary.
                   (cd src/ui && bun install --frozen-lockfile && bun run build)
-                  # Cross-compile the Tauri binary. cargo-xwin handles
-                  # MS CRT + SDK download, linker, and include paths.
-                  cargo xwin build --release --target aarch64-pc-windows-msvc -p claudette-tauri
+                  # Cross-compile the Tauri binary. Default clang-cl mode:
+                  # the devshell's clangXwinShim rewrites /imsvc → -imsvc
+                  # so ring's direct-clang .S compile doesn't choke on the
+                  # MSVC-style flags cargo-xwin injects into CFLAGS.
+                  cargo xwin build --release \
+                    --target aarch64-pc-windows-msvc -p claudette-tauri
                   echo ""
                   echo "Built: $PWD/target/aarch64-pc-windows-msvc/release/claudette.exe"
                 '';
@@ -542,7 +585,8 @@
                 command = ''
                   set -euo pipefail
                   (cd src/ui && bun install --frozen-lockfile && bun run build)
-                  cargo xwin build --release --target x86_64-pc-windows-msvc -p claudette-tauri
+                  cargo xwin build --release \
+                    --target x86_64-pc-windows-msvc -p claudette-tauri
                   echo ""
                   echo "Built: $PWD/target/x86_64-pc-windows-msvc/release/claudette.exe"
                 '';
