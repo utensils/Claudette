@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::process::Command as TokioCommand;
 
 use claudette::agent;
@@ -155,6 +155,16 @@ pub async fn create_workspace(
     };
 
     crate::tray::rebuild_tray(&app);
+
+    let app_state = app.state::<crate::state::AppState>();
+    let resolved = crate::tray::resolve_notification(
+        &db,
+        &app_state.cesp_playback,
+        crate::tray::NotificationEvent::SessionStart,
+    );
+    if resolved.sound != "None" {
+        crate::commands::settings::play_notification_sound(resolved.sound, Some(resolved.volume));
+    }
 
     Ok(CreateWorkspaceResult {
         workspace: ws,

@@ -561,8 +561,9 @@ export const useAppStore = create<AppState>((set) => ({
         workspaceTerminalCommands: newWorkspaceTerminalCommands,
       };
     }),
-  selectWorkspace: (id) =>
-    set({ selectedWorkspaceId: id, rightSidebarTab: "changes" }),
+  selectWorkspace: (id) => {
+    set({ selectedWorkspaceId: id, rightSidebarTab: "changes" });
+  },
 
   // -- Chat --
   chatMessages: {},
