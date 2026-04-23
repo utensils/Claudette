@@ -296,7 +296,7 @@ export function ChatPanel() {
   );
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    if (!isRunning || !promptStartTime) return;
+    if (!isRunning || promptStartTime == null) return;
     setElapsed(Math.floor((Date.now() - promptStartTime) / 1000));
     setSpinnerIdx(0);
     const interval = setInterval(() => {
