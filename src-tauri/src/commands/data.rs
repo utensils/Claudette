@@ -159,7 +159,7 @@ pub async fn load_initial_data(state: State<'_, AppState>) -> Result<InitialData
         .collect();
 
     let last_messages = db.last_message_per_workspace().map_err(|e| e.to_string())?;
-    let scm_cache = db.load_all_scm_status_cache().unwrap_or_default();
+    let scm_cache = db.load_all_scm_status_cache().map_err(|e| e.to_string())?;
 
     Ok(InitialData {
         repositories,

@@ -60,7 +60,7 @@ function App() {
             hasPr: pr !== null,
             prState: pr?.state ?? null,
             ciState: pr?.ci_status ?? null,
-            lastUpdated: new Date(row.fetched_at + "Z").getTime(),
+            lastUpdated: new Date(row.fetched_at.replace(" ", "T") + "Z").getTime(),
           });
         } catch {
           // Corrupted cache entry — skip silently, will be refreshed by polling.
