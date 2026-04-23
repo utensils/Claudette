@@ -72,6 +72,7 @@ export function AppearanceSettings() {
   }, []);
 
   const handleModeChange = async (mode: "light" | "dark" | "system") => {
+    if (availableThemes.length === 0) return;
     const systemIsDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const effectiveId =
       mode === "system" ? (systemIsDark ? themeDark : themeLight) :

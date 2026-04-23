@@ -1268,7 +1268,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSystemFonts: (fonts) => set({ systemFonts: fonts }),
   currentThemeId: DEFAULT_THEME_ID,
   setCurrentThemeId: (id) => set({ currentThemeId: id }),
-  themeMode: "dark" as "light" | "dark" | "system",
+  themeMode: "dark",
   setThemeMode: (mode) => set({ themeMode: mode }),
   themeDark: DEFAULT_THEME_ID,
   setThemeDark: (id) => set({ themeDark: id }),

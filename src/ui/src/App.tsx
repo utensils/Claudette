@@ -72,7 +72,11 @@ function App() {
           getAppSetting("theme_light"),
           getAppSetting("theme"),
         ]);
-        const mode = (themeModeVal ?? "dark") as "light" | "dark" | "system";
+        const rawMode = themeModeVal ?? "dark";
+        const mode: "light" | "dark" | "system" =
+          rawMode === "light" || rawMode === "dark" || rawMode === "system"
+            ? rawMode
+            : "dark";
         const darkId = darkIdVal ?? legacyThemeVal ?? "default-dark";
         const lightId = lightIdVal ?? "default-light";
 
@@ -269,12 +273,15 @@ function App() {
   // Listen for OS light/dark changes and switch theme when mode is "system".
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    let generation = 0;
     const handleChange = async (e: MediaQueryListEvent) => {
       const state = useAppStore.getState();
       if (state.themeMode !== "system") return;
       const effectiveId = e.matches ? state.themeDark : state.themeLight;
+      const token = ++generation;
       try {
         const themes = await loadAllThemes();
+        if (token !== generation) return;
         const theme = findTheme(themes, effectiveId);
         applyTheme(theme);
         applyUserFonts(state.fontFamilySans, state.fontFamilyMono, state.uiFontSize);
