@@ -1389,7 +1389,10 @@ describe("removeWorkspace", () => {
       workspaces: [makeWorkspace("ws-a"), makeWorkspace("ws-b")],
       selectedWorkspaceId: "ws-a",
       unreadCompletions: new Set(["ws-a", "ws-b"]),
-      terminalTabs: { "ws-a": [{ id: 1, label: "shell" }], "ws-b": [{ id: 2, label: "shell" }] },
+      terminalTabs: {
+        "ws-a": [{ id: 1, workspace_id: "ws-a", title: "shell", is_script_output: false, sort_order: 1, created_at: "" }],
+        "ws-b": [{ id: 2, workspace_id: "ws-b", title: "shell", is_script_output: false, sort_order: 1, created_at: "" }],
+      },
       activeTerminalTabId: { "ws-a": 1, "ws-b": 2 },
       workspaceTerminalCommands: {
         "ws-a": { command: "ls", isRunning: false, exitCode: 0 },
