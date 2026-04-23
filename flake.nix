@@ -523,37 +523,30 @@
               {
                 name = "build-win-arm64";
                 command = ''
-                  # TODO(you): implement — this is the first Windows
-                  # cross-build command. arm64 is the initial test target.
-                  #
-                  # Wiring already in place:
-                  #   - cargo-xwin is on PATH and XWIN_ACCEPT_LICENSE=1 is set,
-                  #     so `cargo xwin build --target aarch64-pc-windows-msvc ...`
-                  #     will fetch MS CRT + SDK on first use (~few hundred MB,
-                  #     cached under ~/.cache/cargo-xwin) and handle linker +
-                  #     include paths automatically.
-                  #   - rust-std for aarch64-pc-windows-msvc ships in the
-                  #     fenix toolchain.
-                  #   - clang-cl, llvm-lib, llvm-ar, lld-link are on PATH
-                  #     via llvmPackages.clang + llvmPackages.bintools.
-                  #
-                  # Decisions that shape the command (5–10 lines of shell):
-                  #   - Rebuild the frontend first? tauri-build bakes
-                  #     src/ui/dist/ into the .exe via include_str!(), so a
-                  #     stale dist silently produces a stale binary. Running
-                  #     `cd src/ui && bun install --frozen-lockfile && bun run build`
-                  #     is slow but safe; skipping is fast but footgun-prone.
-                  #   - --release or leave to debug? Release matches what
-                  #     you'd ship / test, debug iterates faster.
-                  #   - Build just -p claudette-tauri, or also
-                  #     -p claudette-server (useful standalone on Windows)?
-                  #   - Echo the final .exe path at the end so it can be
-                  #     scp'd to the ARM64 Windows test box without hunting
-                  #     through target/aarch64-pc-windows-msvc/<profile>/.
-                  echo "build-win-arm64: not implemented — fill in flake.nix"
-                  exit 1
+                  set -euo pipefail
+                  # Rebuild the frontend — tauri-build bakes src/ui/dist/
+                  # into the .exe via include_str!(), so a stale dist
+                  # silently produces a stale binary.
+                  (cd src/ui && bun install --frozen-lockfile && bun run build)
+                  # Cross-compile the Tauri binary. cargo-xwin handles
+                  # MS CRT + SDK download, linker, and include paths.
+                  cargo xwin build --release --target aarch64-pc-windows-msvc -p claudette-tauri
+                  echo ""
+                  echo "Built: $PWD/target/aarch64-pc-windows-msvc/release/claudette.exe"
                 '';
                 help = "Cross-compile claudette.exe for aarch64-pc-windows-msvc (Windows on ARM)";
+                category = "windows";
+              }
+              {
+                name = "build-win-x64";
+                command = ''
+                  set -euo pipefail
+                  (cd src/ui && bun install --frozen-lockfile && bun run build)
+                  cargo xwin build --release --target x86_64-pc-windows-msvc -p claudette-tauri
+                  echo ""
+                  echo "Built: $PWD/target/x86_64-pc-windows-msvc/release/claudette.exe"
+                '';
+                help = "Cross-compile claudette.exe for x86_64-pc-windows-msvc";
                 category = "windows";
               }
               {
