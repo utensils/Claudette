@@ -81,6 +81,7 @@ export function useAgentStream() {
         turnFinalizedRef.current[wsId] = false;
         turnCheckpointIdRef.current[wsId] = undefined;
         updateWorkspace(wsId, { agent_status: "Idle" });
+        useAppStore.getState().clearPromptStartTime(wsId);
         setStreamingContent(wsId, "");
         clearStreamingThinking(wsId);
         blockToolMapRef.current = {};
@@ -410,6 +411,7 @@ export function useAgentStream() {
             turnMessageCountRef.current[wsId] = 0;
             turnFinalizedRef.current[wsId] = true;
             updateWorkspace(wsId, { agent_status: "Idle" });
+            useAppStore.getState().clearPromptStartTime(wsId);
             break;
           }
           case "user": {

@@ -160,6 +160,9 @@ interface AppState {
    *  rollback or empty load leaves no assistant message with token data —
    *  clearing hides the meter rather than leaving a stale value. */
   clearLatestTurnUsage: (wsId: string) => void;
+  promptStartTime: Record<string, number>;
+  setPromptStartTime: (wsId: string, time: number) => void;
+  clearPromptStartTime: (wsId: string) => void;
   /** Per-workspace compaction history, re-derived from the persisted
    *  COMPACTION:* sentinel messages on workspace load and updated live
    *  on compact_boundary events. This slice stores derived metadata
@@ -592,6 +595,18 @@ export const useAppStore = create<AppState>((set) => ({
       const next = { ...s.latestTurnUsage };
       delete next[wsId];
       return { latestTurnUsage: next };
+    }),
+  promptStartTime: {},
+  setPromptStartTime: (wsId, time) =>
+    set((s) => ({
+      promptStartTime: { ...s.promptStartTime, [wsId]: time },
+    })),
+  clearPromptStartTime: (wsId) =>
+    set((s) => {
+      if (!(wsId in s.promptStartTime)) return {};
+      const next = { ...s.promptStartTime };
+      delete next[wsId];
+      return { promptStartTime: next };
     }),
   compactionEvents: {},
   setCompactionEvents: (wsId, events) =>

@@ -1081,6 +1081,48 @@ describe("clearLatestTurnUsage", () => {
   });
 });
 
+describe("promptStartTime (per-workspace)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ promptStartTime: {} });
+  });
+
+  it("setPromptStartTime stores timestamp keyed by workspace", () => {
+    useAppStore.getState().setPromptStartTime(WS_ID, 1700000000000);
+    expect(useAppStore.getState().promptStartTime[WS_ID]).toBe(1700000000000);
+  });
+
+  it("timestamps are isolated per workspace", () => {
+    useAppStore.getState().setPromptStartTime("ws-a", 1000);
+    useAppStore.getState().setPromptStartTime("ws-b", 2000);
+    expect(useAppStore.getState().promptStartTime["ws-a"]).toBe(1000);
+    expect(useAppStore.getState().promptStartTime["ws-b"]).toBe(2000);
+  });
+
+  it("overwrites previous timestamp for same workspace", () => {
+    useAppStore.getState().setPromptStartTime(WS_ID, 1000);
+    useAppStore.getState().setPromptStartTime(WS_ID, 2000);
+    expect(useAppStore.getState().promptStartTime[WS_ID]).toBe(2000);
+  });
+
+  it("clearPromptStartTime removes entry for that workspace only", () => {
+    useAppStore.getState().setPromptStartTime("ws-a", 1000);
+    useAppStore.getState().setPromptStartTime("ws-b", 2000);
+    useAppStore.getState().clearPromptStartTime("ws-a");
+    expect(useAppStore.getState().promptStartTime["ws-a"]).toBeUndefined();
+    expect(useAppStore.getState().promptStartTime["ws-b"]).toBe(2000);
+  });
+
+  it("clearPromptStartTime is a no-op for unknown workspace", () => {
+    useAppStore.getState().setPromptStartTime(WS_ID, 1000);
+    useAppStore.getState().clearPromptStartTime("ws-never-set");
+    expect(useAppStore.getState().promptStartTime[WS_ID]).toBe(1000);
+  });
+
+  it("defaults to empty (no timestamps)", () => {
+    expect(useAppStore.getState().promptStartTime[WS_ID]).toBeUndefined();
+  });
+});
+
 describe("compactionEvents slice", () => {
   beforeEach(() => {
     useAppStore.setState({ compactionEvents: {} });

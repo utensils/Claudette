@@ -290,27 +290,21 @@ export function ChatPanel() {
 
   // Spinner and elapsed timer for running agent.
   const [spinnerIdx, setSpinnerIdx] = useState(0);
+  const promptStartTime = useAppStore(
+    (s) => (selectedWorkspaceId ? s.promptStartTime[selectedWorkspaceId] ?? null : null)
+  );
   const [elapsed, setElapsed] = useState(0);
-  const startTimeRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!isRunning) {
-      startTimeRef.current = null;
-      return;
-    }
-    if (!startTimeRef.current) {
-      startTimeRef.current = Date.now();
-      setElapsed(0);
-      setSpinnerIdx(0);
-    }
+    if (!isRunning || promptStartTime == null) return;
+    setElapsed(Math.floor((Date.now() - promptStartTime) / 1000));
+    setSpinnerIdx(0);
     const interval = setInterval(() => {
       setSpinnerIdx((i) => (i + 1) % SPINNER_FRAMES.length);
-      if (startTimeRef.current) {
-        const newElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-        setElapsed((prev) => (prev === newElapsed ? prev : newElapsed));
-      }
+      const newElapsed = Math.floor((Date.now() - promptStartTime) / 1000);
+      setElapsed((prev) => (prev === newElapsed ? prev : newElapsed));
     }, SPINNER_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [isRunning]);
+  }, [isRunning, promptStartTime]);
 
   const formatElapsed = formatElapsedSeconds;
 
@@ -793,6 +787,7 @@ export function ChatPanel() {
       useAppStore.getState().addChatAttachments(selectedWorkspaceId, optimisticAtts);
     }
     updateWorkspace(selectedWorkspaceId, { agent_status: "Running" });
+    useAppStore.getState().setPromptStartTime(selectedWorkspaceId, Date.now());
     useAppStore.getState().clearUnreadCompletion(selectedWorkspaceId);
 
     try {
@@ -844,6 +839,7 @@ export function ChatPanel() {
       console.error("sendChatMessage failed:", errMsg);
       setError(errMsg);
       updateWorkspace(selectedWorkspaceId, { agent_status: "Idle" });
+      useAppStore.getState().clearPromptStartTime(selectedWorkspaceId);
     }
   };
 
