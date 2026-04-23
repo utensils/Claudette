@@ -741,6 +741,7 @@
   font-size: 13px;
   color: var(--text-primary);
   cursor: pointer;
+  width: fit-content;
 }
 
 .radioLabel input[type="radio"] {
