@@ -47,6 +47,13 @@
             fenixPkgs.latest.rust-src
             fenixPkgs.latest.rustc
             fenixPkgs.latest.rustfmt
+            # Windows MSVC cross-compile targets (consumed via cargo-xwin in
+            # the devshell). aarch64 is the priority per project plan;
+            # x86_64 included so both Windows architectures are available.
+            # rust-std ships the Windows stdlib binaries; the MS CRT and
+            # Windows SDK headers are fetched on demand by cargo-xwin.
+            fenixPkgs.targets.aarch64-pc-windows-msvc.latest.rust-std
+            fenixPkgs.targets.x86_64-pc-windows-msvc.latest.rust-std
           ];
 
           craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -143,6 +150,39 @@
             pkgs.apple-sdk_15
             pkgs.libiconv
           ];
+
+          # Wrapper around `clang` that rewrites the MSVC-style `/imsvc`
+          # include flag to the GNU-driver-compatible `-isystem` form.
+          #
+          # cargo-xwin's default (and correct-for-STL) mode is clang-cl: it
+          # injects `/imsvc <path>` pairs into CFLAGS_<target> so that clang-cl
+          # sees the MSVC CRT + SDK + C++ STL under xwin/crt/include (which
+          # actually contains <iterator>, <vector>, ... — the alternative
+          # "sysroot" mode ships a sysroot whose include/c++/stl/ directory
+          # is empty on aarch64, so clang-cl mode is the only workable one).
+          #
+          # The snag: `ring`'s build script compiles Windows ARM64 `.S`
+          # assembly by invoking `clang` directly (not clang-cl, because
+          # clang-cl doesn't parse GAS syntax). The GNU-driver `clang` then
+          # rejects `/imsvc` (treated as a filename) and also rejects
+          # `-imsvc` (clang-cl-only spelling). The only spelling accepted by
+          # both drivers is `-isystem`, which carries the same semantics we
+          # need here (mark the directory as a system header root, suppress
+          # diagnostics from headers within it).
+          #
+          # Wrapping `clang` specifically (not clang-cl, not clang++) is
+          # sufficient because that is the exact binary ring shells out to
+          # for the .S pregenerated files.
+          clangXwinShim = pkgs.writeShellScriptBin "clang" ''
+            args=()
+            for arg in "$@"; do
+              case "$arg" in
+                /imsvc) args+=("-isystem") ;;
+                *) args+=("$arg") ;;
+              esac
+            done
+            exec ${pkgs.llvmPackages.clang-unwrapped}/bin/clang "''${args[@]}"
+          '';
 
           # Linux native deps for webkit + GTK stack.
           # NOTE: cairo / pango / harfbuzz / atk / gdk-pixbuf are propagated by
@@ -301,6 +341,29 @@
               pkgs.cmake
               pkgs.perl
               pkgs.cargo-llvm-cov
+              # Windows cross-compile toolchain. cargo-xwin shells out to
+              # clang-cl (the MSVC-compatible driver) and llvm-lib / llvm-ar
+              # as the archiver; rust-lld is bundled with the fenix rustc
+              # above, so no separate lld package is needed.
+              #
+              # clangXwinShim wraps plain `clang` (see its definition above)
+              # to rewrite `/imsvc` → `-isystem`; `lib.hiPrio` lets it win the
+              # buildEnv symlink conflict over clang-unwrapped's own
+              # `bin/clang`, while clang-unwrapped's other binaries
+              # (clang-cl, clang++, ...) pass through unchanged.
+              #
+              # We intentionally use clang-unwrapped rather than
+              # llvmPackages.clang: the cc-wrapper variant only exposes the
+              # `clang` / `clang++` entry points and hides the `clang-cl`
+              # symlink that cargo-xwin looks up on PATH. llvmPackages.llvm
+              # gives the raw LLVM binaries (llvm-lib, llvm-ar, llvm-rc);
+              # we avoid llvmPackages.bintools because its wrapper symlinks
+              # (`strip`, `ar`, ...) collide with same-named symlinks
+              # elsewhere in the devshell's buildEnv.
+              pkgs.cargo-xwin
+              (lib.hiPrio clangXwinShim)
+              pkgs.llvmPackages.clang-unwrapped
+              pkgs.llvmPackages.llvm
             ]
             ++ darwinBuildInputs
             ++ linuxBuildInputs
@@ -319,6 +382,16 @@
               {
                 name = "RUST_SRC_PATH";
                 value = "${fenixPkgs.latest.rust-src}/lib/rustlib/src/rust/library";
+              }
+              {
+                # cargo-xwin downloads the Microsoft CRT + Windows SDK
+                # headers on first Windows cross-build. Setting this to "1"
+                # signals acceptance of the Microsoft Software License Terms
+                # (https://go.microsoft.com/fwlink/?LinkID=2109288) so the
+                # download is non-interactive. The cache lives under
+                # ~/.cache/cargo-xwin/xwin and is reused across builds.
+                name = "XWIN_ACCEPT_LICENSE";
+                value = "1";
               }
             ]
             ++ lib.optionals pkgs.stdenv.isLinux [
@@ -486,6 +559,86 @@
                 command = "cargo test --workspace --all-features";
                 help = "Run all Rust tests";
                 category = "quality";
+              }
+              {
+                name = "build-win-arm64";
+                command = ''
+                  set -euo pipefail
+                  # Rebuild the frontend — tauri-codegen bakes src/ui/dist/
+                  # into the .exe at build time, so a stale dist silently
+                  # produces a stale binary.
+                  (cd src/ui && bun install --frozen-lockfile && bun run build)
+                  # Cross-compile the Tauri binary. Three things make this
+                  # the correct invocation:
+                  #
+                  # 1. --features tauri/custom-protocol — without this,
+                  #    tauri-build emits cargo:rustc-cfg=dev and the
+                  #    resulting binary loads http://localhost:1420 at
+                  #    runtime instead of the embedded asset protocol.
+                  #    `cargo tauri build` passes this automatically;
+                  #    plain `cargo build`/`cargo xwin build` do not.
+                  # 2. Default cargo-xwin mode (clang-cl) — the devshell's
+                  #    clangXwinShim rewrites /imsvc → -isystem so ring's
+                  #    direct-clang .S assembly compile doesn't choke on
+                  #    MSVC-style include flags leaked into CFLAGS.
+                  # 3. --release — tauri-codegen embeds the frontend only
+                  #    when the binary isn't in debug profile.
+                  #
+                  # We skip `cargo tauri build --runner` because tauri-cli
+                  # shells out to rustup to verify the target is installed,
+                  # and our fenix toolchain supplies the rust-std outside
+                  # rustup's knowledge. Driving `cargo xwin build` directly
+                  # sidesteps the check; asset embedding is handled by
+                  # the feature flag above.
+                  cargo xwin build --release \
+                    --features tauri/custom-protocol \
+                    --target aarch64-pc-windows-msvc -p claudette-tauri
+                  echo ""
+                  echo "Built: $PWD/target/aarch64-pc-windows-msvc/release/claudette.exe"
+                '';
+                help = "Cross-compile claudette.exe for aarch64-pc-windows-msvc (Windows on ARM)";
+                category = "windows";
+              }
+              {
+                name = "deploy-win-arm64";
+                command = ''
+                  set -euo pipefail
+                  # Build, then stop any running instance on the test VM and
+                  # copy the fresh .exe over. The remote process has a file
+                  # lock on claudette.exe while running, so scp cannot
+                  # overwrite it without the Stop-Process step.
+                  #
+                  # Host and remote path are overridable for cases where the
+                  # VM's DHCP lease changes or someone else tests against a
+                  # different machine. Defaults match the project's shared
+                  # Windows-on-ARM test VM (see project memory).
+                  HOST=''${CLAUDETTE_WIN_HOST:-brink@172.16.52.129}
+                  REMOTE_PATH=''${CLAUDETTE_WIN_REMOTE_PATH:-OneDrive/Desktop/claudette.exe}
+                  build-win-arm64
+                  echo ""
+                  echo "Stopping running claudette on $HOST (if any)..."
+                  ssh "$HOST" 'Stop-Process -Name claudette -Force -ErrorAction SilentlyContinue'
+                  echo "Copying to $HOST:$REMOTE_PATH ..."
+                  scp target/aarch64-pc-windows-msvc/release/claudette.exe "$HOST:$REMOTE_PATH"
+                  echo ""
+                  echo "Deployed. Double-click claudette.exe on the VM desktop to run."
+                '';
+                help = "Build + deploy aarch64-pc-windows-msvc exe to the test VM (overridable via CLAUDETTE_WIN_HOST / CLAUDETTE_WIN_REMOTE_PATH)";
+                category = "windows";
+              }
+              {
+                name = "build-win-x64";
+                command = ''
+                  set -euo pipefail
+                  (cd src/ui && bun install --frozen-lockfile && bun run build)
+                  cargo xwin build --release \
+                    --features tauri/custom-protocol \
+                    --target x86_64-pc-windows-msvc -p claudette-tauri
+                  echo ""
+                  echo "Built: $PWD/target/x86_64-pc-windows-msvc/release/claudette.exe"
+                '';
+                help = "Cross-compile claudette.exe for x86_64-pc-windows-msvc";
+                category = "windows";
               }
               {
                 name = "coverage";

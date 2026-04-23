@@ -6,6 +6,7 @@ use claudette::db::Database;
 use claudette::file_expand;
 
 use crate::state::AppState;
+use claudette::process::CommandWindowExt as _;
 
 const MAX_FILES: usize = 10_000;
 
@@ -44,7 +45,8 @@ pub async fn list_workspace_files(
         .as_ref()
         .ok_or("Workspace has no worktree")?;
 
-    let output = Command::new("git")
+    let output = Command::new(&claudette::git::resolve_git_path_blocking())
+        .no_console_window()
         .args(["-C", worktree_path])
         .args(["ls-files", "--cached", "--others", "--exclude-standard"])
         .output()

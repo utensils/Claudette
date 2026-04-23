@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use claudette::process::CommandWindowExt as _;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
@@ -134,6 +135,7 @@ static USER_AGENT_CACHE: std::sync::OnceLock<String> = std::sync::OnceLock::new(
 /// since the tokio runtime may not be available during Tauri's `setup()`.
 pub fn warm_user_agent_cache_sync() {
     let output = std::process::Command::new("claude")
+        .no_console_window()
         .arg("--version")
         .env("PATH", claudette::env::enriched_path())
         .output();
@@ -169,6 +171,7 @@ async fn read_credentials_platform() -> Result<CredentialFile, String> {
     // Claude Code stores credentials under $USER, not a fixed account name.
     let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
     let output = tokio::process::Command::new("security")
+        .no_console_window()
         .args([
             "find-generic-password",
             "-s",

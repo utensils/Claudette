@@ -109,7 +109,11 @@ pub struct LocalServerState {
     pub child: tokio::process::Child,
     /// The PID captured at spawn time for reliable synchronous cleanup.
     /// `tokio::process::Child::id()` returns `None` after the child is reaped,
-    /// so we store the PID eagerly.
+    /// so we store the PID eagerly. Only read on Unix, where `Drop` passes
+    /// it to `kill_process_sync` to send SIGTERM/SIGKILL + reap; on Windows
+    /// `child.start_kill()` alone suffices and this field is held only to
+    /// keep the struct layout consistent across platforms.
+    #[cfg_attr(windows, allow(dead_code))]
     pub pid: u32,
     /// The connection string printed by the server on startup.
     pub connection_string: String,
@@ -124,10 +128,13 @@ impl Drop for LocalServerState {
             eprintln!("[cleanup] Server process already exited");
             return;
         }
-        // Best-effort tokio-level kill (may fail if runtime is gone).
+        // Best-effort tokio-level kill (may fail if runtime is gone). On
+        // Windows this invokes `TerminateProcess`, which is immediate and
+        // leaves no zombie state — so the extra synchronous cleanup below
+        // is only meaningful on Unix where SIGTERM → grace → SIGKILL →
+        // `waitpid` is needed to reap the child.
         let _ = self.child.start_kill();
-        // Synchronous POSIX kill — works even during process teardown when the
-        // tokio runtime is no longer available.
+        #[cfg(unix)]
         kill_process_sync(self.pid);
     }
 }
@@ -139,6 +146,7 @@ impl Drop for LocalServerState {
 /// `SIGKILL` and reaps the process. This is safe to call from `Drop` impls
 /// and the `RunEvent::Exit` handler where async code cannot run. Uses raw
 /// libc calls so it does not depend on the tokio runtime.
+#[cfg(unix)]
 pub fn kill_process_sync(pid: u32) {
     use std::time::{Duration, Instant};
     let pid = pid as i32;
@@ -313,12 +321,14 @@ impl AppState {
 #[cfg(unix)]
 mod tests {
     use super::*;
+    use claudette::process::CommandWindowExt as _;
 
     /// Helper: spawn a long-running `sleep` process and return its PID.
     fn spawn_sleep() -> (tokio::process::Child, u32) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let child = tokio::process::Command::new("sleep")
+                .no_console_window()
                 .arg("3600")
                 .kill_on_drop(true)
                 .spawn()
@@ -377,6 +387,7 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let (child, pid) = rt.block_on(async {
             let child = tokio::process::Command::new("sleep")
+                .no_console_window()
                 .arg("3600")
                 .kill_on_drop(true)
                 .spawn()

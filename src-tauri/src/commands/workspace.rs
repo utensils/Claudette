@@ -17,6 +17,7 @@ use claudette::model::{AgentStatus, Workspace, WorkspaceStatus};
 use claudette::names::NameGenerator;
 
 use crate::state::AppState;
+use claudette::process::CommandWindowExt as _;
 
 #[derive(Serialize, Clone)]
 pub struct SetupResult {
@@ -272,14 +273,21 @@ async fn resolve_and_run_setup(
 
     // 3. Execute the script in its own process group so we can kill the
     //    entire tree on timeout (prevents orphan grandchild processes).
+    //    `process_group` is a Unix-only extension; on Windows the timeout
+    //    path falls back to `child.kill().await` which only terminates the
+    //    immediate child. Windows also lacks a built-in `sh`, so setup
+    //    scripts won't spawn there without a user-installed shell — the
+    //    grandchild-leak on timeout is moot until that is addressed.
     let mut cmd = TokioCommand::new("sh");
+    cmd.no_console_window();
     cmd.arg("-c")
         .arg(&script)
         .current_dir(worktree_path)
         .env("PATH", claudette::env::enriched_path())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .process_group(0);
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    cmd.process_group(0);
     ws_env.apply(&mut cmd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -295,6 +303,8 @@ async fn resolve_and_run_setup(
         }
     };
 
+    // Only used on Unix to send SIGKILL to the process group on timeout.
+    #[cfg(unix)]
     let pid = child.id();
 
     // 3. Read stdout/stderr concurrently with waiting to avoid pipe buffer
@@ -350,7 +360,11 @@ async fn resolve_and_run_setup(
             timed_out: false,
         }),
         Err(_) => {
-            // Timeout — kill the entire process group, then reap the child.
+            // Timeout — kill the entire process group on Unix (SIGKILL to
+            // -pgid hits every descendant). Windows has no process-group
+            // signal; `child.kill()` below calls `TerminateProcess` on
+            // the immediate child only.
+            #[cfg(unix)]
             if let Some(pgid) = pid {
                 unsafe {
                     libc::kill(-(pgid as i32), libc::SIGKILL);
@@ -848,6 +862,7 @@ pub async fn open_workspace_in_terminal(worktree_path: String) -> Result<(), Str
         let mut errors = Vec::new();
         for (terminal, args) in &terminals {
             let mut cmd = tokio::process::Command::new(terminal);
+            cmd.no_console_window();
             for arg in args {
                 cmd.arg(arg);
             }
@@ -884,6 +899,7 @@ pub async fn open_workspace_in_terminal(worktree_path: String) -> Result<(), Str
         );
 
         tokio::process::Command::new("osascript")
+            .no_console_window()
             .arg("-e")
             .arg(&script)
             .spawn()

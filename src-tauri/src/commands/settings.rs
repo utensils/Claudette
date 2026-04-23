@@ -6,6 +6,7 @@ use tauri::{AppHandle, State};
 use claudette::db::Database;
 
 use crate::state::AppState;
+use claudette::process::CommandWindowExt as _;
 
 /// Spawn a short-lived process and reap it in a background thread to prevent zombies.
 pub(crate) fn spawn_and_reap(mut child: std::process::Child) {
@@ -121,6 +122,9 @@ pub async fn list_system_fonts() -> Vec<String> {
     if let Some(cached) = SYSTEM_FONTS.get() {
         return cached.clone();
     }
+    // `mut` is only reached from the per-target blocks below; Windows has
+    // neither branch, so the binding stays immutable there.
+    #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(unused_mut))]
     let mut families = std::collections::BTreeSet::<String>::new();
 
     #[cfg(target_os = "macos")]
@@ -128,6 +132,7 @@ pub async fn list_system_fonts() -> Vec<String> {
         // Swift is always available on macOS; NSFontManager is the canonical API.
         let script = r#"import AppKit; NSFontManager.shared.availableFontFamilies.sorted().forEach { print($0) }"#;
         if let Ok(output) = tokio::process::Command::new("/usr/bin/swift")
+            .no_console_window()
             .arg("-e")
             .arg(script)
             .output()
@@ -147,6 +152,7 @@ pub async fn list_system_fonts() -> Vec<String> {
     {
         // fontconfig is standard on all Linux desktops.
         if let Ok(output) = tokio::process::Command::new("fc-list")
+            .no_console_window()
             .args([":", "family"])
             .output()
             .await
@@ -194,6 +200,7 @@ pub fn play_notification_sound(sound: String, volume: Option<f64>) {
             format!("/System/Library/Sounds/{sound}.aiff")
         };
         if let Ok(child) = std::process::Command::new("afplay")
+            .no_console_window()
             .arg("-v")
             .arg(format!("{vol}"))
             .arg(&path)
@@ -211,11 +218,13 @@ pub fn play_notification_sound(sound: String, volume: Option<f64>) {
         };
         let pa_volume = (vol * 65536.0) as u32;
         if let Ok(child) = std::process::Command::new("canberra-gtk-play")
+            .no_console_window()
             .arg("-i")
             .arg(&sound_name)
             .spawn()
             .or_else(|_| {
                 std::process::Command::new("paplay")
+                    .no_console_window()
                     .arg("--volume")
                     .arg(pa_volume.to_string())
                     .arg(format!(
@@ -249,6 +258,7 @@ pub(crate) fn build_notification_command(
         return None;
     }
     let mut command = std::process::Command::new("sh");
+    command.no_console_window();
     command.arg("-c").arg(cmd);
     ws_env.apply_std(&mut command);
     Some(command)
