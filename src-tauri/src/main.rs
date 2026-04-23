@@ -341,6 +341,7 @@ fn main() {
             commands::workspace::run_workspace_setup,
             commands::workspace::archive_workspace,
             commands::workspace::restore_workspace,
+            commands::workspace::rename_workspace,
             commands::workspace::delete_workspace,
             commands::workspace::generate_workspace_name,
             commands::workspace::refresh_branches,

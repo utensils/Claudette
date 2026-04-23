@@ -551,6 +551,35 @@ pub async fn delete_workspace(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn rename_workspace(
+    id: String,
+    new_name: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let trimmed = new_name.trim().to_string();
+    if !is_valid_workspace_name(&trimmed) {
+        return Err("Invalid workspace name. Use letters, numbers, and hyphens only.".into());
+    }
+    if trimmed.len() > 60 {
+        return Err("Workspace name must be 60 characters or fewer".into());
+    }
+
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.update_workspace_name(&id, &trimmed).map_err(|e| {
+        if e.to_string().contains("UNIQUE constraint failed") {
+            "A workspace with this name already exists in this repository".into()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    crate::tray::rebuild_tray(&app);
+
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct GeneratedWorkspaceName {
     /// Safe for branch names and file paths
