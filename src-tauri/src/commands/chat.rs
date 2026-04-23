@@ -832,6 +832,7 @@ pub async fn send_chat_message(
         // across multi-message turns.
         let mut latest_usage: Option<claudette::agent::TokenUsage> = None;
         let mut pending_attention_kind: Option<crate::state::AttentionKind>;
+        let mut notified_via_result = false;
         while let Some(event) = rx.recv().await {
             pending_attention_kind = None;
             // Track whether the CLI initialized successfully.
@@ -1114,6 +1115,7 @@ pub async fn send_chat_message(
                     };
                     fire_completion_notification(&db_path, &app_state.cesp_playback, event, &ws_id)
                         .await;
+                    notified_via_result = true;
                 }
             }
 
@@ -1193,7 +1195,7 @@ pub async fn send_chat_message(
                 }
                 let needs_attention_now = agents.get(&ws_id).is_some_and(|s| s.needs_attention);
                 let app_state = app.state::<crate::state::AppState>();
-                if !needs_attention_now {
+                if !needs_attention_now && !notified_via_result {
                     let event = if exit_code == Some(0) {
                         crate::tray::NotificationEvent::Finished
                     } else {

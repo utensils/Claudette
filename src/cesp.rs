@@ -203,9 +203,14 @@ pub fn delete_pack(name: &str) -> Result<(), String> {
     std::fs::remove_dir_all(&pack_dir).map_err(|e| format!("Failed to delete pack: {e}"))
 }
 
+const MAX_EXTRACT_BYTES: u64 = 50 * 1024 * 1024; // 50 MB
+const MAX_EXTRACT_FILES: usize = 1_000;
+
 fn extract_tarball(data: &[u8], target_dir: &Path, source_path: &str) -> Result<(), String> {
     let decoder = flate2::read::GzDecoder::new(Cursor::new(data));
     let mut archive = tar::Archive::new(decoder);
+    let mut total_bytes: u64 = 0;
+    let mut file_count: usize = 0;
 
     for entry in archive.entries().map_err(|e| format!("Bad tarball: {e}"))? {
         let mut entry = entry.map_err(|e| format!("Bad tarball entry: {e}"))?;
@@ -250,10 +255,23 @@ fn extract_tarball(data: &[u8], target_dir: &Path, source_path: &str) -> Result<
         if entry.header().entry_type().is_dir() {
             let _ = std::fs::create_dir_all(&dest);
         } else if entry.header().entry_type().is_file() {
+            file_count += 1;
+            if file_count > MAX_EXTRACT_FILES {
+                return Err(format!(
+                    "Pack exceeds maximum file count ({MAX_EXTRACT_FILES})"
+                ));
+            }
             let mut out = std::fs::File::create(&dest)
                 .map_err(|e| format!("Failed to create {}: {e}", dest.display()))?;
-            std::io::copy(&mut entry, &mut out)
+            let written = std::io::copy(&mut entry, &mut out)
                 .map_err(|e| format!("Failed to write {}: {e}", dest.display()))?;
+            total_bytes += written;
+            if total_bytes > MAX_EXTRACT_BYTES {
+                return Err(format!(
+                    "Pack exceeds maximum extracted size ({} MB)",
+                    MAX_EXTRACT_BYTES / (1024 * 1024)
+                ));
+            }
         }
     }
 

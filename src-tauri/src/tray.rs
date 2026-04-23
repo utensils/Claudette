@@ -86,7 +86,9 @@ pub fn resolve_notification(
     let muted = db_get("cesp_muted").is_some_and(|v| v == "true");
     let volume: f64 = db_get("cesp_volume")
         .and_then(|v| v.parse().ok())
-        .unwrap_or(1.0);
+        .filter(|v: &f64| v.is_finite())
+        .unwrap_or(1.0)
+        .clamp(0.0, 1.0);
 
     let sound = if muted || volume <= 0.0 {
         "None".to_string()

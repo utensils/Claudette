@@ -203,6 +203,7 @@ export function NotificationsSettings() {
   };
 
   const handlePreview = async (event: SoundEvent) => {
+    if (muted) return;
     try {
       setError(null);
       if (soundSource === "openpeon") {
@@ -392,6 +393,7 @@ export function NotificationsSettings() {
               value={volume}
               onChange={(e) => handleVolumeChange(Number(e.target.value))}
               onPointerUp={handleVolumeCommit}
+              onKeyUp={handleVolumeCommit}
               aria-label="Notification volume"
             />
             <span className={styles.volumeValue}>{volume}%</span>
