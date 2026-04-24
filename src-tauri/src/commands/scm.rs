@@ -719,19 +719,24 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
 /// removes the worktree, updates the DB status, stops any running agent,
 /// and emits a `workspace-auto-archived` event to the frontend.
 ///
-/// When `git_delete_branch_on_archive` is enabled, fully deletes the workspace
-/// record (preserving lifetime stats) instead of moving it to Archived status.
+/// When `git_delete_branch_on_archive` is enabled, also deletes the local
+/// branch and fully removes the workspace record (preserving lifetime stats)
+/// instead of moving it to Archived status.
 async fn auto_archive_workspace(
     handle: &tauri::AppHandle,
     app_state: &AppState,
     workspace_id: &str,
     pr_number: Option<u64>,
 ) {
-    // All DB work in a block (Database is not Send — must not hold across .await)
+    // Read-only DB block — capture workspace/repo info and settings.
+    // DB mutations are deferred until after async cleanup so the workspace row
+    // remains available while worktree removal and agent stop run, and the
+    // frozen summary snapshot reflects a fully-quiesced workspace.
     struct ArchiveInfo {
         ws_id: String,
         ws_name: String,
         repo_id: String,
+        branch_name: String,
         worktree_path: Option<String>,
         repo_path: Option<String>,
         delete_record: bool,
@@ -773,23 +778,11 @@ async fn auto_archive_workspace(
             crate::tray::NotificationEvent::Finished,
         );
 
-        if delete_record {
-            // Fully remove the record; lifetime stats are frozen in a summary row.
-            let _ = db.delete_workspace_with_summary(workspace_id);
-        } else {
-            let _ = db.delete_terminal_tabs_for_workspace(workspace_id);
-            let _ = db.delete_scm_status_cache(workspace_id);
-            let _ = db.update_workspace_status(
-                workspace_id,
-                &claudette::model::WorkspaceStatus::Archived,
-                None,
-            );
-        }
-
         Some(ArchiveInfo {
             ws_id: ws.id.clone(),
             ws_name: ws.name.clone(),
             repo_id: ws.repository_id.clone(),
+            branch_name: ws.branch_name.clone(),
             worktree_path: ws.worktree_path.clone(),
             repo_path,
             delete_record,
@@ -801,6 +794,7 @@ async fn auto_archive_workspace(
         ws_id,
         ws_name,
         repo_id,
+        branch_name,
         worktree_path: wt_path,
         repo_path,
         delete_record,
@@ -815,6 +809,13 @@ async fn auto_archive_workspace(
         let _ = claudette::git::remove_worktree(repo_path, wt_path, false).await;
     }
 
+    // Delete the local branch when the setting is enabled.
+    if delete_record
+        && let Some(repo_path) = &repo_path
+    {
+        let _ = claudette::git::branch_delete(repo_path, &branch_name).await;
+    }
+
     // Stop any running agent
     {
         let mut agents = app_state.agents.write().await;
@@ -822,6 +823,23 @@ async fn auto_archive_workspace(
             && let Some(pid) = session.active_pid
         {
             let _ = claudette::agent::stop_agent(pid).await;
+        }
+    }
+
+    // Now that async cleanup is done, persist the archive/delete mutation.
+    {
+        if let Ok(db) = Database::open(&app_state.db_path) {
+            if delete_record {
+                let _ = db.delete_workspace_with_summary(&ws_id);
+            } else {
+                let _ = db.delete_terminal_tabs_for_workspace(&ws_id);
+                let _ = db.delete_scm_status_cache(&ws_id);
+                let _ = db.update_workspace_status(
+                    &ws_id,
+                    &claudette::model::WorkspaceStatus::Archived,
+                    None,
+                );
+            }
         }
     }
 
