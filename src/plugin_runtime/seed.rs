@@ -315,6 +315,22 @@ mod tests {
         // Version file should contain the app version
         let version = std::fs::read_to_string(plugin_dir.join("github/.version")).unwrap();
         assert_eq!(version, APP_VERSION);
+
+        // Every fresh seed must stamp `.content_hash` — without it,
+        // future drift detection in `seed_bundled_plugins` couldn't
+        // distinguish "we wrote this" from "user customized".
+        let hash_path = plugin_dir.join("github/.content_hash");
+        assert!(hash_path.exists(), "first-run must stamp content hash");
+        let bundled_github_init = BUNDLED_PLUGINS
+            .iter()
+            .find(|(n, _, _)| *n == "github")
+            .map(|(_, _, lua)| *lua)
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&hash_path).unwrap().trim(),
+            sha256_hex(bundled_github_init),
+            "content hash stamp must match bundled content"
+        );
     }
 
     #[test]
