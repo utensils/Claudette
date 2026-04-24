@@ -47,7 +47,6 @@ import {
   maxSizeFor,
   isTextFile,
 } from "../../utils/attachmentValidation";
-import { useAgentStream } from "../../hooks/useAgentStream";
 import { useTypewriter } from "../../hooks/useTypewriter";
 import { extractToolSummary } from "../../hooks/toolSummary";
 import { AgentQuestionCard } from "./AgentQuestionCard";
@@ -204,8 +203,6 @@ export function ChatPanel() {
   const historyRef = useRef<Record<string, string[]>>({});
   const historyIndexRef = useRef(-1);
   const draftRef = useRef("");
-
-  useAgentStream();
 
   const defaultBranchesMap = useAppStore((s) => s.defaultBranches);
 

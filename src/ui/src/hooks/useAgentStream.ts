@@ -91,11 +91,9 @@ export function useAgentStream() {
         // fires before the user has a chance to answer. The question is
         // cleared when the user responds (onRespond) or sends a new message.
 
-        // Notification: mark workspace as unread if not currently selected
-        const { selectedWorkspaceId, markWorkspaceAsUnread } = useAppStore.getState();
-        if (wsId !== selectedWorkspaceId) {
-          markWorkspaceAsUnread(wsId);
-        }
+        // Badge-check notification is handled by a store subscription
+        // in AppLayout (watching Running→Idle/Stopped transitions) rather
+        // than here, because this closure can go stale under HMR.
 
         // Notification sound + command are handled on the Rust side
         // (in ProcessExited handler) so they work even when the webview

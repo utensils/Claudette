@@ -12,6 +12,7 @@ import { ModalRouter } from "../modals/ModalRouter";
 import { SettingsPage } from "../settings/SettingsPage";
 import { ResizeHandle } from "./ResizeHandle";
 import { ToastContainer } from "./Toast";
+import { useAgentStream } from "../../hooks/useAgentStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useBranchRefresh } from "../../hooks/useBranchRefresh";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
@@ -33,9 +34,31 @@ export function AppLayout() {
   const fuzzyFinderOpen = useAppStore((s) => s.fuzzyFinderOpen);
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
 
+  useAgentStream();
   useKeyboardShortcuts();
   useBranchRefresh();
   useAutoUpdater();
+
+  useEffect(() => {
+    const prevStatuses: Record<string, string> = {};
+    for (const ws of useAppStore.getState().workspaces) {
+      prevStatuses[ws.id] = typeof ws.agent_status === "string" ? ws.agent_status : "Error";
+    }
+    return useAppStore.subscribe((state) => {
+      for (const ws of state.workspaces) {
+        const prev = prevStatuses[ws.id];
+        prevStatuses[ws.id] = typeof ws.agent_status === "string" ? ws.agent_status : "Error";
+        if (
+          prev &&
+          (prev === "Running" || prev === "Compacting") &&
+          ws.agent_status !== "Running" &&
+          ws.agent_status !== "Compacting"
+        ) {
+          state.markWorkspaceAsUnread(ws.id);
+        }
+      }
+    });
+  }, []);
 
   const showDiff = diffSelectedFile !== null;
 
