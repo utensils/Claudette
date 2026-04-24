@@ -1,0 +1,9 @@
+{
+  "name": "env-direnv",
+  "display_name": "direnv",
+  "version": "1.0.0",
+  "description": "Activate direnv-managed environment for workspace subprocesses",
+  "kind": "env-provider",
+  "required_clis": ["direnv"],
+  "operations": ["detect", "export"]
+}

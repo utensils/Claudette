@@ -14,6 +14,26 @@ const BUNDLED_PLUGINS: &[(&str, &str, &str)] = &[
         include_str!("../../plugins/scm-gitlab/plugin.json"),
         include_str!("../../plugins/scm-gitlab/init.lua"),
     ),
+    (
+        "env-direnv",
+        include_str!("../../plugins/env-direnv/plugin.json"),
+        include_str!("../../plugins/env-direnv/init.lua"),
+    ),
+    (
+        "env-mise",
+        include_str!("../../plugins/env-mise/plugin.json"),
+        include_str!("../../plugins/env-mise/init.lua"),
+    ),
+    (
+        "env-dotenv",
+        include_str!("../../plugins/env-dotenv/plugin.json"),
+        include_str!("../../plugins/env-dotenv/init.lua"),
+    ),
+    (
+        "env-nix-devshell",
+        include_str!("../../plugins/env-nix-devshell/plugin.json"),
+        include_str!("../../plugins/env-nix-devshell/init.lua"),
+    ),
 ];
 
 /// The current app version, used for the .version sentinel file.

@@ -18,6 +18,8 @@
 
 pub mod backend;
 pub mod cache;
+#[cfg(test)]
+mod plugin_tests;
 pub mod types;
 
 use std::path::Path;

@@ -1,0 +1,9 @@
+{
+  "name": "env-mise",
+  "display_name": "mise",
+  "version": "1.0.0",
+  "description": "Activate mise-managed environment (tools + env vars) for workspace subprocesses",
+  "kind": "env-provider",
+  "required_clis": ["mise"],
+  "operations": ["detect", "export"]
+}
