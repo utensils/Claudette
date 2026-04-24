@@ -37,6 +37,11 @@ use types::EnvMap;
 /// Convenience helper that wires the standard [`PluginRegistryBackend`]
 /// into [`resolve_for_workspace`] with minimal boilerplate at the call
 /// site. The tauri layer uses this from spawn command handlers.
+///
+/// Merges the per-repo `disabled` set with the registry's globally-
+/// disabled plugin names so the dispatcher sees a single "skip this"
+/// set and globally-off plugins show up in the UI as cleanly disabled
+/// (rather than as a `PluginDisabled` error surfaced through detect).
 pub async fn resolve_with_registry(
     registry: &crate::plugin_runtime::PluginRegistry,
     cache: &EnvCache,
@@ -45,7 +50,13 @@ pub async fn resolve_with_registry(
     disabled: &std::collections::HashSet<String>,
 ) -> ResolvedEnv {
     let backend = PluginRegistryBackend::new(registry);
-    resolve_for_workspace(&backend, cache, worktree, ws_info, disabled).await
+    let mut merged_disabled = disabled.clone();
+    for name in backend.env_provider_names() {
+        if registry.is_disabled(&name) {
+            merged_disabled.insert(name);
+        }
+    }
+    resolve_for_workspace(&backend, cache, worktree, ws_info, &merged_disabled).await
 }
 
 /// The merged env contributed by all detected env-provider plugins.
@@ -720,5 +731,61 @@ mod tests {
             cache.get_fresh(tmp.path(), "env-direnv").is_none(),
             "detect=false must evict the stale cache entry"
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_with_registry_treats_globally_disabled_as_disabled() {
+        // Regression guard for the UAT finding: globally-disabled plugins
+        // used to surface as `detect` errors with "Plugin '...' is
+        // disabled" in the UI. Now they merge into the dispatcher's
+        // `disabled` set so the source shows error="disabled" cleanly.
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin_dir = tempfile::tempdir().unwrap();
+        // Seed a minimal env-provider plugin so the registry discovers it.
+        let pdir = plugin_dir.path().join("env-testprov");
+        std::fs::create_dir_all(&pdir).unwrap();
+        std::fs::write(
+            pdir.join("plugin.json"),
+            r#"{
+                "name": "env-testprov",
+                "display_name": "TestProv",
+                "version": "1.0.0",
+                "description": "test",
+                "kind": "env-provider",
+                "operations": ["detect", "export"]
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            pdir.join("init.lua"),
+            r#"
+            local M = {}
+            function M.detect() return true end
+            function M.export() return { env = {}, watched = {} } end
+            return M
+            "#,
+        )
+        .unwrap();
+
+        let registry = crate::plugin_runtime::PluginRegistry::discover(plugin_dir.path());
+        registry.set_disabled("env-testprov", true);
+        let cache = EnvCache::new();
+
+        let resolved = resolve_with_registry(
+            &registry,
+            &cache,
+            tmp.path(),
+            &ws_info(),
+            &Default::default(),
+        )
+        .await;
+
+        let source = resolved
+            .sources
+            .iter()
+            .find(|s| s.plugin_name == "env-testprov")
+            .expect("plugin must appear in sources");
+        assert_eq!(source.error.as_deref(), Some("disabled"));
+        assert!(!source.detected);
     }
 }
