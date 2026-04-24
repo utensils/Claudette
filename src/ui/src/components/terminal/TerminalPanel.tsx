@@ -178,6 +178,16 @@ export const TerminalPanel = memo(function TerminalPanel() {
     [selectedWorkspaceId, removeTerminalTab],
   );
 
+  // When the panel gets hidden (most often because the user just closed
+  // the last tab via the X button or Cmd+W on the last pane) clear the
+  // auto-create guard so that the next time the user reveals the panel
+  // with no tabs, the load effect below seeds a fresh tab. Without this
+  // the guard stays keyed on the workspace forever and toggling the
+  // panel back on lands the user on an empty panel.
+  useEffect(() => {
+    if (!terminalPanelVisible) autoCreatedRef.current = null;
+  }, [terminalPanelVisible]);
+
   // Load tabs on workspace + panel-visibility change.
   useEffect(() => {
     if (!selectedWorkspaceId || !terminalPanelVisible) return;
@@ -497,8 +507,10 @@ export const TerminalPanel = memo(function TerminalPanel() {
     const { toCreate, toDestroy } = diffLeaves(needed, snapshot);
 
     for (const leafId of toDestroy) destroyInstance(leafId);
+    const freshLeafIds = new Set<string>();
     for (const spec of toCreate) {
       instancesRef.current.set(spec.leafId, createInstance(spec));
+      freshLeafIds.add(spec.leafId);
     }
 
     // Reparent each instance's container into its current target div.
@@ -515,13 +527,17 @@ export const TerminalPanel = memo(function TerminalPanel() {
         if (inst.ptyId >= 0) {
           resizePty(inst.ptyId, inst.term.cols, inst.term.rows);
         }
-        // After a split, the shell receives SIGWINCH and typically
-        // redraws its prompt, pushing previous output up out of the
-        // (now smaller) viewport. Scrolling to the bottom keeps the
-        // cursor / newest output in view — without this the user
-        // perceives the split as having "truncated" or "reset" their
-        // terminal content, even though the scrollback is intact.
-        inst.term.scrollToBottom();
+        // Only scroll to bottom for freshly-created instances. For a
+        // reparented surviving pane the cols usually shrank, lines
+        // reflowed to wrap wider, and the shell redrew its prompt — if
+        // we ALSO force scrollToBottom we push the user's recent
+        // command output well above the visible viewport and they
+        // perceive it as content loss. Leaving xterm's natural resize
+        // scroll position alone keeps the cursor row visible while
+        // letting the user scroll up to see prior output.
+        if (freshLeafIds.has(spec.leafId)) {
+          inst.term.scrollToBottom();
+        }
       }
     }
 

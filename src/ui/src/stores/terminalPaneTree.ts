@@ -67,10 +67,23 @@ export interface SplitLeafResult {
   newLeafId: TerminalPaneNodeId | null;
 }
 
-// Replace the leaf with the given id by a 50/50 split whose FIRST child is
-// the existing leaf (keeping the original PTY in place visually on the
-// left/top) and whose SECOND child is a fresh leaf. No-ops if the id doesn't
-// match a leaf.
+// Replace the leaf with the given id by an asymmetric 70/30 split whose
+// FIRST child is the existing leaf (keeping the original PTY in place
+// visually on the left/top) and whose SECOND child is a fresh leaf.
+// No-ops if the id doesn't match a leaf.
+//
+// Why 70/30 rather than 50/50: when the surviving pane shrinks, the shell
+// receives SIGWINCH and zsh's default TRAPWINCH runs `zle reset-prompt`,
+// which emits ESC[J to clear from cursor to end of display. xterm blanks
+// those visible rows in place rather than moving them to scrollback
+// (correct per spec), so roughly one screenful of recent output is
+// wiped from the buffer. Keeping the survivor at ~70% width minimizes
+// the reflow — lines that fit in the old width usually still fit in the
+// new width, the shell's redraw area is smaller, and less real output
+// gets erased. Users can always drag the separator to their preferred
+// ratio afterwards.
+const INITIAL_SPLIT_SIZES: [number, number] = [70, 30];
+
 export function splitLeaf(
   tree: TerminalPaneNode,
   targetId: TerminalPaneNodeId,
@@ -85,7 +98,7 @@ export function splitLeaf(
         id: uuid(),
         direction,
         children: [tree, fresh],
-        sizes: [50, 50],
+        sizes: INITIAL_SPLIT_SIZES,
       },
       newLeafId: fresh.id,
     };

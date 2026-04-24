@@ -1175,6 +1175,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       delete nextTrees[tabId];
       const nextActivePane = { ...s.activeTerminalPaneId };
       delete nextActivePane[tabId];
+      // When the user closes the last tab in the currently-selected
+      // workspace, collapse the terminal panel — leaving an empty panel
+      // mounted looks broken. If they re-open it later the panel's
+      // tab-load effect will auto-create a fresh tab.
+      const hideBecauseEmpty =
+        tabs.length === 0 && s.selectedWorkspaceId === wsId;
       return {
         terminalTabs: { ...s.terminalTabs, [wsId]: tabs },
         activeTerminalTabId: wasActive
@@ -1182,6 +1188,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : s.activeTerminalTabId,
         terminalPaneTrees: nextTrees,
         activeTerminalPaneId: nextActivePane,
+        terminalPanelVisible: hideBecauseEmpty ? false : s.terminalPanelVisible,
       };
     }),
   setActiveTerminalTab: (wsId, id) =>

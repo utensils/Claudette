@@ -68,14 +68,16 @@ describe("pane slice: ensurePaneTree", () => {
 describe("pane slice: splitPane", () => {
   beforeEach(resetStore);
 
-  it("splits a leaf into a 50/50 horizontal split and focuses the new leaf", () => {
+  it("splits a leaf into a 70/30 horizontal split and focuses the new leaf", () => {
     const rootLeaf = useAppStore.getState().ensurePaneTree(1);
     const newLeaf = useAppStore.getState().splitPane(1, rootLeaf, "horizontal");
     expect(newLeaf).not.toBeNull();
     const tree = useAppStore.getState().terminalPaneTrees[1];
     if (tree.kind !== "split") throw new Error("expected split");
     expect(tree.direction).toBe("horizontal");
-    expect(tree.sizes).toEqual([50, 50]);
+    // Surviving pane keeps ~70% to minimize the reflow the shell sees on
+    // SIGWINCH — see splitLeaf in terminalPaneTree.ts for the rationale.
+    expect(tree.sizes).toEqual([70, 30]);
     expect(useAppStore.getState().activeTerminalPaneId[1]).toBe(newLeaf);
   });
 
@@ -169,6 +171,38 @@ describe("pane slice: cleanup on tab/workspace removal", () => {
     useAppStore.getState().removeTerminalTab(WS, 10);
     expect(useAppStore.getState().terminalPaneTrees[10]).toBeUndefined();
     expect(useAppStore.getState().activeTerminalPaneId[10]).toBeUndefined();
+  });
+
+  it("removeTerminalTab hides the terminal panel when the last tab closes", () => {
+    useAppStore.setState({ selectedWorkspaceId: WS });
+    useAppStore.getState().addTerminalTab(WS, makeTab(10));
+    expect(useAppStore.getState().terminalPanelVisible).toBe(true);
+    useAppStore.getState().removeTerminalTab(WS, 10);
+    expect(useAppStore.getState().terminalPanelVisible).toBe(false);
+    expect(useAppStore.getState().terminalTabs[WS]).toEqual([]);
+  });
+
+  it("removeTerminalTab keeps the panel visible when other tabs remain", () => {
+    useAppStore.setState({ selectedWorkspaceId: WS });
+    useAppStore.getState().addTerminalTab(WS, makeTab(10));
+    useAppStore.getState().addTerminalTab(WS, makeTab(11));
+    expect(useAppStore.getState().terminalPanelVisible).toBe(true);
+    useAppStore.getState().removeTerminalTab(WS, 10);
+    expect(useAppStore.getState().terminalPanelVisible).toBe(true);
+  });
+
+  // A user could close the last tab of a background workspace — e.g. a
+  // plugin or external flow. We shouldn't yank the panel out from under
+  // the currently-selected workspace just because some other workspace
+  // went empty.
+  it("removeTerminalTab does not hide the panel when the empty tab list belongs to a different workspace", () => {
+    const OTHER_WS = "other-workspace";
+    useAppStore.setState({ selectedWorkspaceId: WS });
+    useAppStore.getState().addTerminalTab(WS, makeTab(10));
+    useAppStore.getState().addTerminalTab(OTHER_WS, makeTab(20, OTHER_WS));
+    expect(useAppStore.getState().terminalPanelVisible).toBe(true);
+    useAppStore.getState().removeTerminalTab(OTHER_WS, 20);
+    expect(useAppStore.getState().terminalPanelVisible).toBe(true);
   });
 
   it("removeWorkspace drops pane trees for every tab in the workspace", () => {

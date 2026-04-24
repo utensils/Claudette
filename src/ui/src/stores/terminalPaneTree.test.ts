@@ -125,13 +125,20 @@ describe("allLeafIds", () => {
 });
 
 describe("splitLeaf", () => {
-  it("turns a lone leaf into a 50/50 split with the new leaf second", () => {
+  // The initial split is asymmetric — the existing (surviving) pane keeps
+  // ~70% and the newly-created pane takes ~30%. Reason: when cols shrink
+  // on the surviving pane, zsh's SIGWINCH handler emits ESC[J which
+  // erases the visible viewport's content in place (xterm does not move
+  // erased rows to scrollback). A smaller cols delta means the shell
+  // redraws a smaller prompt area and wipes fewer rows of recent output.
+  // The user can always drag the separator to 50/50 after the fact.
+  it("turns a lone leaf into a 70/30 split with the new leaf second", () => {
     const tree = leaf("a");
     const { tree: next, newLeafId } = splitLeaf(tree, "a", "horizontal");
     expect(next.kind).toBe("split");
     if (next.kind !== "split") throw new Error("expected split");
     expect(next.direction).toBe("horizontal");
-    expect(next.sizes).toEqual([50, 50]);
+    expect(next.sizes).toEqual([70, 30]);
     expect(next.children[0]).toEqual(leaf("a"));
     expect(next.children[1].id).toBe(newLeafId);
     expect(next.children[1].kind).toBe("leaf");
