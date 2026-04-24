@@ -94,6 +94,21 @@ fn register_host_api(lua: &Lua, ctx: HostContext) -> LuaResult<()> {
         })?,
     )?;
 
+    // host.direnv_decode_watches(str) -> array<string>
+    //
+    // direnv encodes its watch list (DIRENV_WATCHES env var) as
+    // URL-safe-base64-of-zlib-of-JSON `[{path, modtime, exists}, ...]`.
+    // We decode in Rust because Lua has no gzip/deflate primitives.
+    //
+    // Returns the array of `path` strings. Unparseable input returns an
+    // empty list rather than raising — direnv occasionally emits blank or
+    // placeholder values we don't want to treat as fatal. Callers decide
+    // what to do with the result.
+    host.set(
+        "direnv_decode_watches",
+        lua.create_function(|_, encoded: String| Ok(decode_direnv_watches(&encoded)))?,
+    )?;
+
     // host.workspace() -> {id, name, branch, worktree_path, repo_path}
     let ws = ctx.workspace_info.clone();
     host.set(
@@ -217,6 +232,57 @@ fn resolve_inside_workspace(
     } else {
         None
     }
+}
+
+/// Decode direnv's `DIRENV_WATCHES` env-var value into the list of
+/// watched paths it carries.
+///
+/// Format (gzenv, per direnv source): URL-safe base64 (no padding) of
+/// zlib-compressed JSON `[{"path": "...", "modtime": N, "exists": bool}, ...]`.
+/// Returns `path` strings only. On any parse failure (unexpected encoding,
+/// truncated data, bad JSON) returns an empty vec — direnv is the source
+/// of truth and emits blank/placeholder values in normal operation that
+/// we shouldn't surface as plugin errors.
+fn decode_direnv_watches(encoded: &str) -> Vec<String> {
+    use base64::Engine as _;
+    use flate2::read::ZlibDecoder;
+    use std::io::Read as _;
+
+    let trimmed = encoded.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    // direnv uses URL-safe base64 without padding; try that first, then
+    // fall back to standard base64 so we tolerate either variant in the
+    // wild.
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(trimmed)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(trimmed))
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(trimmed));
+    let bytes = match bytes {
+        Ok(b) => b,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut decoder = ZlibDecoder::new(&bytes[..]);
+    let mut json = String::new();
+    if decoder.read_to_string(&mut json).is_err() {
+        return Vec::new();
+    }
+
+    let parsed: serde_json::Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    let Some(array) = parsed.as_array() else {
+        return Vec::new();
+    };
+    array
+        .iter()
+        .filter_map(|entry| entry.get("path")?.as_str().map(str::to_owned))
+        .collect()
 }
 
 /// Execute a subprocess, restricted to allowed CLIs.
@@ -760,5 +826,85 @@ mod tests {
             .eval()
             .unwrap();
         assert!(!exists, "dotdot traversal must be denied");
+    }
+
+    /// Build a DIRENV_WATCHES-shaped payload from a list of paths.
+    /// URL-safe base64 (no padding) over zlib-compressed JSON —
+    /// mirrors the wire format emitted by direnv 2.x.
+    fn encode_direnv_watches(paths: &[&str]) -> String {
+        use base64::Engine as _;
+        use flate2::Compression;
+        use flate2::write::ZlibEncoder;
+        use std::io::Write as _;
+
+        let entries: Vec<serde_json::Value> = paths
+            .iter()
+            .map(|p| serde_json::json!({ "path": p, "modtime": 0, "exists": true }))
+            .collect();
+        let json = serde_json::to_string(&entries).unwrap();
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(json.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&compressed)
+    }
+
+    #[test]
+    fn decode_direnv_watches_round_trip() {
+        let encoded =
+            encode_direnv_watches(&["/repo/.envrc", "/repo/secret.env", "/home/u/.config/foo"]);
+        let decoded = decode_direnv_watches(&encoded);
+        assert_eq!(
+            decoded,
+            vec![
+                "/repo/.envrc".to_string(),
+                "/repo/secret.env".to_string(),
+                "/home/u/.config/foo".to_string(),
+            ],
+        );
+    }
+
+    #[test]
+    fn decode_direnv_watches_empty_input_returns_empty() {
+        assert!(decode_direnv_watches("").is_empty());
+        assert!(decode_direnv_watches("   ").is_empty());
+    }
+
+    #[test]
+    fn decode_direnv_watches_returns_empty_on_garbage() {
+        // Not base64 at all.
+        assert!(decode_direnv_watches("not base64!!!").is_empty());
+        // Valid base64 but not zlib.
+        use base64::Engine as _;
+        let junk = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"hello world");
+        assert!(decode_direnv_watches(&junk).is_empty());
+    }
+
+    #[test]
+    fn decode_direnv_watches_via_lua_host_api() {
+        // Round-trip through the Lua surface to confirm the host function
+        // is wired up and returns a Lua sequence.
+        let ctx = make_test_ctx();
+        let lua = create_lua_vm(ctx).unwrap();
+        let encoded = encode_direnv_watches(&["/a/.envrc", "/a/sub.env"]);
+
+        // Embed the encoded payload as a Lua string literal. The
+        // encoding is ASCII (URL-safe base64), no escape handling
+        // needed.
+        let script = format!(r#"return host.direnv_decode_watches("{encoded}")"#);
+        let table: mlua::Table = lua.load(&script).eval().unwrap();
+        assert_eq!(table.len().unwrap(), 2);
+        assert_eq!(table.get::<String>(1).unwrap(), "/a/.envrc");
+        assert_eq!(table.get::<String>(2).unwrap(), "/a/sub.env");
+    }
+
+    #[test]
+    fn decode_direnv_watches_via_lua_accepts_empty_string() {
+        let ctx = make_test_ctx();
+        let lua = create_lua_vm(ctx).unwrap();
+        let len: i64 = lua
+            .load(r#"return #host.direnv_decode_watches("")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(len, 0);
     }
 }

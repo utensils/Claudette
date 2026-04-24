@@ -86,6 +86,165 @@ fn direnv_detect_skips_missing_envrc() {
     ));
 }
 
+/// Encode paths into direnv's `DIRENV_WATCHES` wire format — URL-safe
+/// base64 of zlib-compressed JSON `[{"path": ..., "modtime": N, ...}, ...]`.
+/// Mirrors the decoder lives in `host_api::decode_direnv_watches`.
+fn encode_direnv_watches(paths: &[&str]) -> String {
+    use base64::Engine as _;
+    use flate2::Compression;
+    use flate2::write::ZlibEncoder;
+    use std::io::Write as _;
+
+    let entries: Vec<serde_json::Value> = paths
+        .iter()
+        .map(|p| serde_json::json!({ "path": p, "modtime": 1, "exists": true }))
+        .collect();
+    let json = serde_json::to_string(&entries).unwrap();
+    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+    enc.write_all(json.as_bytes()).unwrap();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(enc.finish().unwrap())
+}
+
+/// Drive env-direnv's `export` with a stubbed `host.exec` that returns
+/// a caller-supplied env map (encoded as JSON) with the given
+/// `DIRENV_WATCHES` value. Returns `(watched list, worktree path)`.
+///
+/// We override `host.exec` after VM construction so the plugin code is
+/// unmodified — this is the same trick the plugin would see in prod,
+/// with all other host APIs intact. The stub records the first call
+/// only; the plugin invokes `direnv export json` once on the happy path.
+fn direnv_export_with_stubbed_exec(
+    direnv_watches: Option<&str>,
+) -> (Vec<String>, tempfile::TempDir) {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join(".envrc"), "export FOO=bar\n").unwrap();
+    let lua = make_vm("env-direnv", &["direnv"], tmp.path());
+
+    // Build the JSON `host.exec` should return. direnv's real output is
+    // `{VAR: "value" | null}`, so we set at least one var plus
+    // optionally DIRENV_WATCHES.
+    let mut env = serde_json::json!({ "FOO": "bar" });
+    if let Some(w) = direnv_watches {
+        env["DIRENV_WATCHES"] = serde_json::Value::String(w.to_string());
+    }
+    let env_json = serde_json::to_string(&env).unwrap();
+
+    // Overwrite `host.exec` in the globals of this VM. The plugin's
+    // `export` is the only path that calls it (detect uses file_exists).
+    let stub_script = format!(
+        r#"
+        host.exec = function(cmd, args)
+            return {{ stdout = [==[{env_json}]==], stderr = "", code = 0 }}
+        end
+        "#
+    );
+    lua.load(&stub_script).exec().expect("install stub");
+
+    let worktree = tmp.path().to_string_lossy().into_owned();
+    let script = format!(
+        r#"
+        local M = (function() {src} end)()
+        return M.export({{ worktree = "{path}" }})
+        "#,
+        src = DIRENV_SRC,
+        path = worktree.replace('\\', "\\\\"),
+    );
+    let result: mlua::Table = lua.load(&script).eval().expect("export");
+    let watched: mlua::Table = result.get("watched").expect("watched field");
+    let mut out = Vec::new();
+    let len = watched.len().expect("len") as usize;
+    for i in 1..=len {
+        out.push(watched.get::<String>(i).expect("string path"));
+    }
+    (out, tmp)
+}
+
+#[test]
+fn direnv_export_watches_list_includes_envrc_without_direnv_watches() {
+    // No DIRENV_WATCHES in the exported env (direnv didn't emit one,
+    // or the .envrc has no `watch_file` directives). We still must
+    // report `.envrc` as the watch target, unchanged from prior behavior.
+    let (watched, _tmp) = direnv_export_with_stubbed_exec(None);
+    assert_eq!(watched.len(), 1, "watched = {watched:?}");
+    assert!(
+        watched[0].ends_with(".envrc"),
+        "expected .envrc in watched, got {watched:?}"
+    );
+}
+
+#[test]
+fn direnv_export_watches_list_merges_direnv_watches() {
+    // `.envrc` sources `secret.env` and `.local.env` via direnv's
+    // `watch_file` / `dotenv` directives. direnv emits both in
+    // `DIRENV_WATCHES`; the plugin must surface them so the cache
+    // invalidates when either changes. We two-phase this: first get
+    // the worktree path from the helper, then re-run with a
+    // DIRENV_WATCHES whose paths are rooted at that worktree so we can
+    // verify dedupe against the `.envrc` the plugin self-seeds.
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join(".envrc"), "export FOO=bar\n").unwrap();
+    let worktree = tmp.path().to_string_lossy().into_owned();
+    let envrc_path = format!("{worktree}/.envrc");
+    let secret_path = format!("{worktree}/secret.env");
+    let local_path = format!("{worktree}/.local.env");
+    let encoded = encode_direnv_watches(&[&envrc_path, &secret_path, &local_path]);
+
+    let lua = make_vm("env-direnv", &["direnv"], tmp.path());
+    let env_json = serde_json::to_string(&serde_json::json!({
+        "FOO": "bar",
+        "DIRENV_WATCHES": encoded,
+    }))
+    .unwrap();
+    let stub = format!(
+        r#"host.exec = function() return {{ stdout = [==[{env_json}]==], stderr = "", code = 0 }} end"#
+    );
+    lua.load(&stub).exec().unwrap();
+
+    let script = format!(
+        r#"
+        local M = (function() {src} end)()
+        return M.export({{ worktree = "{path}" }})
+        "#,
+        src = DIRENV_SRC,
+        path = worktree.replace('\\', "\\\\"),
+    );
+    let result: mlua::Table = lua.load(&script).eval().unwrap();
+    let watched_tbl: mlua::Table = result.get("watched").unwrap();
+    let len = watched_tbl.len().unwrap() as usize;
+    let watched: Vec<String> = (1..=len)
+        .map(|i| watched_tbl.get::<String>(i).unwrap())
+        .collect();
+
+    assert!(
+        watched.contains(&envrc_path),
+        "expected {envrc_path} in watched, got {watched:?}"
+    );
+    assert!(
+        watched.contains(&secret_path),
+        "expected {secret_path} in watched, got {watched:?}"
+    );
+    assert!(
+        watched.contains(&local_path),
+        "expected {local_path} in watched, got {watched:?}"
+    );
+    // Dedupe: the worktree-rooted .envrc appears exactly once even
+    // though both the plugin and direnv list it.
+    let envrc_count = watched.iter().filter(|p| **p == envrc_path).count();
+    assert_eq!(
+        envrc_count, 1,
+        "expected .envrc exactly once in watched, got {watched:?}"
+    );
+}
+
+#[test]
+fn direnv_export_watches_list_tolerates_garbage_direnv_watches() {
+    // Decoder returns an empty list on unparseable input. The plugin
+    // must not error — we still emit the `.envrc` baseline.
+    let (watched, _tmp) = direnv_export_with_stubbed_exec(Some("not-base64!!"));
+    assert_eq!(watched.len(), 1);
+    assert!(watched[0].ends_with(".envrc"));
+}
+
 // ---------------------------------------------------------------------------
 // env-mise
 // ---------------------------------------------------------------------------
@@ -277,7 +436,7 @@ fn nix_detect_skips_plain_repo() {
 /// tests run in parallel by default, and `std::env::set_var` is
 /// process-global — concurrent integration tests tripping over each
 /// other's HOME would produce flaky failures.
-#[cfg(any(has_direnv, has_mise))]
+#[cfg(any(has_direnv, has_mise, has_nix))]
 fn env_override_mutex() -> &'static std::sync::Mutex<()> {
     static M: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
     M.get_or_init(|| std::sync::Mutex::new(()))
@@ -295,14 +454,14 @@ fn env_override_mutex() -> &'static std::sync::Mutex<()> {
 /// integration tests pollute the developer's real trust cache with
 /// tempdir paths, and fail outright in sandboxed CI environments
 /// where `~/.local/...` is read-only.
-#[cfg(any(has_direnv, has_mise))]
+#[cfg(any(has_direnv, has_mise, has_nix))]
 struct ScopedHome {
     _guard: std::sync::MutexGuard<'static, ()>,
     _tmp: tempfile::TempDir,
     prior: Vec<(&'static str, Option<String>)>,
 }
 
-#[cfg(any(has_direnv, has_mise))]
+#[cfg(any(has_direnv, has_mise, has_nix))]
 impl ScopedHome {
     fn new() -> Self {
         let guard = env_override_mutex()
@@ -349,7 +508,7 @@ impl ScopedHome {
     }
 }
 
-#[cfg(any(has_direnv, has_mise))]
+#[cfg(any(has_direnv, has_mise, has_nix))]
 impl Drop for ScopedHome {
     fn drop(&mut self) {
         for (k, v) in &self.prior {
@@ -733,7 +892,110 @@ async fn integration_mise_auto_trust_on_retries_after_untrusted() {
     );
 }
 
-// nix print-dev-env on a fresh flake evaluates the flake.nix from
-// scratch, which can take 10-60s the first time. Skip the integration
-// test for now — cargo test wall-clock matters more than coverage
-// here. Unit tests + the manual verification plan cover the happy path.
+/// End-to-end integration test for env-nix-devshell, opt-in.
+///
+/// `nix print-dev-env --json` on a fresh flake with a nixpkgs input
+/// evaluates the flake from scratch; that's ~3s with warm nixpkgs in
+/// the store and 10–60s cold. Too slow for the default fast-test loop,
+/// so this is gated behind `CLAUDETTE_SLOW_TESTS=1`. Local devs run it
+/// with `CLAUDETTE_SLOW_TESTS=1 cargo test -- --ignored` or by setting
+/// the env var directly; CI runs a nightly slow-tests job.
+///
+/// Platform gating: `has_nix` evaluates to false on Windows (no native
+/// Nix), so this test only compiles into the binary on Linux + macOS
+/// where Nix is installed.
+#[cfg(has_nix)]
+#[tokio::test]
+async fn integration_nix_devshell_export_returns_env() {
+    if std::env::var("CLAUDETTE_SLOW_TESTS").ok().as_deref() != Some("1") {
+        eprintln!(
+            "integration_nix_devshell_export_returns_env: skipped (set CLAUDETTE_SLOW_TESTS=1 to run)"
+        );
+        return;
+    }
+
+    // Redirect HOME + XDG_* so the test uses a disposable nix config
+    // (we write `experimental-features = nix-command flakes` into the
+    // scoped config below — nix needs the flake subsystem enabled for
+    // `print-dev-env --json`). The scoped home also keeps any cache
+    // sideeffects out of the developer's real dirs.
+    let _scoped = ScopedHome::new();
+
+    // Enable flakes inside the scoped XDG_CONFIG_HOME.
+    let xdg_config = std::env::var("XDG_CONFIG_HOME").expect("ScopedHome sets XDG_CONFIG_HOME");
+    let nix_cfg_dir = std::path::Path::new(&xdg_config).join("nix");
+    std::fs::create_dir_all(&nix_cfg_dir).unwrap();
+    std::fs::write(
+        nix_cfg_dir.join("nix.conf"),
+        "experimental-features = nix-command flakes\n",
+    )
+    .unwrap();
+
+    // Trivial flake that pulls nixpkgs and exposes a devShell with one
+    // exported env var. `mkShellNoCC` avoids the cc wrapper derivation
+    // — faster than the default `mkShell`.
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("flake.nix"),
+        r#"{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  outputs = { self, nixpkgs }:
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      forAll = f: builtins.listToAttrs (map (s: { name = s; value = f s; }) systems);
+    in {
+      devShells = forAll (system:
+        let pkgs = nixpkgs.legacyPackages.${system};
+        in { default = pkgs.mkShellNoCC { CLAUDETTE_NIX_TEST = "ok"; }; });
+    };
+}
+"#,
+    )
+    .unwrap();
+
+    let plugin_dir = tempfile::tempdir().unwrap();
+    crate::plugin_runtime::seed::seed_bundled_plugins(plugin_dir.path());
+    let registry = crate::plugin_runtime::PluginRegistry::discover(plugin_dir.path());
+    assert!(
+        registry.plugins.contains_key("env-nix-devshell"),
+        "env-nix-devshell should be seeded + discovered"
+    );
+
+    let backend = crate::env_provider::backend::PluginRegistryBackend::new(&registry);
+    let cache = crate::env_provider::cache::EnvCache::new();
+    let ws_info = WorkspaceInfo {
+        id: "ws-nix".into(),
+        name: "test".into(),
+        branch: "main".into(),
+        worktree_path: tmp.path().to_string_lossy().into_owned(),
+        repo_path: tmp.path().to_string_lossy().into_owned(),
+    };
+
+    let resolved = crate::env_provider::resolve_for_workspace(
+        &backend,
+        &cache,
+        tmp.path(),
+        &ws_info,
+        &Default::default(),
+    )
+    .await;
+
+    let nix_source = resolved
+        .sources
+        .iter()
+        .find(|s| s.plugin_name == "env-nix-devshell")
+        .expect("env-nix-devshell must appear in sources");
+    assert!(
+        nix_source.error.is_none(),
+        "nix-devshell errored: {:?}",
+        nix_source.error
+    );
+    assert_eq!(
+        resolved
+            .vars
+            .get("CLAUDETTE_NIX_TEST")
+            .and_then(|v| v.as_deref()),
+        Some("ok"),
+        "expected CLAUDETTE_NIX_TEST=ok in merged env; full resolved = {resolved:#?}"
+    );
+}

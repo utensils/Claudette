@@ -5,10 +5,11 @@
 -- runs `direnv export json` (which returns `{VAR: "value" | null}`) and
 -- forwards that straight to the dispatcher.
 --
--- Known limitation: we watch `.envrc` for mtime changes but NOT the
--- files direnv itself watches via `DIRENV_WATCHES`. If your `.envrc`
--- sources another file that changes, edit `.envrc` (or run
--- `direnv reload` then re-evaluate via the UI) to force a refresh.
+-- The returned watch list includes `.envrc` plus every path direnv
+-- itself tracks via `DIRENV_WATCHES` (decoded from the exported env).
+-- That covers user-level `watch_file` directives and nested files that
+-- `.envrc` sources — editing `secret.env` under `dotenv secret.env`
+-- invalidates the cache just like editing `.envrc` itself.
 
 local M = {}
 
@@ -50,9 +51,31 @@ function M.export(args)
         env_map = host.json_decode(result.stdout)
     end
 
+    -- Seed with `.envrc` unconditionally — it's always a watch target.
+    -- Then merge in whatever direnv itself tracks via `DIRENV_WATCHES`
+    -- (user `watch_file` directives, files sourced by `dotenv ...`,
+    -- direnv's own allow/deny cache entries whose mtime flips when the
+    -- user runs `direnv allow`/`deny`). Dedupe so `.envrc` isn't listed
+    -- twice when direnv includes it too.
+    local watched = {}
+    local seen = {}
+    local function add(path)
+        if path and not seen[path] then
+            seen[path] = true
+            table.insert(watched, path)
+        end
+    end
+    add(join(args.worktree, ".envrc"))
+    local direnv_watches = env_map["DIRENV_WATCHES"]
+    if type(direnv_watches) == "string" and #direnv_watches > 0 then
+        for _, path in ipairs(host.direnv_decode_watches(direnv_watches)) do
+            add(path)
+        end
+    end
+
     return {
         env = env_map,
-        watched = { join(args.worktree, ".envrc") },
+        watched = watched,
     }
 end
 
