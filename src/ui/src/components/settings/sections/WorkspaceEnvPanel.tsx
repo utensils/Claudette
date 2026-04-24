@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   getWorkspaceEnvSources,
   reloadWorkspaceEnv,
@@ -6,6 +7,55 @@ import {
 } from "../../../services/env";
 import type { EnvSourceInfo } from "../../../types/env";
 import styles from "../Settings.module.css";
+
+interface ErrorInsight {
+  summary: string;
+  suggestedCommand?: string;
+  suggestedDescription?: string;
+}
+
+/**
+ * Extract a human summary + optional fix suggestion from a raw Lua runtime
+ * error string. Handles the common remediable cases surfaced by bundled
+ * env providers:
+ *
+ *   - mise: `are not trusted` → suggest `mise trust`
+ *   - direnv: `.envrc is blocked` → suggest `direnv allow`
+ *   - nix-devshell: flake eval failure → no suggestion, just the core message
+ *
+ * Falls back to the first meaningful line of the error with Lua traceback
+ * boilerplate stripped, so users see a readable message even when we don't
+ * have a canned hint.
+ */
+function analyzeError(pluginName: string, err: string): ErrorInsight {
+  if (/not trusted|mise trust/i.test(err)) {
+    return {
+      summary: "mise config files in this workspace are not trusted.",
+      suggestedCommand: "mise trust",
+      suggestedDescription: "Run in the workspace to authorize mise config:",
+    };
+  }
+  if (/is blocked|direnv allow/i.test(err)) {
+    return {
+      summary: ".envrc is blocked — direnv needs explicit permission.",
+      suggestedCommand: "direnv allow",
+      suggestedDescription: "Run in the workspace to allow direnv:",
+    };
+  }
+  if (pluginName === "env-nix-devshell" && /flake|nix/i.test(err)) {
+    return {
+      summary: "`nix print-dev-env` failed to evaluate the devshell.",
+    };
+  }
+
+  const cleaned = err
+    .replace(/^\[string "[^"]*"\]:\d+:\s*/, "")
+    .replace(/^plugin script error:\s*runtime error:\s*/i, "")
+    .trim();
+  const afterFailed = /(?:failed|error):\s*(.+)/is.exec(cleaned);
+  const core = (afterFailed ? afterFailed[1] : cleaned).split("\n")[0];
+  return { summary: core.slice(0, 240) };
+}
 
 interface WorkspaceEnvPanelProps {
   workspaceId: string;
@@ -62,6 +112,16 @@ export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
   const [sources, setSources] = useState<EnvSourceInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = useCallback((name: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -131,52 +191,69 @@ export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
       </div>
 
       <div className={styles.mcpList}>
-        {sources.map((source) => (
-          <div key={source.plugin_name} className={styles.mcpRow}>
-            <div className={styles.mcpInfo}>
-              <span
-                className={styles.mcpStatusDot}
-                style={{ background: stateColor(source) }}
-                title={stateBadge(source)}
-              />
-              <span
-                className={`${styles.mcpName} ${!source.enabled ? styles.mcpNameDisabled : ""}`}
-              >
-                {source.display_name}
-              </span>
-              <span className={styles.mcpBadge}>{stateBadge(source)}</span>
-              {source.enabled && source.detected && !source.error && (
-                <span className={styles.settingDescription}>
-                  {source.vars_contributed} var
-                  {source.vars_contributed === 1 ? "" : "s"}
-                  {source.evaluated_at_ms > 0 && (
-                    <> · {formatRelativeTime(source.evaluated_at_ms)}</>
+        {sources.map((source) => {
+          const hasError =
+            source.enabled && !!source.error && source.error !== "disabled";
+          const isOpen = expanded.has(source.plugin_name);
+          return (
+            <div key={source.plugin_name}>
+              <div className={styles.mcpRow}>
+                <div className={styles.mcpInfo}>
+                  <span
+                    className={styles.mcpStatusDot}
+                    style={{ background: stateColor(source) }}
+                    title={stateBadge(source)}
+                  />
+                  <span
+                    className={`${styles.mcpName} ${!source.enabled ? styles.mcpNameDisabled : ""}`}
+                  >
+                    {source.display_name}
+                  </span>
+                  <span className={styles.mcpBadge}>{stateBadge(source)}</span>
+                  {source.enabled && source.detected && !source.error && (
+                    <span className={styles.settingDescription}>
+                      {source.vars_contributed} var
+                      {source.vars_contributed === 1 ? "" : "s"}
+                      {source.evaluated_at_ms > 0 && (
+                        <> · {formatRelativeTime(source.evaluated_at_ms)}</>
+                      )}
+                    </span>
                   )}
-                </span>
-              )}
-              {source.enabled && source.error && source.error !== "disabled" && (
-                <span
-                  className={styles.mcpError}
-                  title={source.error}
-                >
-                  {source.error.slice(0, 60)}
-                </span>
+                </div>
+                <div className={styles.mcpActions}>
+                  {hasError && (
+                    <button
+                      type="button"
+                      className={styles.envDetailsBtn}
+                      onClick={() => toggleExpanded(source.plugin_name)}
+                      aria-expanded={isOpen}
+                    >
+                      {isOpen ? "Hide details" : "Show details"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={`${styles.mcpToggle} ${source.enabled ? styles.mcpToggleOn : ""}`}
+                    onClick={() =>
+                      handleToggle(source.plugin_name, !source.enabled)
+                    }
+                    role="switch"
+                    aria-checked={source.enabled}
+                    aria-label={`${source.enabled ? "Disable" : "Enable"} ${source.display_name}`}
+                  >
+                    <span className={styles.mcpToggleKnob} />
+                  </button>
+                </div>
+              </div>
+              {hasError && isOpen && (
+                <ErrorCard
+                  pluginName={source.plugin_name}
+                  error={source.error!}
+                />
               )}
             </div>
-            <div className={styles.mcpActions}>
-              <button
-                type="button"
-                className={`${styles.mcpToggle} ${source.enabled ? styles.mcpToggleOn : ""}`}
-                onClick={() => handleToggle(source.plugin_name, !source.enabled)}
-                role="switch"
-                aria-checked={source.enabled}
-                aria-label={`${source.enabled ? "Disable" : "Enable"} ${source.display_name}`}
-              >
-                <span className={styles.mcpToggleKnob} />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className={styles.buttonRow}>
@@ -190,5 +267,69 @@ export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
         </button>
       </div>
     </>
+  );
+}
+
+function ErrorCard({
+  pluginName,
+  error,
+}: {
+  pluginName: string;
+  error: string;
+}) {
+  const insight = analyzeError(pluginName, error);
+  const [copiedCmd, setCopiedCmd] = useState(false);
+  const [copiedRaw, setCopiedRaw] = useState(false);
+
+  const copy = useCallback(
+    async (text: string, setFlag: (v: boolean) => void) => {
+      try {
+        await writeText(text);
+        setFlag(true);
+        setTimeout(() => setFlag(false), 1500);
+      } catch {
+        // Clipboard access can fail in hardened webviews; silently no-op —
+        // the raw text is still visible in the <pre> for manual selection.
+      }
+    },
+    [],
+  );
+
+  return (
+    <div className={styles.envErrorCard} role="alert">
+      <div className={styles.envErrorSummary}>{insight.summary}</div>
+      {insight.suggestedCommand && (
+        <>
+          {insight.suggestedDescription && (
+            <div className={styles.envErrorHint}>
+              {insight.suggestedDescription}
+            </div>
+          )}
+          <div className={styles.envErrorCmdRow}>
+            <code className={styles.envErrorCmd}>
+              {insight.suggestedCommand}
+            </code>
+            <button
+              type="button"
+              className={styles.envErrorCopyBtn}
+              onClick={() => copy(insight.suggestedCommand!, setCopiedCmd)}
+            >
+              {copiedCmd ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </>
+      )}
+      <details className={styles.envErrorDetails}>
+        <summary>Raw error output</summary>
+        <pre className={styles.envErrorPre}>{error}</pre>
+        <button
+          type="button"
+          className={styles.envErrorCopyBtn}
+          onClick={() => copy(error, setCopiedRaw)}
+        >
+          {copiedRaw ? "Copied" : "Copy full error"}
+        </button>
+      </details>
+    </div>
   );
 }
