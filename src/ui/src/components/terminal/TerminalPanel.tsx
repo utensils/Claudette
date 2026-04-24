@@ -58,6 +58,8 @@ interface PtyOutputPayload {
   data: number[];
 }
 
+const terminalInputEncoder = new TextEncoder();
+
 // Per-leaf xterm + PTY handle. The container is a detached <div> that we
 // appendChild into whichever target div the pane tree currently emits for
 // this leafId — that's the trick that keeps xterm alive across splits.
@@ -613,7 +615,7 @@ export const TerminalPanel = memo(function TerminalPanel() {
           inst.unlisten = unlistenFn;
 
           term.onData((data) => {
-            const bytes = Array.from(new TextEncoder().encode(data));
+            const bytes = Array.from(terminalInputEncoder.encode(data));
             writePty(ptyId, bytes);
           });
           term.onResize(({ cols, rows }) => {
