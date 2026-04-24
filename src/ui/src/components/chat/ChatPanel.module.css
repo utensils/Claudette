@@ -559,12 +559,21 @@
 }
 
 .spinner {
-  font-size: 14px;
+  display: block;
   color: var(--accent-primary);
-  width: 14px;
-  text-align: center;
-  font-family: var(--font-mono);
   filter: drop-shadow(0 0 3px rgba(var(--accent-primary-rgb), 0.4));
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 .elapsed {

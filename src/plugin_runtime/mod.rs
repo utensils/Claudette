@@ -1,7 +1,5 @@
-pub mod detect;
 pub mod host_api;
 pub mod manifest;
-pub mod scm;
 pub mod seed;
 
 use std::collections::HashMap;
@@ -28,7 +26,7 @@ pub struct LoadedPlugin {
 }
 
 #[derive(Debug, Clone)]
-pub enum ScmError {
+pub enum PluginError {
     CliNotFound(String),
     CliAuthError(String),
     CliError {
@@ -44,7 +42,7 @@ pub enum ScmError {
     PluginNotFound(String),
 }
 
-impl fmt::Display for ScmError {
+impl fmt::Display for PluginError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CliNotFound(cli) => write!(f, "CLI tool '{cli}' is not installed"),
@@ -57,16 +55,16 @@ impl fmt::Display for ScmError {
             Self::ScriptError(msg) => write!(f, "Plugin script error: {msg}"),
             Self::Timeout => write!(f, "Operation timed out"),
             Self::ParseError(msg) => write!(f, "Failed to parse plugin output: {msg}"),
-            Self::NoProvider => write!(f, "No SCM provider configured for this repository"),
+            Self::NoProvider => write!(f, "No provider configured for this repository"),
             Self::OperationNotSupported(op) => write!(f, "Operation '{op}' is not supported"),
             Self::PluginNotFound(name) => write!(f, "Plugin '{name}' not found"),
         }
     }
 }
 
-impl std::error::Error for ScmError {}
+impl std::error::Error for PluginError {}
 
-impl serde::Serialize for ScmError {
+impl serde::Serialize for PluginError {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_string())
     }
@@ -149,19 +147,19 @@ impl PluginRegistry {
         operation: &str,
         args: serde_json::Value,
         workspace_info: WorkspaceInfo,
-    ) -> Result<serde_json::Value, ScmError> {
+    ) -> Result<serde_json::Value, PluginError> {
         let plugin = self
             .plugins
             .get(plugin_name)
-            .ok_or_else(|| ScmError::PluginNotFound(plugin_name.to_string()))?;
+            .ok_or_else(|| PluginError::PluginNotFound(plugin_name.to_string()))?;
 
         if !plugin.cli_available {
             let cli_list = plugin.manifest.required_clis.join(", ");
-            return Err(ScmError::CliNotFound(cli_list));
+            return Err(PluginError::CliNotFound(cli_list));
         }
 
         if !plugin.manifest.operations.contains(&operation.to_string()) {
-            return Err(ScmError::OperationNotSupported(operation.to_string()));
+            return Err(PluginError::OperationNotSupported(operation.to_string()));
         }
 
         let init_path = plugin.dir.join("init.lua");
@@ -169,7 +167,7 @@ impl PluginRegistry {
         // matters in the polling loop where many workspaces may load at once.
         let script = tokio::fs::read_to_string(&init_path)
             .await
-            .map_err(|e| ScmError::ScriptError(format!("Failed to read init.lua: {e}")))?;
+            .map_err(|e| PluginError::ScriptError(format!("Failed to read init.lua: {e}")))?;
 
         let ctx = HostContext {
             plugin_name: plugin_name.to_string(),
@@ -178,7 +176,8 @@ impl PluginRegistry {
             config: plugin.config.clone(),
         };
 
-        let lua = host_api::create_lua_vm(ctx).map_err(|e| ScmError::ScriptError(e.to_string()))?;
+        let lua =
+            host_api::create_lua_vm(ctx).map_err(|e| PluginError::ScriptError(e.to_string()))?;
 
         // Run script load + function call + result conversion under a
         // single timeout so a misbehaving plugin can't stall the polling
@@ -194,17 +193,17 @@ impl PluginRegistry {
                 .set_name(format!("plugins/{plugin_name_owned}/init.lua"))
                 .eval_async()
                 .await
-                .map_err(|e| ScmError::ScriptError(format!("Failed to load plugin: {e}")))?;
+                .map_err(|e| PluginError::ScriptError(format!("Failed to load plugin: {e}")))?;
 
             // Get the operation function
-            let func: mlua::Function = module
-                .get(operation_owned.as_str())
-                .map_err(|e| ScmError::OperationNotSupported(format!("{operation_owned}: {e}")))?;
+            let func: mlua::Function = module.get(operation_owned.as_str()).map_err(|e| {
+                PluginError::OperationNotSupported(format!("{operation_owned}: {e}"))
+            })?;
 
             // Convert args to Lua value
             let lua_args = lua
                 .to_value(&args)
-                .map_err(|e| ScmError::ParseError(format!("Failed to convert args: {e}")))?;
+                .map_err(|e| PluginError::ParseError(format!("Failed to convert args: {e}")))?;
 
             // Call the operation
             let result: mlua::Value =
@@ -213,19 +212,19 @@ impl PluginRegistry {
                     // Detect auth errors from CLI tools
                     if msg.contains("auth") || msg.contains("login") || msg.contains("401") {
                         let cli = required_clis.first().cloned().unwrap_or_default();
-                        return ScmError::CliAuthError(cli);
+                        return PluginError::CliAuthError(cli);
                     }
-                    ScmError::ScriptError(msg)
+                    PluginError::ScriptError(msg)
                 })?;
 
             // Convert result to JSON
             lua.from_value(result)
-                .map_err(|e| ScmError::ParseError(format!("Failed to convert result: {e}")))
+                .map_err(|e| PluginError::ParseError(format!("Failed to convert result: {e}")))
         };
 
         match tokio::time::timeout(OPERATION_TIMEOUT, fut).await {
             Ok(result) => result,
-            Err(_) => Err(ScmError::Timeout),
+            Err(_) => Err(PluginError::Timeout),
         }
     }
 
@@ -397,7 +396,7 @@ mod tests {
             .call_operation("nonexistent", "op", serde_json::json!({}), ws)
             .await;
 
-        assert!(matches!(result, Err(ScmError::PluginNotFound(_))));
+        assert!(matches!(result, Err(PluginError::PluginNotFound(_))));
     }
 
     #[tokio::test]
@@ -433,6 +432,6 @@ mod tests {
             .call_operation("limited", "ci_status", serde_json::json!({}), ws)
             .await;
 
-        assert!(matches!(result, Err(ScmError::OperationNotSupported(_))));
+        assert!(matches!(result, Err(PluginError::OperationNotSupported(_))));
     }
 }

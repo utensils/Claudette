@@ -6,13 +6,13 @@ use sha2::{Digest, Sha256};
 const BUNDLED_PLUGINS: &[(&str, &str, &str)] = &[
     (
         "github",
-        include_str!("../../plugins/github/plugin.json"),
-        include_str!("../../plugins/github/init.lua"),
+        include_str!("../../plugins/scm-github/plugin.json"),
+        include_str!("../../plugins/scm-github/init.lua"),
     ),
     (
         "gitlab",
-        include_str!("../../plugins/gitlab/plugin.json"),
-        include_str!("../../plugins/gitlab/init.lua"),
+        include_str!("../../plugins/scm-gitlab/plugin.json"),
+        include_str!("../../plugins/scm-gitlab/init.lua"),
     ),
 ];
 

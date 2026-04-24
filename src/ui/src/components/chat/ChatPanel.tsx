@@ -2,7 +2,7 @@ import React, { createContext, memo, useContext, useEffect, useRef, useState, us
 import { isAgentBusy } from "../../utils/agentStatus";
 import Markdown from "react-markdown";
 import { preprocessContent, MARKDOWN_COMPONENTS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../utils/markdown";
-import { FileText, GitBranch, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
+import { FileText, GitBranch, LoaderCircle, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
 import {
@@ -81,7 +81,6 @@ import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
 import caretStyles from "./caret.module.css";
 
-import { SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "../../utils/spinnerFrames";
 import { formatTokens } from "./formatTokens";
 
 function shouldDisable1mContext(modelId: string | null): boolean {
@@ -285,8 +284,7 @@ export function ChatPanel() {
     [handleContentChanged],
   );
 
-  // Spinner and elapsed timer for running agent.
-  const [spinnerIdx, setSpinnerIdx] = useState(0);
+  // Elapsed timer for running agent.
   const promptStartTime = useAppStore(
     (s) => (selectedWorkspaceId ? s.promptStartTime[selectedWorkspaceId] ?? null : null)
   );
@@ -294,12 +292,10 @@ export function ChatPanel() {
   useEffect(() => {
     if (!isRunning || promptStartTime == null) return;
     setElapsed(Math.floor((Date.now() - promptStartTime) / 1000));
-    setSpinnerIdx(0);
     const interval = setInterval(() => {
-      setSpinnerIdx((i) => (i + 1) % SPINNER_FRAMES.length);
       const newElapsed = Math.floor((Date.now() - promptStartTime) / 1000);
       setElapsed((prev) => (prev === newElapsed ? prev : newElapsed));
-    }, SPINNER_INTERVAL_MS);
+    }, 1000);
     return () => clearInterval(interval);
   }, [isRunning, promptStartTime]);
 
@@ -983,7 +979,7 @@ export function ChatPanel() {
                       : `Processing, ${formatElapsed(elapsed)} elapsed`
                   }
                 >
-                  <span className={styles.spinner} aria-hidden="true">{SPINNER_FRAMES[spinnerIdx]}</span>
+                  <LoaderCircle size={14} className={styles.spinner} aria-hidden="true" />
                   {ws?.agent_status === "Compacting" && (
                     <span className={styles.compactingLabel}>Compacting context…</span>
                   )}

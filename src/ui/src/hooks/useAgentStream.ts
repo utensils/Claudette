@@ -70,7 +70,8 @@ export function useAgentStream() {
           pendingToolCount: (useAppStore.getState().toolActivities[wsId] || []).length,
         });
         // Only finalize if the `result` event hasn't already done so.
-        if (!turnFinalizedRef.current[wsId]) {
+        const wasFinalized = turnFinalizedRef.current[wsId];
+        if (!wasFinalized) {
           finalizeTurn(
             wsId,
             turnMessageCountRef.current[wsId] || 0,
@@ -80,7 +81,9 @@ export function useAgentStream() {
         turnMessageCountRef.current[wsId] = 0;
         turnFinalizedRef.current[wsId] = false;
         turnCheckpointIdRef.current[wsId] = undefined;
-        updateWorkspace(wsId, { agent_status: "Idle" });
+        // Natural completion emits a `result` event (wasFinalized=true) → Idle.
+        // User stop or crash has no prior `result` → Stopped.
+        updateWorkspace(wsId, { agent_status: wasFinalized ? "Idle" : "Stopped" });
         useAppStore.getState().clearPromptStartTime(wsId);
         setStreamingContent(wsId, "");
         clearStreamingThinking(wsId);
@@ -90,10 +93,6 @@ export function useAgentStream() {
         // exits immediately after emitting AskUserQuestion, so ProcessExited
         // fires before the user has a chance to answer. The question is
         // cleared when the user responds (onRespond) or sends a new message.
-
-        // Badge-check notification is handled by a store subscription
-        // in AppLayout (watching Running→Idle/Stopped transitions) rather
-        // than here, because this closure can go stale under HMR.
 
         // Notification sound + command are handled on the Rust side
         // (in ProcessExited handler) so they work even when the webview
@@ -410,6 +409,7 @@ export function useAgentStream() {
             turnFinalizedRef.current[wsId] = true;
             updateWorkspace(wsId, { agent_status: "Idle" });
             useAppStore.getState().clearPromptStartTime(wsId);
+            useAppStore.getState().markWorkspaceAsUnread(wsId);
             break;
           }
           case "user": {

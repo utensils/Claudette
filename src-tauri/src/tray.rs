@@ -969,8 +969,9 @@ mod tests {
     fn fresh_state() -> AppState {
         // Lightweight AppState for unit tests — the db path and worktree
         // dir aren't exercised here, only next_tray_seq.
-        let plugins =
-            claudette::scm_provider::PluginRegistry::discover(std::path::Path::new("/nonexistent"));
+        let plugins = claudette::plugin_runtime::PluginRegistry::discover(std::path::Path::new(
+            "/nonexistent",
+        ));
         AppState::new(
             std::path::PathBuf::from(":memory:"),
             std::path::PathBuf::from("/tmp"),

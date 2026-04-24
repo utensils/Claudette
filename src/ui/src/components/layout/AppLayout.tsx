@@ -13,7 +13,6 @@ import { SettingsPage } from "../settings/SettingsPage";
 import { ResizeHandle } from "./ResizeHandle";
 import { ToastContainer } from "./Toast";
 import { useAgentStream } from "../../hooks/useAgentStream";
-import { isAgentBusy } from "../../utils/agentStatus";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useBranchRefresh } from "../../hooks/useBranchRefresh";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
@@ -40,28 +39,6 @@ export function AppLayout() {
   useBranchRefresh();
   useAutoUpdater();
 
-  useEffect(() => {
-    const prevBusy = new Map<string, boolean>();
-    for (const ws of useAppStore.getState().workspaces) {
-      prevBusy.set(ws.id, isAgentBusy(ws.agent_status));
-    }
-    return useAppStore.subscribe((state, prev) => {
-      if (state.workspaces === prev.workspaces) return;
-      const currentIds = new Set<string>();
-      for (const ws of state.workspaces) {
-        currentIds.add(ws.id);
-        const wasBusy = prevBusy.get(ws.id);
-        const busy = isAgentBusy(ws.agent_status);
-        prevBusy.set(ws.id, busy);
-        if (wasBusy && !busy) {
-          state.markWorkspaceAsUnread(ws.id);
-        }
-      }
-      for (const id of prevBusy.keys()) {
-        if (!currentIds.has(id)) prevBusy.delete(id);
-      }
-    });
-  }, []);
 
   const showDiff = diffSelectedFile !== null;
 
