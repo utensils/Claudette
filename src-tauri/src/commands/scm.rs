@@ -270,17 +270,26 @@ pub async fn load_scm_detail(
 
     // Persist to SQLite for instant display on next app launch.
     {
-        if let Ok(db) = Database::open(&state.db_path) {
-            let _ = db.upsert_scm_status_cache(&claudette::db::ScmStatusCacheRow {
-                workspace_id: workspace_id.clone(),
-                repo_id: cache_key.0.clone(),
-                branch_name: cache_key.1.clone(),
-                provider: Some(provider_name.clone()),
-                pr_json: serde_json::to_string(&pull_request).ok(),
-                ci_json: serde_json::to_string(&ci_checks).ok(),
-                error: error.clone(),
-                fetched_at: String::new(),
-            });
+        match Database::open(&state.db_path) {
+            Ok(db) => {
+                if let Err(e) = db.upsert_scm_status_cache(&claudette::db::ScmStatusCacheRow {
+                    workspace_id: workspace_id.clone(),
+                    repo_id: cache_key.0.clone(),
+                    branch_name: cache_key.1.clone(),
+                    provider: Some(provider_name.clone()),
+                    pr_json: serde_json::to_string(&pull_request).ok(),
+                    ci_json: serde_json::to_string(&ci_checks).ok(),
+                    error: error.clone(),
+                    fetched_at: String::new(),
+                }) {
+                    eprintln!(
+                        "[scm] Failed to persist SCM cache for workspace {workspace_id}: {e}"
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("[scm] Failed to open DB for SCM cache persistence: {e}");
+            }
         }
     }
 
@@ -559,17 +568,26 @@ async fn poll_workspace_scm(app_state: &AppState, workspace_id: &str) -> Option<
 
     // Persist to SQLite for instant display on next app launch.
     {
-        if let Ok(db) = Database::open(&app_state.db_path) {
-            let _ = db.upsert_scm_status_cache(&claudette::db::ScmStatusCacheRow {
-                workspace_id: workspace_id.to_string(),
-                repo_id: cache_key.0.clone(),
-                branch_name: cache_key.1.clone(),
-                provider: Some(provider_name.clone()),
-                pr_json: serde_json::to_string(&pull_request).ok(),
-                ci_json: serde_json::to_string(&ci_checks).ok(),
-                error: error.clone(),
-                fetched_at: String::new(),
-            });
+        match Database::open(&app_state.db_path) {
+            Ok(db) => {
+                if let Err(e) = db.upsert_scm_status_cache(&claudette::db::ScmStatusCacheRow {
+                    workspace_id: workspace_id.to_string(),
+                    repo_id: cache_key.0.clone(),
+                    branch_name: cache_key.1.clone(),
+                    provider: Some(provider_name.clone()),
+                    pr_json: serde_json::to_string(&pull_request).ok(),
+                    ci_json: serde_json::to_string(&ci_checks).ok(),
+                    error: error.clone(),
+                    fetched_at: String::new(),
+                }) {
+                    eprintln!(
+                        "[scm] Failed to persist SCM cache for workspace {workspace_id}: {e}"
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("[scm] Failed to open DB for SCM cache persistence: {e}");
+            }
         }
     }
 
