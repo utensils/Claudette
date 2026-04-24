@@ -300,8 +300,24 @@ fn decode_direnv_watches(encoded: &str) -> Vec<String> {
     let Some(array) = parsed.as_array() else {
         return Vec::new();
     };
+    // direnv's watch list includes transient paths that may not exist
+    // yet (notably the `~/.local/share/direnv/deny/<sha>` hash that
+    // only appears if the user runs `direnv deny` later). Each entry
+    // carries an `exists: bool` marker — filter to paths that
+    // currently exist so we don't ask `notify::watch` to subscribe to
+    // a missing file on every resolve (which fails noisily and
+    // accomplishes nothing: the per-resolve mtime check still catches
+    // those paths, and if the file later appears the plugin re-emits
+    // its list from a fresh `direnv export` and the watcher picks it
+    // up then).
     array
         .iter()
+        .filter(|entry| match entry.get("exists") {
+            Some(serde_json::Value::Bool(b)) => *b,
+            // Entries without an `exists` marker are legacy direnv
+            // output — fall back to the old behavior (include it).
+            _ => true,
+        })
         .filter_map(|entry| entry.get("path")?.as_str().map(str::to_owned))
         .collect()
 }
@@ -881,6 +897,100 @@ mod tests {
                 "/repo/secret.env".to_string(),
                 "/home/u/.config/foo".to_string(),
             ],
+        );
+    }
+
+    #[test]
+    fn decode_direnv_watches_skips_nonexistent_entries() {
+        // Regression for the dev-log spam finding: direnv includes
+        // deny-cache hash paths in DIRENV_WATCHES with `exists: false`.
+        // Those files don't exist yet, so `notify::watch` fails on them
+        // every resolve. Filter them out at decode time so we never
+        // even try.
+        use base64::Engine as _;
+        use flate2::Compression;
+        use flate2::write::ZlibEncoder;
+        use std::io::Write as _;
+
+        let entries = serde_json::json!([
+            { "path": "/repo/.envrc", "modtime": 10, "exists": true },
+            { "path": "/home/u/.local/share/direnv/deny/abc", "modtime": 0, "exists": false },
+            { "path": "/repo/secret.env", "modtime": 20, "exists": true },
+        ]);
+        let json = serde_json::to_string(&entries).unwrap();
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(json.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&compressed);
+
+        let decoded = decode_direnv_watches(&encoded);
+        assert_eq!(
+            decoded,
+            vec!["/repo/.envrc".to_string(), "/repo/secret.env".to_string()],
+            "non-existent entries must be filtered"
+        );
+    }
+
+    #[test]
+    fn decode_direnv_watches_via_lua_filters_nonexistent() {
+        // End-to-end guard — a plugin calling host.direnv_decode_watches
+        // with a DIRENV_WATCHES payload containing a mix of
+        // exists:true / exists:false entries must only see the
+        // existing ones. This is the exact shape direnv emits for
+        // .envrc + allow + deny paths on macOS.
+        use base64::Engine as _;
+        use flate2::Compression;
+        use flate2::write::ZlibEncoder;
+        use std::io::Write as _;
+
+        let entries = serde_json::json!([
+            { "path": "/repo/.envrc", "modtime": 10, "exists": true },
+            { "path": "/u/.local/share/direnv/allow/abc", "modtime": 20, "exists": true },
+            { "path": "/u/.local/share/direnv/deny/def", "modtime": 0, "exists": false },
+        ]);
+        let json = serde_json::to_string(&entries).unwrap();
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(json.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&compressed);
+
+        let ctx = make_test_ctx();
+        let lua = create_lua_vm(ctx).unwrap();
+        let script = format!(r#"return host.direnv_decode_watches("{encoded}")"#);
+        let table: mlua::Table = lua.load(&script).eval().unwrap();
+        assert_eq!(
+            table.len().unwrap(),
+            2,
+            "exists=false entry must be filtered at the Lua boundary"
+        );
+        assert_eq!(table.get::<String>(1).unwrap(), "/repo/.envrc");
+        assert_eq!(
+            table.get::<String>(2).unwrap(),
+            "/u/.local/share/direnv/allow/abc"
+        );
+    }
+
+    #[test]
+    fn decode_direnv_watches_tolerates_missing_exists_field() {
+        // Legacy direnv output predating the exists marker — include
+        // everything rather than silently dropping the whole list.
+        use base64::Engine as _;
+        use flate2::Compression;
+        use flate2::write::ZlibEncoder;
+        use std::io::Write as _;
+
+        let entries = serde_json::json!([
+            { "path": "/repo/.envrc", "modtime": 10 },
+        ]);
+        let json = serde_json::to_string(&entries).unwrap();
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(json.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&compressed);
+
+        assert_eq!(
+            decode_direnv_watches(&encoded),
+            vec!["/repo/.envrc".to_string()]
         );
     }
 

@@ -11,6 +11,16 @@ export function getEnvSources(target: EnvTarget): Promise<EnvSourceInfo[]> {
 }
 
 /**
+ * Resolve the worktree path a target maps to. The EnvPanel uses this
+ * once per target to filter `env-cache-invalidated` events — a watcher
+ * hit for repo B shouldn't make the EnvPanel showing repo A refetch
+ * (that would redundantly re-run direnv/nix/mise).
+ */
+export function getEnvTargetWorktree(target: EnvTarget): Promise<string> {
+  return invoke("get_env_target_worktree", { target });
+}
+
+/**
  * Evict the env-provider cache for the target. Next spawn or diagnostic
  * query re-runs the affected plugin(s). Pass a `pluginName` to only
  * invalidate one plugin's entry; omit to reload everything.

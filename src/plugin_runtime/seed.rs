@@ -39,12 +39,32 @@ const BUNDLED_PLUGINS: &[(&str, &str, &str)] = &[
 /// The current app version, used for the .version sentinel file.
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Seed bundled plugins into the plugin directory.
+/// Seed bundled plugins into the plugin directory on app startup.
 ///
-/// For each built-in plugin:
-/// - If not present: write all files + `.version`
-/// - If present but outdated: overwrite only if user hasn't modified `init.lua`
-/// - If present and current: do nothing
+/// Content-hash driven: the `.version` file used to gate this path,
+/// but that only fires when `APP_VERSION` bumps. Plugin content often
+/// changes between releases too — a plugin `init.lua` edit merged
+/// mid-cycle wouldn't reach users until the next version bump. That
+/// left real users stuck with stale plugins (seen concretely when
+/// PR #415 added `host.direnv_decode_watches` under the same app
+/// version — seed skipped, the new Lua code never reached disk).
+///
+/// The decision tree is now content-based:
+///
+/// 1. No `init.lua` on disk (fresh install) → write everything.
+/// 2. On-disk hash == bundled hash → nothing to do.
+/// 3. On-disk hash != bundled hash AND `.content_hash` stamp matches
+///    the on-disk content → we own this file, the bundle moved;
+///    overwrite.
+/// 4. On-disk hash != bundled hash AND the stamp is missing or
+///    disagrees with on-disk content → the user modified it after
+///    our last write; preserve with a warning so they know why an
+///    update didn't land. The "Reload bundled plugins" button
+///    (`reseed_bundled_plugins_force`) lets them force it.
+///
+/// `APP_VERSION` is still stamped into `.version` for diagnostics
+/// (it answers "which Claudette last touched this?") but is no
+/// longer load-bearing for the update decision.
 pub fn seed_bundled_plugins(plugin_dir: &Path) -> Vec<String> {
     let mut warnings = Vec::new();
 
@@ -53,16 +73,18 @@ pub fn seed_bundled_plugins(plugin_dir: &Path) -> Vec<String> {
         let version_file = dir.join(".version");
         let init_file = dir.join("init.lua");
         let manifest_file = dir.join("plugin.json");
+        let hash_file = dir.join(".content_hash");
 
-        if !version_file.exists() {
-            // First run: seed everything
-            if let Err(e) = std::fs::create_dir_all(&dir) {
-                warnings.push(format!(
-                    "Failed to create plugin dir {}: {e}",
-                    dir.display()
-                ));
-                continue;
-            }
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            warnings.push(format!(
+                "Failed to create plugin dir {}: {e}",
+                dir.display()
+            ));
+            continue;
+        }
+
+        // First-run path: nothing to preserve, write it all.
+        if !init_file.exists() {
             if let Err(e) = write_plugin_files(
                 &manifest_file,
                 plugin_json,
@@ -75,32 +97,71 @@ pub fn seed_bundled_plugins(plugin_dir: &Path) -> Vec<String> {
             continue;
         }
 
-        // Check if the plugin needs updating
-        let existing_version = std::fs::read_to_string(&version_file).unwrap_or_default();
-        let existing_version = existing_version.trim();
+        let on_disk = std::fs::read_to_string(&init_file).unwrap_or_default();
+        let on_disk_hash = sha256_hex(&on_disk);
+        let bundled_hash = sha256_hex(init_lua);
 
-        if !version_is_older(existing_version, APP_VERSION) {
-            // Plugin is current or newer — skip
+        // Init.lua matches bundle → no code change needed. But the
+        // manifest (`plugin.json`) can drift independently of the
+        // Lua body — new `operations`, an updated settings schema,
+        // a renamed `display_name`. Refresh the manifest (and the
+        // `.version` stamp) so `PluginRegistry::discover` always
+        // sees current metadata even when the code body is stable.
+        //
+        // Also top up `.content_hash` for legacy installs that
+        // predate hash stamping, so future drift detection works.
+        if on_disk_hash == bundled_hash {
+            if !hash_file.exists()
+                && let Err(e) = std::fs::write(&hash_file, &bundled_hash)
+            {
+                warnings.push(format!(
+                    "Plugin '{name}': failed to write content hash stamp: {e}"
+                ));
+            }
+            if let Err(e) = refresh_manifest_if_changed(&manifest_file, plugin_json) {
+                warnings.push(format!("Plugin '{name}': manifest refresh failed: {e}"));
+            }
+            let current_version = std::fs::read_to_string(&version_file)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if current_version != APP_VERSION
+                && let Err(e) = std::fs::write(&version_file, APP_VERSION)
+            {
+                warnings.push(format!("Plugin '{name}': .version refresh failed: {e}"));
+            }
             continue;
         }
 
-        // Version is older — check if user has modified init.lua
-        if init_file.exists() {
-            let on_disk = std::fs::read_to_string(&init_file).unwrap_or_default();
-            let embedded_hash = sha256_hex(init_lua);
-            let disk_hash = sha256_hex(&on_disk);
+        // Differs from the bundle — is this our prior write or a
+        // user customization?
+        let stamped = std::fs::read_to_string(&hash_file)
+            .ok()
+            .map(|s| s.trim().to_string());
+        let user_modified = match stamped {
+            // We stamped this, and the content still matches our
+            // stamp → the bundle moved while the user's copy
+            // stayed put; safe to overwrite.
+            Some(h) if h == on_disk_hash => false,
+            // Stamp disagrees with on-disk content → user edited
+            // after we wrote. Preserve.
+            Some(_) => true,
+            // Legacy install from before `.content_hash` existed.
+            // We can't tell for sure; err on the side of
+            // preserving. User can hit "Reload bundled plugins"
+            // in the UI (or delete the dir) if they want the
+            // bundled version.
+            None => true,
+        };
 
-            if embedded_hash != disk_hash {
-                warnings.push(format!(
-                    "Plugin '{name}' has user modifications — skipping update. \
-                     Delete {} to force update.",
-                    version_file.display()
-                ));
-                continue;
-            }
+        if user_modified {
+            warnings.push(format!(
+                "Plugin '{name}' has user modifications — skipping update. \
+                 Use 'Reload bundled plugins' in Settings to force."
+            ));
+            continue;
         }
 
-        // Unmodified — safe to overwrite
         if let Err(e) = write_plugin_files(
             &manifest_file,
             plugin_json,
@@ -210,6 +271,19 @@ pub fn reseed_bundled_plugins_force(plugin_dir: &Path) -> Vec<String> {
     warnings
 }
 
+/// Rewrite `manifest_path` only when its on-disk bytes don't already
+/// match `bundled_content`. Avoids pointless mtime bumps for the
+/// common case where the manifest is already current, and keeps the
+/// "only update if we need to" contract for the case-2 refresh path
+/// (init.lua unchanged, manifest may have drifted).
+fn refresh_manifest_if_changed(manifest_path: &Path, bundled_content: &str) -> std::io::Result<()> {
+    let on_disk = std::fs::read_to_string(manifest_path).unwrap_or_default();
+    if on_disk == bundled_content {
+        return Ok(());
+    }
+    std::fs::write(manifest_path, bundled_content)
+}
+
 fn write_plugin_files(
     manifest_path: &Path,
     manifest_content: &str,
@@ -236,32 +310,9 @@ fn sha256_hex(content: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Simple semver comparison: returns true if `existing` < `target`.
-/// Only compares major.minor.patch numeric components.
-fn version_is_older(existing: &str, target: &str) -> bool {
-    let parse = |v: &str| -> (u32, u32, u32) {
-        let parts: Vec<&str> = v.split('.').collect();
-        let major = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
-        let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-        let patch = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
-        (major, minor, patch)
-    };
-    parse(existing) < parse(target)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_version_comparison() {
-        assert!(version_is_older("0.8.0", "0.9.0"));
-        assert!(version_is_older("0.9.0", "0.10.0"));
-        assert!(version_is_older("0.9.0", "1.0.0"));
-        assert!(!version_is_older("0.9.0", "0.9.0"));
-        assert!(!version_is_older("1.0.0", "0.9.0"));
-        assert!(!version_is_older("0.10.0", "0.9.0"));
-    }
 
     #[test]
     fn test_sha256_hex() {
@@ -294,71 +345,198 @@ mod tests {
         // Version file should contain the app version
         let version = std::fs::read_to_string(plugin_dir.join("github/.version")).unwrap();
         assert_eq!(version, APP_VERSION);
+
+        // Every fresh seed must stamp `.content_hash` — without it,
+        // future drift detection in `seed_bundled_plugins` couldn't
+        // distinguish "we wrote this" from "user customized".
+        let hash_path = plugin_dir.join("github/.content_hash");
+        assert!(hash_path.exists(), "first-run must stamp content hash");
+        let bundled_github_init = BUNDLED_PLUGINS
+            .iter()
+            .find(|(n, _, _)| *n == "github")
+            .map(|(_, _, lua)| *lua)
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&hash_path).unwrap().trim(),
+            sha256_hex(bundled_github_init),
+            "content hash stamp must match bundled content"
+        );
     }
 
     #[test]
-    fn test_seed_skips_current_version() {
+    fn seed_is_noop_when_content_matches_bundle() {
+        // After a successful first-run seed, running seed again on
+        // an unchanged tree should do nothing — no warnings, no
+        // writes.
         let dir = tempfile::tempdir().unwrap();
-        let plugin_dir = dir.path();
+        seed_bundled_plugins(dir.path());
 
-        // Seed once
-        seed_bundled_plugins(plugin_dir);
+        // Capture the initial mtime of github/init.lua so a
+        // redundant overwrite would be observable.
+        let init_path = dir.path().join("github/init.lua");
+        let mtime_before = std::fs::metadata(&init_path).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
 
-        // Modify init.lua
-        let init_path = plugin_dir.join("github/init.lua");
-        std::fs::write(&init_path, "-- user modified").unwrap();
-
-        // Seed again — should skip because version matches
-        let warnings = seed_bundled_plugins(plugin_dir);
-        assert!(warnings.is_empty());
-
-        // User modifications should be preserved
-        let content = std::fs::read_to_string(&init_path).unwrap();
-        assert_eq!(content, "-- user modified");
+        let warnings = seed_bundled_plugins(dir.path());
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        let mtime_after = std::fs::metadata(&init_path).unwrap().modified().unwrap();
+        assert_eq!(
+            mtime_before, mtime_after,
+            "matching content must not trigger a rewrite"
+        );
     }
 
     #[test]
-    fn test_seed_preserves_user_modifications_on_upgrade() {
+    fn seed_refreshes_manifest_when_init_lua_unchanged() {
+        // Regression for a Codex finding: the "init.lua matches
+        // bundle → no-op" path used to skip plugin.json refresh too.
+        // If a release bumps manifest metadata (new operations, new
+        // settings schema) without changing the Lua body, users
+        // would keep seeing stale manifests until they forced a
+        // reseed. Exercise: on-disk init.lua matches bundle; on-disk
+        // manifest is stale. Expect the manifest to get rewritten.
         let dir = tempfile::tempdir().unwrap();
-        let plugin_dir = dir.path();
+        seed_bundled_plugins(dir.path());
 
-        // Seed once
-        seed_bundled_plugins(plugin_dir);
+        let manifest_path = dir.path().join("github/plugin.json");
+        let stale_manifest = r#"{"name":"github","version":"0.0.0","stale":true}"#;
+        std::fs::write(&manifest_path, stale_manifest).unwrap();
 
-        // Simulate an older version and user modification
-        std::fs::write(plugin_dir.join("github/.version"), "0.0.1").unwrap();
-        std::fs::write(plugin_dir.join("github/init.lua"), "-- user modified").unwrap();
-
-        // Seed again — should warn about user modifications
-        let warnings = seed_bundled_plugins(plugin_dir);
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("user modifications"));
-
-        // User modifications should be preserved
-        let content = std::fs::read_to_string(plugin_dir.join("github/init.lua")).unwrap();
-        assert_eq!(content, "-- user modified");
-    }
-
-    #[test]
-    fn test_seed_overwrites_unmodified_on_upgrade() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin_dir = dir.path();
-
-        // Seed once
-        seed_bundled_plugins(plugin_dir);
-
-        // Simulate an older version but keep init.lua unmodified
-        std::fs::write(plugin_dir.join("github/.version"), "0.0.1").unwrap();
-
-        // Seed again — should update silently
-        let warnings = seed_bundled_plugins(plugin_dir);
-        // Only GitLab might warn if it's also modified, but github should update fine
+        let warnings = seed_bundled_plugins(dir.path());
         let github_warnings: Vec<_> = warnings.iter().filter(|w| w.contains("github")).collect();
-        assert!(github_warnings.is_empty());
+        assert!(
+            github_warnings.is_empty(),
+            "manifest refresh must not warn: {github_warnings:?}"
+        );
 
-        // Version should be updated
-        let version = std::fs::read_to_string(plugin_dir.join("github/.version")).unwrap();
-        assert_eq!(version, APP_VERSION);
+        let on_disk = std::fs::read_to_string(&manifest_path).unwrap();
+        assert_ne!(on_disk, stale_manifest, "stale manifest must be replaced");
+        // Should match the bundled manifest content.
+        let bundled = BUNDLED_PLUGINS
+            .iter()
+            .find(|(n, _, _)| *n == "github")
+            .map(|(_, pjson, _)| *pjson)
+            .unwrap();
+        assert_eq!(on_disk, bundled);
+    }
+
+    #[test]
+    fn seed_auto_updates_when_bundle_content_changes() {
+        // The regression this fix exists to prevent: a stale seed
+        // lingers on disk after a bundled plugin update because the
+        // version-gated path skipped (APP_VERSION didn't bump).
+        //
+        // Simulate: Claudette previously seeded an older init.lua
+        // with the SAME app version, then a new release ships new
+        // plugin content under the SAME app version number.
+        let dir = tempfile::tempdir().unwrap();
+        let init_path = dir.path().join("github/init.lua");
+        let hash_path = dir.path().join("github/.content_hash");
+        let version_path = dir.path().join("github/.version");
+        std::fs::create_dir_all(init_path.parent().unwrap()).unwrap();
+
+        // Prior Claudette (same version) seeded stale content and
+        // stamped the hash to match.
+        let stale = "-- old plugin body from a prior seed\nreturn {}";
+        std::fs::write(&init_path, stale).unwrap();
+        std::fs::write(&hash_path, sha256_hex(stale)).unwrap();
+        std::fs::write(&version_path, APP_VERSION).unwrap();
+        std::fs::write(dir.path().join("github/plugin.json"), "{}").unwrap();
+
+        // Seed should notice bundled_hash != on_disk_hash, stamp
+        // still matches on disk → overwrite, no warning.
+        let warnings = seed_bundled_plugins(dir.path());
+        let github_warnings: Vec<_> = warnings.iter().filter(|w| w.contains("github")).collect();
+        assert!(
+            github_warnings.is_empty(),
+            "stale-but-owned seed must auto-update: {github_warnings:?}"
+        );
+        let after = std::fs::read_to_string(&init_path).unwrap();
+        assert!(
+            !after.contains("old plugin body"),
+            "stale content must be replaced"
+        );
+    }
+
+    #[test]
+    fn seed_preserves_user_modifications() {
+        // User edits a plugin's init.lua (hash no longer matches
+        // the stamped content). Seed must leave it alone and warn.
+        let dir = tempfile::tempdir().unwrap();
+        seed_bundled_plugins(dir.path());
+
+        let init_path = dir.path().join("github/init.lua");
+        let user = "-- hand-rolled tweak\nlocal M = {}\nreturn M";
+        std::fs::write(&init_path, user).unwrap();
+
+        let warnings = seed_bundled_plugins(dir.path());
+        let github_warnings: Vec<_> = warnings.iter().filter(|w| w.contains("github")).collect();
+        assert!(
+            !github_warnings.is_empty(),
+            "expected warning for user-modified plugin: {warnings:?}"
+        );
+        assert!(github_warnings[0].contains("user modifications"));
+
+        let after = std::fs::read_to_string(&init_path).unwrap();
+        assert_eq!(after, user, "user edits must be preserved");
+    }
+
+    #[test]
+    fn seed_preserves_legacy_install_without_content_hash() {
+        // Installs predating `.content_hash` stamping look like
+        // "unknown ownership" — we can't tell whether the user
+        // customized. Err on the side of preserving. User can hit
+        // "Reload bundled plugins" to force.
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_subdir = dir.path().join("github");
+        std::fs::create_dir_all(&plugin_subdir).unwrap();
+        // Legacy: has .version, has init.lua, NO .content_hash.
+        std::fs::write(plugin_subdir.join(".version"), "0.0.1").unwrap();
+        std::fs::write(plugin_subdir.join("init.lua"), "-- legacy content\n").unwrap();
+        std::fs::write(plugin_subdir.join("plugin.json"), "{}").unwrap();
+
+        let warnings = seed_bundled_plugins(dir.path());
+        let github_warnings: Vec<_> = warnings.iter().filter(|w| w.contains("github")).collect();
+        assert!(
+            !github_warnings.is_empty(),
+            "legacy install without stamp must be preserved (even if stale)"
+        );
+
+        let after = std::fs::read_to_string(plugin_subdir.join("init.lua")).unwrap();
+        assert!(
+            after.contains("legacy content"),
+            "legacy content must not be clobbered"
+        );
+    }
+
+    #[test]
+    fn seed_stamps_hash_on_legacy_install_that_matches_bundle() {
+        // Legacy install whose on-disk content happens to match the
+        // current bundle: healing path — stamp the hash so future
+        // drift detection works, but make no content change.
+        let dir = tempfile::tempdir().unwrap();
+        let plugin_subdir = dir.path().join("github");
+        std::fs::create_dir_all(&plugin_subdir).unwrap();
+        let bundled_github_init = BUNDLED_PLUGINS
+            .iter()
+            .find(|(n, _, _)| *n == "github")
+            .map(|(_, _, lua)| *lua)
+            .unwrap();
+        std::fs::write(plugin_subdir.join(".version"), "0.0.1").unwrap();
+        std::fs::write(plugin_subdir.join("init.lua"), bundled_github_init).unwrap();
+        std::fs::write(plugin_subdir.join("plugin.json"), "{}").unwrap();
+
+        let warnings = seed_bundled_plugins(dir.path());
+        let github_warnings: Vec<_> = warnings.iter().filter(|w| w.contains("github")).collect();
+        assert!(
+            github_warnings.is_empty(),
+            "legacy install matching bundle should heal silently: {github_warnings:?}"
+        );
+
+        let hash_path = plugin_subdir.join(".content_hash");
+        assert!(hash_path.exists(), "content hash stamp must be written");
+        let stamped = std::fs::read_to_string(&hash_path).unwrap();
+        assert_eq!(stamped.trim(), sha256_hex(bundled_github_init));
     }
 
     #[test]
