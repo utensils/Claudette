@@ -17,10 +17,8 @@ export function DeleteWorkspaceModal() {
     setLoading(true);
     try {
       await deleteWorkspace(wsId);
-    } catch {
-      // Backend may fail (already deleted, DB error, etc.). Proceed with
-      // local removal — the user confirmed deletion and the workspace will
-      // reappear on next launch if the DB row actually survived.
+    } catch (e) {
+      console.error("delete_workspace failed, proceeding with local removal:", e);
     }
     removeWorkspace(wsId);
     closeModal();
