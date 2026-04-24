@@ -1,9 +1,8 @@
 import { memo, useMemo, useEffect, useState } from "react";
-import { GitBranch, Layers, Globe, CircleCheck, CircleAlert, CircleQuestionMark, ChevronDown, ChevronRight } from "lucide-react";
+import { GitBranch, Layers, Globe, CircleCheck, CircleAlert, CircleQuestionMark, LoaderCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { AgentStatus } from "../../types/workspace";
 import { isAgentBusy } from "../../utils/agentStatus";
-import { useSpinnerFrame } from "../../hooks/useSpinnerFrame";
 import { RepoIcon } from "../shared/RepoIcon";
 import { PanelToggles } from "../shared/PanelToggles";
 import { StatsStrip, AnalyticsSection, MicroStats } from "../metrics";
@@ -58,7 +57,6 @@ const WorkspaceCard = memo(function WorkspaceCard({
   lastMsg,
   remoteName,
   badge,
-  spinnerChar,
   onClick,
   index,
 }: {
@@ -68,7 +66,6 @@ const WorkspaceCard = memo(function WorkspaceCard({
   lastMsg: { role: string; content: string } | undefined;
   remoteName: string | undefined;
   badge: "ask" | "plan" | "done" | null;
-  spinnerChar: string;
   onClick: (id: string | null) => void;
   index: number;
 }) {
@@ -137,7 +134,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
             </span>
           ) : isRunning ? (
             <span className={styles.statusSpinner} title={statusTitle} aria-label={statusTitle} role="img">
-              {spinnerChar}
+              <LoaderCircle size={12} />
             </span>
           ) : (
             <span
@@ -245,12 +242,6 @@ export function Dashboard() {
     return () => clearInterval(interval);
   }, [workspaceIdsKey, fetchWorkspaceMetricsBatch]);
 
-  const anyRunning = useMemo(
-    () => activeWorkspaces.some((ws) => isAgentBusy(ws.agent_status)),
-    [activeWorkspaces],
-  );
-  const spinnerChar = useSpinnerFrame(anyRunning);
-
   const sortedWorkspaces = useMemo(() => {
     const rows = activeWorkspaces.map((ws) => {
       const badge: "ask" | "plan" | "done" | null =
@@ -333,7 +324,6 @@ export function Dashboard() {
                     lastMsg={lastMessages[ws.id]}
                     remoteName={ws.remote_connection_id ? remoteNameMap.get(ws.remote_connection_id) : undefined}
                     badge={badge}
-                    spinnerChar={isAgentBusy(ws.agent_status) ? spinnerChar : ""}
                     onClick={selectWorkspace}
                     index={i}
                   />
