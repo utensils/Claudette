@@ -264,4 +264,140 @@ mod tests {
             .unwrap_err();
         assert!(err.contains("not found"));
     }
+
+    #[tokio::test]
+    async fn reconcile_all_skips_archived_workspaces() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        init_git_repo(repo_dir.path(), "claudette/stale");
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("test.db");
+        let db = Database::open(&db_path).unwrap();
+        db.insert_repository(&make_repo("r1", repo_dir.path()))
+            .unwrap();
+        db.insert_workspace(&make_ws("w1", "r1", "claudette/stale", repo_dir.path()))
+            .unwrap();
+        // Archive the workspace — subsequent reconciles should ignore it.
+        db.update_workspace_status("w1", &WorkspaceStatus::Archived, None)
+            .unwrap();
+        drop(db);
+
+        // Rename the branch on disk; an archived workspace must not drive an update.
+        rename_branch(repo_dir.path(), "something/else");
+
+        let updates = reconcile_all_workspace_branches(&db_path).await.unwrap();
+        assert!(updates.is_empty());
+
+        let db = Database::open(&db_path).unwrap();
+        let ws = db
+            .list_workspaces()
+            .unwrap()
+            .into_iter()
+            .find(|w| w.id == "w1")
+            .unwrap();
+        assert_eq!(ws.branch_name, "claudette/stale");
+    }
+
+    #[tokio::test]
+    async fn reconcile_all_handles_missing_worktree_path() {
+        // Archived-style workspaces typically null out worktree_path, but a
+        // workspace with no path must never panic or reach git.
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("test.db");
+        let db = Database::open(&db_path).unwrap();
+        db.insert_repository(&make_repo("r1", std::path::Path::new("/tmp/nonexistent")))
+            .unwrap();
+        let mut ws = make_ws("w1", "r1", "claudette/x", std::path::Path::new("/tmp"));
+        ws.worktree_path = None;
+        db.insert_workspace(&ws).unwrap();
+        drop(db);
+
+        let updates = reconcile_all_workspace_branches(&db_path).await.unwrap();
+        assert!(updates.is_empty());
+    }
+
+    #[tokio::test]
+    async fn reconcile_all_updates_only_drifted_workspaces() {
+        // Two workspaces pointed at two separate repos; only one has been
+        // renamed externally. The return value and the DB should only
+        // reflect the drifted one.
+        let stable = tempfile::tempdir().unwrap();
+        init_git_repo(stable.path(), "claudette/stable");
+        let drifted = tempfile::tempdir().unwrap();
+        init_git_repo(drifted.path(), "claudette/original");
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("test.db");
+        let db = Database::open(&db_path).unwrap();
+        db.insert_repository(&make_repo("r1", stable.path()))
+            .unwrap();
+        db.insert_repository(&make_repo("r2", drifted.path()))
+            .unwrap();
+        db.insert_workspace(&make_ws("w1", "r1", "claudette/stable", stable.path()))
+            .unwrap();
+        db.insert_workspace(&make_ws("w2", "r2", "claudette/original", drifted.path()))
+            .unwrap();
+        drop(db);
+
+        rename_branch(drifted.path(), "user/renamed");
+
+        let updates = reconcile_all_workspace_branches(&db_path).await.unwrap();
+        assert_eq!(
+            updates,
+            vec![("w2".to_string(), "user/renamed".to_string())]
+        );
+
+        let db = Database::open(&db_path).unwrap();
+        let all = db.list_workspaces().unwrap();
+        let w1 = all.iter().find(|w| w.id == "w1").unwrap();
+        let w2 = all.iter().find(|w| w.id == "w2").unwrap();
+        assert_eq!(w1.branch_name, "claudette/stable");
+        assert_eq!(w2.branch_name, "user/renamed");
+    }
+
+    #[tokio::test]
+    async fn reconcile_single_tolerates_detached_head() {
+        // After `git checkout <sha>` the worktree is in detached HEAD and
+        // `current_branch` returns an error. The reconcile must swallow that
+        // and leave the DB alone — not propagate the error or blank the row.
+        let repo_dir = tempfile::tempdir().unwrap();
+        init_git_repo(repo_dir.path(), "main");
+
+        // Detach HEAD at the current commit.
+        let head_sha = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo_dir.path())
+            .output()
+            .unwrap()
+            .stdout;
+        let head_sha = String::from_utf8(head_sha).unwrap().trim().to_string();
+        std::process::Command::new("git")
+            .args(["checkout", "--detach", &head_sha])
+            .current_dir(repo_dir.path())
+            .output()
+            .unwrap();
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("test.db");
+        let db = Database::open(&db_path).unwrap();
+        db.insert_repository(&make_repo("r1", repo_dir.path()))
+            .unwrap();
+        db.insert_workspace(&make_ws("w1", "r1", "main", repo_dir.path()))
+            .unwrap();
+        drop(db);
+
+        let result = reconcile_single_workspace_branch(&db_path, "w1")
+            .await
+            .unwrap();
+        assert!(result.is_none());
+
+        let db = Database::open(&db_path).unwrap();
+        let ws = db
+            .list_workspaces()
+            .unwrap()
+            .into_iter()
+            .find(|w| w.id == "w1")
+            .unwrap();
+        assert_eq!(ws.branch_name, "main");
+    }
 }
