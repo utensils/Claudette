@@ -267,8 +267,13 @@ export const TerminalPanel = memo(function TerminalPanel() {
       // native macOS terminals trim those at copy time and so do we.
       const handleCopy = (ev: ClipboardEvent) => {
         if (!term.hasSelection()) return;
+        // Only take over the copy when we can actually write to the
+        // clipboard. If clipboardData is unavailable for any reason, fall
+        // back to the browser default rather than silencing the copy.
+        const { clipboardData } = ev;
+        if (!clipboardData) return;
         ev.preventDefault();
-        ev.clipboardData?.setData(
+        clipboardData.setData(
           "text/plain",
           trimSelectionTrailingWhitespace(term.getSelection()),
         );

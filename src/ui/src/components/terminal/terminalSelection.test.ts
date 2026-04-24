@@ -40,7 +40,7 @@ describe("trimSelectionTrailingWhitespace", () => {
   });
 
   it("does not touch non-ASCII whitespace (e.g. NBSP)", () => {
-    const nbsp = " ";
+    const nbsp = "\u00A0";
     expect(trimSelectionTrailingWhitespace(`line${nbsp}`)).toBe(`line${nbsp}`);
   });
 
