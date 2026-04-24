@@ -111,6 +111,15 @@ pub async fn add_repository(
 
     crate::tray::rebuild_tray(&app);
 
+    // Warm the env-provider cache against the repo's main checkout
+    // so the first EnvPanel open doesn't pay the cold cost — and so
+    // any trust issues (blocked `.envrc`, untrusted `mise.toml`) show
+    // up before the user tries to spawn a workspace. Fire-and-forget
+    // because a `.envrc` can prompt for `direnv allow` which takes
+    // time; blocking `add_repository` on it would make the repo-add
+    // UX sluggish.
+    crate::commands::env::spawn_repo_env_warmup(app.clone(), repo.id.clone());
+
     Ok(repo)
 }
 
@@ -214,6 +223,29 @@ pub async fn remove_repository(
     for ws in &repo_workspaces {
         if let Some(ref wt_path) = ws.worktree_path {
             let _ = git::remove_worktree(&repo.path, wt_path, true).await;
+        }
+    }
+
+    // Drop every env-provider watch rooted at the repo's main
+    // checkout or any of its workspace worktrees. Without this, the
+    // watcher would keep consuming OS watch slots (inotify cap on
+    // Linux) and could emit `env-cache-invalidated` events for a
+    // repo Claudette no longer knows about, surfacing trust/errors
+    // in the wrong panel after an add/remove churn.
+    if let Some(watcher) = state.env_watcher.read().await.as_ref() {
+        watcher.unregister(Path::new(&repo.path), None);
+        for ws in &repo_workspaces {
+            if let Some(ref wt_path) = ws.worktree_path {
+                watcher.unregister(Path::new(wt_path), None);
+            }
+        }
+    }
+    // Also drop the cache entries so re-adding the same repo path
+    // doesn't return stale exports.
+    state.env_cache.invalidate(Path::new(&repo.path), None);
+    for ws in &repo_workspaces {
+        if let Some(ref wt_path) = ws.worktree_path {
+            state.env_cache.invalidate(Path::new(wt_path), None);
         }
     }
 

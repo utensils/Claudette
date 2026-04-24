@@ -364,6 +364,13 @@
               (lib.hiPrio clangXwinShim)
               pkgs.llvmPackages.clang-unwrapped
               pkgs.llvmPackages.llvm
+              # aws-win-spinup / aws-win-destroy helpers shell out to these.
+              # Pinning them here means teammates on plain Darwin don't need
+              # a system awscli/openssl install for the devshell to work.
+              # openssl is used by aws-win-spinup for random password
+              # generation; awscli2 drives the EC2 API calls.
+              pkgs.awscli2
+              pkgs.openssl
             ]
             ++ darwinBuildInputs
             ++ linuxBuildInputs
@@ -560,84 +567,53 @@
                 help = "Run all Rust tests";
                 category = "quality";
               }
+              # Windows cross-build + deploy + AWS ephemeral-host helpers.
+              # All bodies live in ./scripts/ — the devshell commands are
+              # thin wrappers so flake.nix doesn't carry hundreds of lines
+              # of bash-in-nix-strings. See scripts/*.sh for the logic and
+              # scripts/_aws-common.sh for the shared helpers (profile/
+              # region defaults, state dir under $PRJ_ROOT/.claudette/,
+              # instance discovery).
               {
                 name = "build-win-arm64";
-                command = ''
-                  set -euo pipefail
-                  # Rebuild the frontend — tauri-codegen bakes src/ui/dist/
-                  # into the .exe at build time, so a stale dist silently
-                  # produces a stale binary.
-                  (cd src/ui && bun install --frozen-lockfile && bun run build)
-                  # Cross-compile the Tauri binary. Three things make this
-                  # the correct invocation:
-                  #
-                  # 1. --features tauri/custom-protocol — without this,
-                  #    tauri-build emits cargo:rustc-cfg=dev and the
-                  #    resulting binary loads http://localhost:1420 at
-                  #    runtime instead of the embedded asset protocol.
-                  #    `cargo tauri build` passes this automatically;
-                  #    plain `cargo build`/`cargo xwin build` do not.
-                  # 2. Default cargo-xwin mode (clang-cl) — the devshell's
-                  #    clangXwinShim rewrites /imsvc → -isystem so ring's
-                  #    direct-clang .S assembly compile doesn't choke on
-                  #    MSVC-style include flags leaked into CFLAGS.
-                  # 3. --release — tauri-codegen embeds the frontend only
-                  #    when the binary isn't in debug profile.
-                  #
-                  # We skip `cargo tauri build --runner` because tauri-cli
-                  # shells out to rustup to verify the target is installed,
-                  # and our fenix toolchain supplies the rust-std outside
-                  # rustup's knowledge. Driving `cargo xwin build` directly
-                  # sidesteps the check; asset embedding is handled by
-                  # the feature flag above.
-                  cargo xwin build --release \
-                    --features tauri/custom-protocol \
-                    --target aarch64-pc-windows-msvc -p claudette-tauri
-                  echo ""
-                  echo "Built: $PWD/target/aarch64-pc-windows-msvc/release/claudette.exe"
-                '';
+                command = ''exec "$PRJ_ROOT/scripts/build-win.sh" arm64 "$@"'';
                 help = "Cross-compile claudette.exe for aarch64-pc-windows-msvc (Windows on ARM)";
                 category = "windows";
               }
               {
                 name = "deploy-win-arm64";
-                command = ''
-                  set -euo pipefail
-                  # Build, then stop any running instance on the test VM and
-                  # copy the fresh .exe over. The remote process has a file
-                  # lock on claudette.exe while running, so scp cannot
-                  # overwrite it without the Stop-Process step.
-                  #
-                  # Host and remote path are overridable for cases where the
-                  # VM's DHCP lease changes or someone else tests against a
-                  # different machine. Defaults match the project's shared
-                  # Windows-on-ARM test VM (see project memory).
-                  HOST=''${CLAUDETTE_WIN_HOST:-brink@172.16.52.129}
-                  REMOTE_PATH=''${CLAUDETTE_WIN_REMOTE_PATH:-OneDrive/Desktop/claudette.exe}
-                  build-win-arm64
-                  echo ""
-                  echo "Stopping running claudette on $HOST (if any)..."
-                  ssh "$HOST" 'Stop-Process -Name claudette -Force -ErrorAction SilentlyContinue'
-                  echo "Copying to $HOST:$REMOTE_PATH ..."
-                  scp target/aarch64-pc-windows-msvc/release/claudette.exe "$HOST:$REMOTE_PATH"
-                  echo ""
-                  echo "Deployed. Double-click claudette.exe on the VM desktop to run."
-                '';
+                command = ''exec "$PRJ_ROOT/scripts/deploy-win.sh" arm64 "$@"'';
                 help = "Build + deploy aarch64-pc-windows-msvc exe to the test VM (overridable via CLAUDETTE_WIN_HOST / CLAUDETTE_WIN_REMOTE_PATH)";
                 category = "windows";
               }
               {
                 name = "build-win-x64";
-                command = ''
-                  set -euo pipefail
-                  (cd src/ui && bun install --frozen-lockfile && bun run build)
-                  cargo xwin build --release \
-                    --features tauri/custom-protocol \
-                    --target x86_64-pc-windows-msvc -p claudette-tauri
-                  echo ""
-                  echo "Built: $PWD/target/x86_64-pc-windows-msvc/release/claudette.exe"
-                '';
+                command = ''exec "$PRJ_ROOT/scripts/build-win.sh" x64 "$@"'';
                 help = "Cross-compile claudette.exe for x86_64-pc-windows-msvc";
+                category = "windows";
+              }
+              {
+                name = "deploy-win-x64";
+                command = ''exec "$PRJ_ROOT/scripts/deploy-win.sh" x64 "$@"'';
+                help = "Build + deploy x86_64-pc-windows-msvc exe (auto-discovers aws-win-spinup instance, or override via CLAUDETTE_WIN_HOST)";
+                category = "windows";
+              }
+              {
+                name = "aws-win-spinup";
+                command = ''exec "$PRJ_ROOT/scripts/aws-win-spinup.sh" "$@"'';
+                help = "Launch ephemeral Windows EC2 (us-west-2) with SSH+pubkey pre-configured and admin password baked in";
+                category = "windows";
+              }
+              {
+                name = "aws-win-rdp";
+                command = ''exec "$PRJ_ROOT/scripts/aws-win-rdp.sh" "$@"'';
+                help = "macOS: open the current aws-win-spinup instance in Windows App with admin password on clipboard";
+                category = "windows";
+              }
+              {
+                name = "aws-win-destroy";
+                command = ''exec "$PRJ_ROOT/scripts/aws-win-destroy.sh" "$@"'';
+                help = "Terminate all claudette-spinup tagged EC2 instances in AWS_REGION (default us-west-2) and scrub local state";
                 category = "windows";
               }
               {
