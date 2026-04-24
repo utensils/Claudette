@@ -392,6 +392,7 @@ pub async fn send_chat_message(
                 custom_instructions: instructions.clone(),
                 needs_attention: false,
                 attention_kind: None,
+                attention_notification_sent: false,
                 persistent_session: None,
                 mcp_config_dirty: false,
                 session_plan_mode: false,
@@ -409,6 +410,7 @@ pub async fn send_chat_message(
             custom_instructions: instructions,
             needs_attention: false,
             attention_kind: None,
+            attention_notification_sent: false,
             persistent_session: None,
             mcp_config_dirty: false,
             session_plan_mode: false,
@@ -945,6 +947,15 @@ pub async fn send_chat_message(
                     // Tied to ControlRequest (not the earlier ContentBlockStart)
                     // because the card is driven by this event, not the
                     // streaming tool_use block.
+                    //
+                    // The task is detached, so it must defend against state
+                    // changes during the sleep:
+                    //   - If the user already responded (or the session was
+                    //     stopped/cleared), the matching pending_permission is
+                    //     gone and a notification would be misleading.
+                    //   - If a different pending prompt in the same cycle has
+                    //     already triggered the notification, dedupe via
+                    //     `attention_notification_sent`.
                     let kind = if tool_name == "AskUserQuestion" {
                         crate::state::AttentionKind::Ask
                     } else {
@@ -952,12 +963,41 @@ pub async fn send_chat_message(
                     };
                     let app_for_notify = app.clone();
                     let ws_id_for_notify = ws_id.clone();
+                    let tool_use_id_for_notify = tool_use_id.clone();
+                    let request_id_for_notify = request_id.clone();
+                    let tool_name_for_notify = tool_name.clone();
                     tokio::spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_millis(
                             ATTENTION_NOTIFY_DELAY_MS,
                         ))
                         .await;
-                        crate::tray::notify_attention(&app_for_notify, &ws_id_for_notify, kind);
+
+                        let app_state = app_for_notify.state::<AppState>();
+                        let should_notify = {
+                            let mut agents = app_state.agents.write().await;
+                            let Some(session) = agents.get_mut(&ws_id_for_notify) else {
+                                return;
+                            };
+                            if session.attention_notification_sent {
+                                false
+                            } else {
+                                let still_pending = session
+                                    .pending_permissions
+                                    .get(&tool_use_id_for_notify)
+                                    .is_some_and(|p| {
+                                        p.request_id == request_id_for_notify
+                                            && p.tool_name == tool_name_for_notify
+                                    });
+                                if still_pending {
+                                    session.attention_notification_sent = true;
+                                }
+                                still_pending
+                            }
+                        };
+
+                        if should_notify {
+                            crate::tray::notify_attention(&app_for_notify, &ws_id_for_notify, kind);
+                        }
                     });
                 } else {
                     let app_state = app.state::<AppState>();
@@ -1842,6 +1882,7 @@ pub async fn submit_agent_answer(
             .expect("checked above");
         session.needs_attention = false;
         session.attention_kind = None;
+        session.attention_notification_sent = false;
         (pending, ps)
     };
 
@@ -1910,6 +1951,7 @@ pub async fn submit_plan_approval(
             .expect("checked above");
         session.needs_attention = false;
         session.attention_kind = None;
+        session.attention_notification_sent = false;
         (pending, ps)
     };
 
@@ -2443,6 +2485,7 @@ mod tests {
             custom_instructions: None,
             needs_attention: false,
             attention_kind: None,
+            attention_notification_sent: false,
             persistent_session: None,
             mcp_config_dirty: false,
             session_plan_mode: false,
