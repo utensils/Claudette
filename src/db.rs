@@ -549,6 +549,19 @@ impl Database {
         Ok(())
     }
 
+    /// Re-open a previously ended session so that `update_agent_session_turn`
+    /// can track resumed turns. Called on the `--resume` path when a user
+    /// sends a new message after stopping mid-turn.
+    pub fn reopen_agent_session(&self, session_id: &str) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE agent_sessions
+             SET ended_at = NULL
+             WHERE id = ?1 AND ended_at IS NOT NULL",
+            params![session_id],
+        )?;
+        Ok(())
+    }
+
     // --- Metrics: agent commits ---
 
     /// Insert commits observed during an agent session. Idempotent per
@@ -3218,6 +3231,33 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tc_after, 3);
+
+        // Reopen clears ended_at so resumed turns can update metrics.
+        db.reopen_agent_session("s1").unwrap();
+        let ended_after_reopen: Option<String> = db
+            .conn
+            .query_row(
+                "SELECT ended_at FROM agent_sessions WHERE id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(ended_after_reopen.is_none());
+
+        // Turn bump works again after reopen.
+        db.update_agent_session_turn("s1", 10).unwrap();
+        let tc_reopened: i64 = db
+            .conn
+            .query_row(
+                "SELECT turn_count FROM agent_sessions WHERE id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tc_reopened, 10);
+
+        // Reopen on an already-open session is a no-op.
+        db.reopen_agent_session("s1").unwrap();
     }
 
     #[test]

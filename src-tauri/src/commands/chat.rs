@@ -731,6 +731,7 @@ pub async fn send_chat_message(
         // IGNORE), then bump turn_count + last_message_at. Runs for every
         // turn so resumed-from-DB sessions get their row lazily created too.
         let _ = db.insert_agent_session(&session.session_id, &workspace_id, &ws.repository_id);
+        let _ = db.reopen_agent_session(&session.session_id);
         let _ = db.update_agent_session_turn(&session.session_id, session.turn_count);
         if db
             .get_app_setting("first_session_at")
@@ -1390,6 +1391,8 @@ fn take_stop_snapshot(session: &mut AgentSessionState) -> StopSnapshot {
     let drained = drain_pending_permissions(session);
     let ended_sid = Some(session.session_id.clone());
     let pid = session.active_pid.take();
+    session.needs_attention = false;
+    session.attention_kind = None;
     (drained, pid, ended_sid)
 }
 
@@ -2460,5 +2463,19 @@ mod tests {
         assert_eq!(ended_sid.as_deref(), Some("sess-abc"));
         assert_eq!(session.session_id, "sess-abc");
         assert_eq!(session.turn_count, 7);
+    }
+
+    #[test]
+    fn take_stop_snapshot_clears_attention_flags() {
+        use crate::state::AttentionKind;
+
+        let mut session = fresh_session("sess-abc", 3, Some(999));
+        session.needs_attention = true;
+        session.attention_kind = Some(AttentionKind::Ask);
+
+        take_stop_snapshot(&mut session);
+
+        assert!(!session.needs_attention);
+        assert!(session.attention_kind.is_none());
     }
 }
