@@ -109,6 +109,19 @@ pub enum EnvTarget {
     Workspace { workspace_id: String },
 }
 
+/// Resolve the worktree path for an [`EnvTarget`]. Used by the
+/// EnvPanel to filter `env-cache-invalidated` events to its current
+/// target — without it, any watched file change in any repo refreshes
+/// every open Environment panel, re-running direnv/nix unnecessarily.
+#[tauri::command]
+pub async fn get_env_target_worktree(
+    target: EnvTarget,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (worktree, _, _) = resolve_target(&state, &target).await?;
+    Ok(worktree)
+}
+
 /// Return the list of env-provider plugins that ran (or would run) for
 /// this target, along with how many vars each contributed and whether
 /// the result is cached.

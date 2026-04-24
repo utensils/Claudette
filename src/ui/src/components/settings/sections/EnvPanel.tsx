@@ -3,6 +3,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   getEnvSources,
+  getEnvTargetWorktree,
   reloadEnv,
   runEnvTrust,
   setEnvProviderEnabled,
@@ -224,8 +225,9 @@ export function EnvPanel({ target }: EnvPanelProps) {
   // Reactive invalidation: when the Rust-side fs watcher detects that
   // a plugin's watched file changed (user edited `.envrc`, ran
   // `direnv allow`, modified `flake.lock`, etc.), the backend emits
-  // `env-cache-invalidated`. We refetch so the panel shows fresh
-  // vars_contributed counts without the user having to click Reload.
+  // `env-cache-invalidated` with the worktree path that changed. We
+  // filter against our own target's worktree so an edit in repo B
+  // doesn't make the panel viewing repo A rerun direnv/nix/mise.
   //
   // Debounced because editors often save + swap + touch, firing the
   // event 2-3 times in rapid succession. 300ms coalesces the bursts
@@ -235,9 +237,23 @@ export function EnvPanel({ target }: EnvPanelProps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cancelled = false;
     (async () => {
+      let targetWorktree: string | null = null;
       try {
-        unlisten = await listen("env-cache-invalidated", () => {
+        targetWorktree = await getEnvTargetWorktree(target);
+      } catch {
+        // If we can't resolve the target's worktree we can't filter
+        // — leave reactive invalidation off for this target rather
+        // than triggering refreshes for every unrelated edit.
+        return;
+      }
+      if (cancelled) return;
+      try {
+        unlisten = await listen<{
+          worktree_path: string;
+          plugin_name: string;
+        }>("env-cache-invalidated", (event) => {
           if (cancelled) return;
+          if (event.payload.worktree_path !== targetWorktree) return;
           if (timer) clearTimeout(timer);
           timer = setTimeout(() => {
             void refresh();
@@ -253,7 +269,7 @@ export function EnvPanel({ target }: EnvPanelProps) {
       if (timer) clearTimeout(timer);
       unlisten?.();
     };
-  }, [refresh]);
+  }, [target, refresh]);
 
   const handleReloadAll = useCallback(async () => {
     try {

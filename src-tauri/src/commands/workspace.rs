@@ -509,6 +509,13 @@ pub async fn archive_workspace(
 
     if let Some(ref wt_path) = ws.worktree_path {
         let _ = git::remove_worktree(&repo.path, wt_path, false).await;
+        // The worktree is gone — drop env-provider watches + cache
+        // for it so we don't hold stale OS watch slots or emit
+        // invalidation events for a path that no longer exists.
+        if let Some(watcher) = state.env_watcher.read().await.as_ref() {
+            watcher.unregister(Path::new(wt_path), None);
+        }
+        state.env_cache.invalidate(Path::new(wt_path), None);
     }
 
     // Optionally delete the branch if the user has enabled this setting.
@@ -622,6 +629,17 @@ pub async fn delete_workspace(
 
         // Best-effort branch delete. Force-deletes even if unmerged commits exist.
         let _ = git::branch_delete(&repo.path, &ws.branch_name).await;
+    }
+
+    // Drop any env-provider watch + cache entry rooted at this
+    // workspace's worktree. Keeps OS watch count bounded across
+    // workspace churn and prevents invalidation events for a path
+    // Claudette no longer knows about.
+    if let Some(ref wt_path) = ws.worktree_path {
+        if let Some(watcher) = state.env_watcher.read().await.as_ref() {
+            watcher.unregister(Path::new(wt_path), None);
+        }
+        state.env_cache.invalidate(Path::new(wt_path), None);
     }
 
     // Cascade deletes chat messages and terminal tabs. Materializes a frozen

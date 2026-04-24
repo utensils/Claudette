@@ -95,6 +95,16 @@ struct WatcherState {
     /// subscribes to. Lets unregister run in O(paths-per-key) instead
     /// of O(total-paths).
     key_paths: HashMap<Key, HashSet<PathBuf>>,
+    /// Set of paths we've successfully installed an OS watch for.
+    /// Kept separate from `subscribers` because a path can be
+    /// subscribed (we know some key cares about it) without being
+    /// OS-watched (initial `notify::watch` returned an error — e.g.
+    /// file missing, inotify limit). Each `register` retries any
+    /// subscribed path that isn't in this set, so a later write
+    /// (e.g. `.envrc.local` created after first export) starts
+    /// participating in reactive invalidation without an app
+    /// restart.
+    os_watched: HashSet<PathBuf>,
     /// Callback fired for every `(worktree, plugin)` whose watch list
     /// intersects a changed path. Stored here so the drain task can
     /// dispatch without needing a separate channel-bound closure.
@@ -120,6 +130,7 @@ impl EnvWatcher {
         let state = Arc::new(Mutex::new(WatcherState {
             subscribers: HashMap::new(),
             key_paths: HashMap::new(),
+            os_watched: HashSet::new(),
             on_change,
         }));
 
@@ -208,15 +219,19 @@ impl EnvWatcher {
         let key: Key = (worktree.to_path_buf(), plugin.to_string());
         let new_set: HashSet<PathBuf> = paths.iter().map(|p| canonicalize_or_keep(p)).collect();
 
-        // Compute diff under lock so we know what to add vs remove.
-        let (to_add, to_remove) = {
+        // Compute:
+        // - `to_try_watch`: paths in new_set that aren't yet
+        //   OS-watched. Every register pass retries these, so a file
+        //   that was missing at first registration (inotify limit,
+        //   file deleted then recreated) gets picked up the moment
+        //   it becomes watchable.
+        // - `to_remove`: paths the previous registration for this key
+        //   subscribed to that the new registration doesn't want.
+        let (to_try_watch, to_remove) = {
             let mut state = self.state.lock().unwrap();
             let old_paths = state.key_paths.remove(&key).unwrap_or_default();
-            let to_add: Vec<PathBuf> = new_set.difference(&old_paths).cloned().collect();
             let to_remove: Vec<PathBuf> = old_paths.difference(&new_set).cloned().collect();
 
-            // Update indices. `subscribers` gains `key` for every
-            // new-set path and loses `key` for every removed path.
             for path in &to_remove {
                 if let Some(subs) = state.subscribers.get_mut(path) {
                     subs.remove(&key);
@@ -233,31 +248,40 @@ impl EnvWatcher {
                     .insert(key.clone());
             }
             state.key_paths.insert(key.clone(), new_set.clone());
-            (to_add, to_remove)
+
+            // Retry any subscribed path we don't have a live OS watch
+            // on. Read-only snapshot; the state lock releases before
+            // we hit the OS syscalls below.
+            let to_try_watch: Vec<PathBuf> = new_set
+                .iter()
+                .filter(|p| !state.os_watched.contains(*p))
+                .cloned()
+                .collect();
+            (to_try_watch, to_remove)
         };
 
-        // Wrangle the OS watches outside the state lock so a slow
-        // syscall doesn't block unrelated register/unregister calls.
+        // OS syscalls outside the state lock so a slow syscall doesn't
+        // block unrelated register/unregister calls.
         let mut watcher = self.watcher.lock().unwrap();
         for path in &to_remove {
-            // Only unwatch if no other subscriber still needs the
-            // path. The state lock above already removed our entry;
-            // re-check under a brief lock to avoid TOCTOU where a
-            // concurrent register added a new subscriber.
             let still_needed = self.state.lock().unwrap().subscribers.contains_key(path);
             if !still_needed {
                 let _ = watcher.unwatch(path);
+                self.state.lock().unwrap().os_watched.remove(path);
             }
         }
-        for path in &to_add {
-            // Individual files are supported on all three backends
-            // (notify handles macOS by watching the parent dir).
-            if let Err(err) = watcher.watch(path, RecursiveMode::NonRecursive) {
-                // Log and move on — the next resolve will re-stat the
-                // path's mtime, so invalidation still happens, just
-                // lazily. Common errors: file gone between export and
-                // register; inotify watch limit exceeded.
-                eprintln!("[env-watcher] failed to watch {}: {err}", path.display());
+        for path in &to_try_watch {
+            match watcher.watch(path, RecursiveMode::NonRecursive) {
+                Ok(()) => {
+                    self.state.lock().unwrap().os_watched.insert(path.clone());
+                }
+                Err(err) => {
+                    // Log and move on — the next register retries.
+                    // The per-resolve mtime check in EnvCache::get_fresh
+                    // also catches changes regardless, so invalidation
+                    // is at worst lazy until the watch succeeds.
+                    eprintln!("[env-watcher] failed to watch {}: {err}", path.display());
+                }
             }
         }
     }
@@ -296,6 +320,7 @@ impl EnvWatcher {
                 let still_needed = self.state.lock().unwrap().subscribers.contains_key(path);
                 if !still_needed {
                     let _ = watcher.unwatch(path);
+                    self.state.lock().unwrap().os_watched.remove(path);
                 }
             }
         }
@@ -500,9 +525,52 @@ mod tests {
 
         // Must not panic even though the file doesn't exist.
         let watcher = EnvWatcher::new(Arc::new(|_, _| {})).unwrap();
-        watcher.register(tmp.path(), "env-direnv", &[never_created]);
+        watcher.register(
+            tmp.path(),
+            "env-direnv",
+            std::slice::from_ref(&never_created),
+        );
         // The key is still tracked — we just logged the watch failure.
         // That way a later register with an existing path still works.
         assert_eq!(watcher.registered_key_count(), 1);
+    }
+
+    #[test]
+    fn watch_retry_picks_up_later_created_file() {
+        // Regression for the Codex P2: if watch() fails the first
+        // time (file missing), the watcher should retry on the next
+        // register with the same path set — not record it as
+        // "installed" and silently skip it forever.
+        let tmp = tempfile::tempdir().unwrap();
+        let delayed = tmp.path().join("delayed.envrc");
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_cb = Arc::clone(&hits);
+        let watcher = EnvWatcher::new(Arc::new(move |_wt, _p| {
+            hits_cb.fetch_add(1, Ordering::SeqCst);
+        }))
+        .unwrap();
+
+        // First register: file doesn't exist yet → notify::watch()
+        // fails, path recorded as subscribed but not OS-watched.
+        watcher.register(tmp.path(), "env-direnv", std::slice::from_ref(&delayed));
+
+        // User (or plugin) creates the file.
+        std::fs::write(&delayed, "use flake").unwrap();
+
+        // Second register with the same watch set: must retry the
+        // watch install (not short-circuit on "already in key_paths").
+        watcher.register(tmp.path(), "env-direnv", std::slice::from_ref(&delayed));
+
+        // Trigger a change; event should fire now.
+        std::thread::sleep(Duration::from_millis(50));
+        std::fs::write(&delayed, "use flake\nexport BAR=baz").unwrap();
+
+        assert!(
+            wait_for(Duration::from_secs(3), || {
+                hits.load(Ordering::SeqCst) > 0
+            }),
+            "retry-installed watch did not fire"
+        );
     }
 }

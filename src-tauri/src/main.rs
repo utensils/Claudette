@@ -510,6 +510,7 @@ fn main() {
             commands::scm::scm_refresh,
             // Env-provider diagnostic UI
             commands::env::get_env_sources,
+            commands::env::get_env_target_worktree,
             commands::env::reload_env,
             commands::env::set_env_provider_enabled,
             commands::env::run_env_trust,
