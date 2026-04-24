@@ -120,6 +120,9 @@ pub async fn update_repository_settings(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let base_branch = base_branch.filter(|s| !s.trim().is_empty());
+    let default_remote = default_remote.filter(|s| !s.trim().is_empty());
+
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     db.update_repository_name(&id, &name)
         .map_err(|e| e.to_string())?;
