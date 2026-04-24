@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useAppStore } from "../../../stores/useAppStore";
 import { getClaudeCodeUsage, openUsageSettings } from "../../../services/tauri";
@@ -145,25 +145,26 @@ function ExtraUsageSection({ extra }: { extra: ExtraUsage }) {
   );
 }
 
+type FetchState =
+  | { status: "loading" }
+  | { status: "success" }
+  | { status: "error"; error: string };
+
 export function UsageSettings() {
   const usage = useAppStore((s) => s.claudeCodeUsage);
-  const loading = useAppStore((s) => s.claudeCodeUsageLoading);
-  const error = useAppStore((s) => s.claudeCodeUsageError);
   const setUsage = useAppStore((s) => s.setClaudeCodeUsage);
-  const setLoading = useAppStore((s) => s.setClaudeCodeUsageLoading);
-  const setError = useAppStore((s) => s.setClaudeCodeUsageError);
+  const [fetchState, setFetchState] = useState<FetchState>({ status: "loading" });
 
   const fetchUsage = useCallback(async () => {
-    setLoading(true);
+    setFetchState({ status: "loading" });
     try {
       const data = await getClaudeCodeUsage();
       setUsage(data);
+      setFetchState({ status: "success" });
     } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
+      setFetchState({ status: "error", error: String(e) });
     }
-  }, [setUsage, setLoading, setError]);
+  }, [setUsage]);
 
   useEffect(() => {
     // Always fetch on mount — the Rust 5-minute cache prevents API flooding.
@@ -189,14 +190,18 @@ export function UsageSettings() {
     <div>
       <h2 className={styles.sectionTitle}>Usage</h2>
 
-      {loading && !usage && (
+      {fetchState.status === "loading" && !usage && (
         <div className={styles.usageEmptyState}>Loading usage data...</div>
       )}
 
-      {error && !usage && (
+      {fetchState.status === "error" && !usage && (
         <div className={styles.usageEmptyState}>
-          <span>{error.includes("ENV_AUTH:") ? error.replace("ENV_AUTH:", "") : error}</span>
-          {!error.includes("ENV_AUTH:") && (
+          <span>
+            {fetchState.error.includes("ENV_AUTH:")
+              ? fetchState.error.replace("ENV_AUTH:", "")
+              : fetchState.error}
+          </span>
+          {!fetchState.error.includes("ENV_AUTH:") && (
             <button className={styles.usageRefreshBtn} onClick={fetchUsage}>
               <RefreshCw size={12} /> Retry
             </button>
