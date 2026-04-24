@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::LoadedPlugin;
+use crate::plugin_runtime::LoadedPlugin;
 
 /// Extract the hostname from a git remote URL.
 ///
@@ -220,7 +220,7 @@ mod tests {
     }
 
     fn make_plugin(name: &str, patterns: &[&str], cli_available: bool) -> LoadedPlugin {
-        use crate::scm_provider::manifest::PluginManifest;
+        use crate::plugin_runtime::manifest::PluginManifest;
         LoadedPlugin {
             manifest: PluginManifest {
                 name: name.to_string(),

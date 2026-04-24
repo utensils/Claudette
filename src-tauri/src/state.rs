@@ -8,8 +8,8 @@ use claudette::agent::PersistentSession;
 use parking_lot::Mutex as ParkingMutex;
 use tokio::sync::{RwLock, Semaphore};
 
-use claudette::scm_provider::PluginRegistry;
-use claudette::scm_provider::scm::{CiCheck, PullRequest};
+use claudette::plugin_runtime::PluginRegistry;
+use claudette::scm::types::{CiCheck, PullRequest};
 
 use crate::commands::apps::DetectedApp;
 use crate::remote::DiscoveredServer;

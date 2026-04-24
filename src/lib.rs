@@ -16,8 +16,9 @@ pub mod names;
 pub mod path;
 pub mod permissions;
 pub mod plugin;
+pub mod plugin_runtime;
 pub mod process;
-pub mod scm_provider;
+pub mod scm;
 pub mod slash_commands;
 pub mod snapshot;
 

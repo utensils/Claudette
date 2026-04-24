@@ -5,9 +5,9 @@ use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 
 use claudette::db::Database;
-use claudette::scm_provider::detect;
-use claudette::scm_provider::host_api::WorkspaceInfo;
-use claudette::scm_provider::scm::{CiCheck, PullRequest};
+use claudette::plugin_runtime::host_api::WorkspaceInfo;
+use claudette::scm::detect;
+use claudette::scm::types::{CiCheck, PullRequest};
 
 use crate::state::{AppState, ScmCacheEntry};
 
@@ -589,9 +589,10 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
                         .unwrap_or(global_archive);
 
                     if should_archive
-                        && detail.pull_request.as_ref().is_some_and(|pr| {
-                            pr.state == claudette::scm_provider::scm::PrState::Merged
-                        })
+                        && detail
+                            .pull_request
+                            .as_ref()
+                            .is_some_and(|pr| pr.state == claudette::scm::types::PrState::Merged)
                     {
                         eprintln!("[scm] PR merged for workspace {} — auto-archiving", ws_id);
                         let pr_number = detail.pull_request.as_ref().map(|pr| pr.number);
