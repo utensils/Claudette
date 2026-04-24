@@ -845,12 +845,12 @@
 .usageRefreshBtnPrimary {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
-  color: var(--text-on-accent, #fff);
+  color: var(--on-accent);
 }
 
 .usageRefreshBtnPrimary:hover {
-  background: color-mix(in srgb, var(--accent-primary) 85%, #000);
-  border-color: color-mix(in srgb, var(--accent-primary) 85%, #000);
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
 }
 
 .usageActions {

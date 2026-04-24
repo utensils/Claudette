@@ -13,7 +13,7 @@ import styles from "../Settings.module.css";
 
 type AuthLoginState =
   | { status: "idle" }
-  | { status: "running"; manualUrl: string | null; lines: string[] }
+  | { status: "running"; manualUrl: string | null }
   | { status: "success" }
   | { status: "error"; error: string };
 
@@ -207,13 +207,10 @@ export function UsageSettings() {
     listen<AuthLoginProgress>("auth://login-progress", (event) => {
       const { line } = event.payload;
       const match = line.match(AUTH_URL_PATTERN);
+      if (!match) return;
       setAuthState((current) => {
-        if (current.status !== "running") return current;
-        return {
-          status: "running",
-          manualUrl: current.manualUrl ?? match?.[0] ?? null,
-          lines: [...current.lines, line],
-        };
+        if (current.status !== "running" || current.manualUrl !== null) return current;
+        return { status: "running", manualUrl: match[0] };
       });
     }).then((fn) => {
       if (cancelled) fn();
@@ -243,7 +240,7 @@ export function UsageSettings() {
   }, [fetchUsage]);
 
   const startAuthLogin = useCallback(async () => {
-    setAuthState({ status: "running", manualUrl: null, lines: [] });
+    setAuthState({ status: "running", manualUrl: null });
     try {
       await claudeAuthLogin();
     } catch (e) {

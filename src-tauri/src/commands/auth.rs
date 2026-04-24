@@ -39,7 +39,7 @@ pub struct AuthLoginComplete {
 /// above to drive UI state. Call [`cancel_claude_auth_login`] to abort.
 #[tauri::command]
 pub async fn claude_auth_login(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let mut slot = state.auth_login_child.lock().await;
+    let mut slot = state.auth_login_cancel.lock().await;
     if slot.is_some() {
         return Err("A sign-in flow is already in progress.".into());
     }
@@ -67,64 +67,67 @@ pub async fn claude_auth_login(app: AppHandle, state: State<'_, AppState>) -> Re
     tokio::spawn(stream_lines(app.clone(), "stdout", stdout));
     tokio::spawn(stream_lines_err(app.clone(), "stderr", stderr));
 
-    *slot = Some(child);
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    *slot = Some(cancel_tx);
     drop(slot);
 
-    // Separate task owns the waitpid + completion event so the command can return
+    // Separate task owns the child + completion event so the command can return
     // immediately and the UI can render a progress state without blocking IPC.
+    // The waiter is the single source of truth for emitting `auth://login-complete`:
+    // cancel just signals, the waiter kills and emits.
     let app_exit = app.clone();
     tokio::spawn(async move {
         use tauri::Manager;
-        let state = app_exit.state::<AppState>();
-        let mut slot = state.auth_login_child.lock().await;
-        let Some(mut child) = slot.take() else {
-            // Cancel ran first — it already emitted the completion event.
-            return;
-        };
-        drop(slot);
-        let event = match child.wait().await {
-            Ok(status) if status.success() => AuthLoginComplete {
-                success: true,
-                error: None,
+        let event = tokio::select! {
+            result = child.wait() => match result {
+                Ok(status) if status.success() => AuthLoginComplete {
+                    success: true,
+                    error: None,
+                },
+                Ok(status) => AuthLoginComplete {
+                    success: false,
+                    error: Some(format!("`claude auth login` exited with {status}")),
+                },
+                Err(e) => AuthLoginComplete {
+                    success: false,
+                    error: Some(format!("Failed to wait on `claude auth login`: {e}")),
+                },
             },
-            Ok(status) => AuthLoginComplete {
-                success: false,
-                error: Some(format!("`claude auth login` exited with {status}")),
-            },
-            Err(e) => AuthLoginComplete {
-                success: false,
-                error: Some(format!("Failed to wait on `claude auth login`: {e}")),
-            },
+            _ = cancel_rx => {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                AuthLoginComplete {
+                    success: false,
+                    error: Some("Sign-in cancelled.".into()),
+                }
+            }
         };
         let _ = app_exit.emit("auth://login-complete", event);
+        // Clear the slot so a new flow can start. Harmless if cancel already
+        // took the sender — the slot is just set back to None either way.
+        let state = app_exit.state::<AppState>();
+        *state.auth_login_cancel.lock().await = None;
     });
 
     Ok(())
 }
 
-/// Kill any in-flight `claude auth login` subprocess.
+/// Request cancellation of any in-flight `claude auth login` subprocess.
 ///
-/// Emits `auth://login-complete` with `success: false` so the UI can transition
-/// out of the progress state. Safe to call when no flow is running.
+/// Signals the waiter task to kill the subprocess; the waiter then emits
+/// `auth://login-complete` with `success: false` exactly once. No-op when
+/// no flow is running (does not emit an event in that case).
 #[tauri::command]
 pub async fn cancel_claude_auth_login(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut slot = state.auth_login_child.lock().await;
-    if let Some(mut child) = slot.take() {
-        let _ = child.start_kill();
-        // Reap asynchronously so the OS doesn't hold onto a zombie.
-        tokio::spawn(async move {
-            let _ = child.wait().await;
-        });
-        let _ = app.emit(
-            "auth://login-complete",
-            AuthLoginComplete {
-                success: false,
-                error: Some("Sign-in cancelled.".into()),
-            },
-        );
+    let mut slot = state.auth_login_cancel.lock().await;
+    if let Some(tx) = slot.take() {
+        // If the receiver was already dropped (waiter finished naturally),
+        // the send returns Err — we ignore it since the completion event
+        // was already emitted.
+        let _ = tx.send(());
     }
     Ok(())
 }
