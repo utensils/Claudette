@@ -91,26 +91,26 @@ export async function openAttachmentInBrowser(
 }
 
 /**
- * Copy the attachment image bytes to the system clipboard as an image (not
- * as a file reference). Paste targets such as Messages, Keynote, or a web
- * chat will receive the pixels directly.
- *
- * Routes through a single Tauri command (`copy_image_to_clipboard`) that
- * decodes the PNG/JPEG bytes and writes to the OS clipboard in one
- * spawn_blocking task. Going through the JS `Image.fromBytes` + `writeImage`
- * dance instead costs three IPC round-trips and ships the byte buffer
- * over the bridge twice, which was producing a very noticeable lag on
- * realistic-sized screenshots.
+ * Copy the attachment image to the system clipboard using the native
+ * `navigator.clipboard.write()` API. Zero IPC, zero base64→number[]
+ * serialization, zero Rust round-trip — the webview writes directly to
+ * the OS clipboard the same way any browser's "Copy Image" does.
  */
 export async function copyAttachmentToClipboard(
   attachment: DownloadableAttachment,
-  deps: { invoke?: typeof invoke } = {},
+  deps: { clipboard?: Clipboard } = {},
 ): Promise<void> {
-  const invokeFn = deps.invoke ?? invoke;
+  const clipboard =
+    deps.clipboard ??
+    (typeof navigator === "undefined" ? undefined : navigator.clipboard);
+  if (!clipboard) {
+    throw new Error("Clipboard API not available");
+  }
   const bytes = base64ToBytes(attachment.data_base64);
-  await invokeFn("copy_image_to_clipboard", {
-    bytes: Array.from(bytes),
-  });
+  const blob = new Blob([bytes], { type: attachment.media_type });
+  await clipboard.write([
+    new ClipboardItem({ [attachment.media_type]: blob }),
+  ]);
 }
 
 /**

@@ -1,4 +1,22 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
+
+// vitest runs in Node; ClipboardItem is a browser global. Stub a minimal
+// constructor that records its input so the tests can assert on the data
+// the real browser/webview would see.
+beforeAll(() => {
+  if (typeof (globalThis as unknown as { ClipboardItem?: unknown }).ClipboardItem === "undefined") {
+    class FakeClipboardItem {
+      readonly types: string[];
+      readonly data: Record<string, Blob>;
+      constructor(data: Record<string, Blob>) {
+        this.data = data;
+        this.types = Object.keys(data);
+      }
+    }
+    (globalThis as unknown as { ClipboardItem: typeof FakeClipboardItem }).ClipboardItem =
+      FakeClipboardItem;
+  }
+});
 import {
   extensionFor,
   downloadAttachment,
@@ -107,20 +125,30 @@ describe("openAttachmentInBrowser", () => {
 });
 
 describe("copyAttachmentToClipboard", () => {
-  it("invokes copy_image_to_clipboard with the decoded bytes in one call", async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
-    await copyAttachmentToClipboard(fixture, { invoke });
-    expect(invoke).toHaveBeenCalledOnce();
-    expect(invoke).toHaveBeenCalledWith("copy_image_to_clipboard", {
-      bytes: [104, 101, 108, 108, 111],
+  it("writes a ClipboardItem via navigator.clipboard.write", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    await copyAttachmentToClipboard(fixture, {
+      clipboard: { write } as unknown as Clipboard,
     });
+    expect(write).toHaveBeenCalledOnce();
+    const items = write.mock.calls[0][0] as ClipboardItem[];
+    expect(items).toHaveLength(1);
+    expect(items[0].types).toContain("image/png");
   });
 
-  it("propagates clipboard errors from the backend", async () => {
-    const invoke = vi.fn().mockRejectedValue(new Error("clipboard unavailable"));
+  it("throws when the clipboard API is unavailable", async () => {
     await expect(
-      copyAttachmentToClipboard(fixture, { invoke }),
-    ).rejects.toThrow("clipboard unavailable");
+      copyAttachmentToClipboard(fixture, { clipboard: undefined }),
+    ).rejects.toThrow(/not available/);
+  });
+
+  it("propagates errors from clipboard.write", async () => {
+    const write = vi.fn().mockRejectedValue(new Error("denied"));
+    await expect(
+      copyAttachmentToClipboard(fixture, {
+        clipboard: { write } as unknown as Clipboard,
+      }),
+    ).rejects.toThrow("denied");
   });
 });
 

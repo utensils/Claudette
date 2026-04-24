@@ -7,6 +7,13 @@ import { clampMenuToViewport } from "./AttachmentContextMenu";
 // we unit-test it in isolation — following the existing convention in
 // focusTargets.test.ts of pure-logic-only tests rather than pulling in a
 // DOM harness (jsdom / testing-library).
+//
+// The async "stay open while the action is in flight" behavior
+// (AttachmentContextMenuItem.onSelect returning a Promise holds the menu
+// open until it settles) is intentionally verified manually rather than
+// with a jsdom render harness: copy a large image and paste into another
+// app before the menu dismisses — the paste works because the menu only
+// closes after the clipboard write has actually resolved.
 
 describe("clampMenuToViewport", () => {
   it("passes through positions that already fit", () => {
