@@ -1,6 +1,7 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
+import { Image } from "@tauri-apps/api/image";
 
 import { base64ToBytes } from "./base64";
 
@@ -95,14 +96,33 @@ export async function openAttachmentInBrowser(
  * Copy the attachment image bytes to the system clipboard as an image (not
  * as a file reference). Paste targets such as Messages, Keynote, or a web
  * chat will receive the pixels directly.
+ *
+ * Tauri's `writeImage` expects either an `Image` resource or raw RGBA pixel
+ * bytes — NOT encoded PNG/JPEG bytes. If you pass encoded bytes directly,
+ * the Rust side interprets them as RGBA and writes garbage, which manifests
+ * as "the first click does nothing, the second click works" because the OS
+ * clipboard ends up with unreadable data that some apps recover from on
+ * a repeated paste. So we decode via `Image.fromBytes` first — that lands
+ * us with a real Image resource whose RGBA buffer writeImage can use.
  */
 export async function copyAttachmentToClipboard(
   attachment: DownloadableAttachment,
-  deps: { writeImage?: typeof writeImage } = {},
+  deps: {
+    writeImage?: typeof writeImage;
+    imageFromBytes?: (bytes: Uint8Array | number[]) => Promise<Image>;
+  } = {},
 ): Promise<void> {
   const writeImageFn = deps.writeImage ?? writeImage;
+  const fromBytesFn =
+    deps.imageFromBytes ?? ((b) => Image.fromBytes(b as Uint8Array));
   const bytes = base64ToBytes(attachment.data_base64);
-  await writeImageFn(Array.from(bytes));
+  const image = await fromBytesFn(bytes);
+  try {
+    await writeImageFn(image);
+  } finally {
+    // Image is a Tauri Resource; close so the Rust side drops its handle.
+    await image.close().catch(() => undefined);
+  }
 }
 
 /**
