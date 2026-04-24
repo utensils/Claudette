@@ -48,6 +48,24 @@ pub(crate) fn load_disabled_providers(db: &Database, repo_id: &str) -> HashSet<S
         .collect()
 }
 
+/// Strip sources whose plugin is globally disabled in the Plugins
+/// settings section. The env panel is a per-repo/per-workspace view —
+/// surfacing globally-off plugins there is noise (they're managed
+/// elsewhere and won't run regardless), and showing them with the
+/// `error: "disabled"` marker was being rendered as a confusing ERROR
+/// badge. Resolution still runs them through `resolve_with_registry`
+/// upstream (the dispatcher needs to record them for cache
+/// invalidation), so we filter at the UI boundary only.
+pub(crate) fn filter_globally_disabled(
+    sources: Vec<claudette::env_provider::ResolvedSource>,
+    is_globally_disabled: impl Fn(&str) -> bool,
+) -> Vec<claudette::env_provider::ResolvedSource> {
+    sources
+        .into_iter()
+        .filter(|s| !is_globally_disabled(&s.plugin_name))
+        .collect()
+}
+
 /// Snapshot of one plugin's contribution for a workspace.
 ///
 /// Mirrors [`claudette::env_provider::ResolvedSource`] but uses
@@ -113,8 +131,8 @@ pub async fn get_env_sources(
     )
     .await;
 
-    let sources = resolved
-        .sources
+    let visible = filter_globally_disabled(resolved.sources, |name| registry.is_disabled(name));
+    let sources = visible
         .into_iter()
         .map(|s| {
             let display_name = display_names
@@ -383,5 +401,59 @@ async fn resolve_target(
             };
             Ok((repo.path, ws_info, repo.id))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use claudette::env_provider::ResolvedSource;
+    use std::collections::HashSet;
+    use std::time::SystemTime;
+
+    fn src(name: &str) -> ResolvedSource {
+        ResolvedSource {
+            plugin_name: name.to_string(),
+            detected: true,
+            vars_contributed: 1,
+            cached: false,
+            evaluated_at: SystemTime::now(),
+            error: None,
+        }
+    }
+
+    #[test]
+    fn filter_globally_disabled_hides_globally_disabled_sources() {
+        let sources = vec![src("env-direnv"), src("env-mise"), src("env-dotenv")];
+        let globally_off: HashSet<&str> = ["env-mise"].into_iter().collect();
+
+        let visible = filter_globally_disabled(sources, |n| globally_off.contains(n));
+
+        let names: Vec<&str> = visible.iter().map(|s| s.plugin_name.as_str()).collect();
+        assert_eq!(names, vec!["env-direnv", "env-dotenv"]);
+    }
+
+    #[test]
+    fn filter_globally_disabled_keeps_per_repo_disabled_with_reason() {
+        // Per-repo disable stamps `error: Some("disabled")`. That must
+        // still be visible — the user can re-enable it right there via
+        // the toggle. Only GLOBAL disables (from Plugins settings) are
+        // hidden.
+        let mut s = src("env-direnv");
+        s.error = Some("disabled".to_string());
+        s.detected = false;
+        s.vars_contributed = 0;
+        let sources = vec![s];
+
+        let visible = filter_globally_disabled(sources, |_| false);
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].error.as_deref(), Some("disabled"));
+    }
+
+    #[test]
+    fn filter_globally_disabled_empty_passes_through() {
+        let visible = filter_globally_disabled(Vec::new(), |_| true);
+        assert!(visible.is_empty());
     }
 }
