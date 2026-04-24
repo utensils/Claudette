@@ -145,22 +145,28 @@ impl EnvWatcher {
             if !is_interesting(&event.kind) {
                 return;
             }
+            // Collect lookup keys BEFORE taking the state lock.
+            // `canonicalize_or_keep` does a `stat` syscall, and
+            // holding the routing lock across it would block
+            // concurrent register/unregister (which takes the same
+            // lock). Each event path contributes at most two
+            // variants: the raw path as reported by the backend,
+            // and its canonical form. Backends may report either
+            // form — FSEvents emits canonical paths, inotify and
+            // ReadDirectoryChangesW emit whatever we registered.
+            let mut lookup_paths: Vec<PathBuf> = Vec::with_capacity(event.paths.len() * 2);
+            for path in &event.paths {
+                lookup_paths.push(path.clone());
+                let canon = canonicalize_or_keep(path);
+                if canon != *path {
+                    lookup_paths.push(canon);
+                }
+            }
+
             let state = state_for_handler.lock().unwrap();
             let mut fired: HashSet<Key> = HashSet::new();
-            for path in &event.paths {
-                // Backends may report canonical paths (FSEvents) or
-                // the path we registered (inotify, ReadDirectoryChangesW).
-                // Try both forms so platform differences don't leak
-                // into subscriber lookup.
+            for path in &lookup_paths {
                 if let Some(keys) = state.subscribers.get(path) {
-                    for key in keys {
-                        fired.insert(key.clone());
-                    }
-                }
-                let canon = canonicalize_or_keep(path);
-                if canon != *path
-                    && let Some(keys) = state.subscribers.get(&canon)
-                {
                     for key in keys {
                         fired.insert(key.clone());
                     }
@@ -180,12 +186,15 @@ impl EnvWatcher {
             }
         };
 
-        // `notify` 7 lets you pass a plain `EventFn`. The 300ms delay
-        // is a belt-and-suspenders debounce for backends that fire
-        // multiple events per save (vim swap-file dance, editors that
-        // rename-over). `Config::default().with_poll_interval(_)` only
-        // affects the polling fallback; RecommendedWatcher on our
-        // target platforms uses native APIs.
+        // `notify` 7 lets you pass a plain `EventFn`. `poll_interval`
+        // here ONLY applies to the polling fallback watcher — on our
+        // target platforms `RecommendedWatcher` selects FSEvents /
+        // inotify / ReadDirectoryChangesW and the poll interval is
+        // unused. Native backends may still emit multiple events per
+        // save (editor save-swap-rename dance); we dedupe subscriber
+        // keys within a single event via the `fired: HashSet<Key>`
+        // above, and the downstream EnvPanel listener debounces
+        // bursts at 300ms before refetching.
         let config = notify::Config::default().with_poll_interval(Duration::from_millis(300));
         let watcher = notify::recommended_watcher(handler).and_then(|mut w| {
             w.configure(config)?;

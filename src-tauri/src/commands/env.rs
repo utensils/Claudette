@@ -527,6 +527,11 @@ pub async fn register_resolved_with_watcher(
         }
         let paths = state.env_cache.watched_paths(worktree, &source.plugin_name);
         if paths.is_empty() {
+            // Plugin detected but reported no watched paths (e.g. a
+            // provider contributing env without anything to watch).
+            // Still drop any prior registration so a stale watch set
+            // from a previous export doesn't keep firing events.
+            watcher.unregister(worktree, Some(&source.plugin_name));
             continue;
         }
         watcher.register(worktree, &source.plugin_name, &paths);

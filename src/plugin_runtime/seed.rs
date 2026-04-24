@@ -101,10 +101,15 @@ pub fn seed_bundled_plugins(plugin_dir: &Path) -> Vec<String> {
         let on_disk_hash = sha256_hex(&on_disk);
         let bundled_hash = sha256_hex(init_lua);
 
-        // Already matches bundle → nothing to do. Refresh the
-        // `.content_hash` stamp in case this is a legacy install
-        // that matches the bundle but has no stamp yet, so future
-        // drift detection works.
+        // Init.lua matches bundle → no code change needed. But the
+        // manifest (`plugin.json`) can drift independently of the
+        // Lua body — new `operations`, an updated settings schema,
+        // a renamed `display_name`. Refresh the manifest (and the
+        // `.version` stamp) so `PluginRegistry::discover` always
+        // sees current metadata even when the code body is stable.
+        //
+        // Also top up `.content_hash` for legacy installs that
+        // predate hash stamping, so future drift detection works.
         if on_disk_hash == bundled_hash {
             if !hash_file.exists()
                 && let Err(e) = std::fs::write(&hash_file, &bundled_hash)
@@ -112,6 +117,18 @@ pub fn seed_bundled_plugins(plugin_dir: &Path) -> Vec<String> {
                 warnings.push(format!(
                     "Plugin '{name}': failed to write content hash stamp: {e}"
                 ));
+            }
+            if let Err(e) = refresh_manifest_if_changed(&manifest_file, plugin_json) {
+                warnings.push(format!("Plugin '{name}': manifest refresh failed: {e}"));
+            }
+            let current_version = std::fs::read_to_string(&version_file)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if current_version != APP_VERSION
+                && let Err(e) = std::fs::write(&version_file, APP_VERSION)
+            {
+                warnings.push(format!("Plugin '{name}': .version refresh failed: {e}"));
             }
             continue;
         }
@@ -254,6 +271,19 @@ pub fn reseed_bundled_plugins_force(plugin_dir: &Path) -> Vec<String> {
     warnings
 }
 
+/// Rewrite `manifest_path` only when its on-disk bytes don't already
+/// match `bundled_content`. Avoids pointless mtime bumps for the
+/// common case where the manifest is already current, and keeps the
+/// "only update if we need to" contract for the case-2 refresh path
+/// (init.lua unchanged, manifest may have drifted).
+fn refresh_manifest_if_changed(manifest_path: &Path, bundled_content: &str) -> std::io::Result<()> {
+    let on_disk = std::fs::read_to_string(manifest_path).unwrap_or_default();
+    if on_disk == bundled_content {
+        return Ok(());
+    }
+    std::fs::write(manifest_path, bundled_content)
+}
+
 fn write_plugin_files(
     manifest_path: &Path,
     manifest_content: &str,
@@ -354,6 +384,40 @@ mod tests {
             mtime_before, mtime_after,
             "matching content must not trigger a rewrite"
         );
+    }
+
+    #[test]
+    fn seed_refreshes_manifest_when_init_lua_unchanged() {
+        // Regression for a Codex finding: the "init.lua matches
+        // bundle → no-op" path used to skip plugin.json refresh too.
+        // If a release bumps manifest metadata (new operations, new
+        // settings schema) without changing the Lua body, users
+        // would keep seeing stale manifests until they forced a
+        // reseed. Exercise: on-disk init.lua matches bundle; on-disk
+        // manifest is stale. Expect the manifest to get rewritten.
+        let dir = tempfile::tempdir().unwrap();
+        seed_bundled_plugins(dir.path());
+
+        let manifest_path = dir.path().join("github/plugin.json");
+        let stale_manifest = r#"{"name":"github","version":"0.0.0","stale":true}"#;
+        std::fs::write(&manifest_path, stale_manifest).unwrap();
+
+        let warnings = seed_bundled_plugins(dir.path());
+        let github_warnings: Vec<_> = warnings.iter().filter(|w| w.contains("github")).collect();
+        assert!(
+            github_warnings.is_empty(),
+            "manifest refresh must not warn: {github_warnings:?}"
+        );
+
+        let on_disk = std::fs::read_to_string(&manifest_path).unwrap();
+        assert_ne!(on_disk, stale_manifest, "stale manifest must be replaced");
+        // Should match the bundled manifest content.
+        let bundled = BUNDLED_PLUGINS
+            .iter()
+            .find(|(n, _, _)| *n == "github")
+            .map(|(_, pjson, _)| *pjson)
+            .unwrap();
+        assert_eq!(on_disk, bundled);
     }
 
     #[test]
