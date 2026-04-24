@@ -1,7 +1,5 @@
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
-import { Image } from "@tauri-apps/api/image";
 
 import { base64ToBytes } from "./base64";
 
@@ -97,32 +95,22 @@ export async function openAttachmentInBrowser(
  * as a file reference). Paste targets such as Messages, Keynote, or a web
  * chat will receive the pixels directly.
  *
- * Tauri's `writeImage` expects either an `Image` resource or raw RGBA pixel
- * bytes — NOT encoded PNG/JPEG bytes. If you pass encoded bytes directly,
- * the Rust side interprets them as RGBA and writes garbage, which manifests
- * as "the first click does nothing, the second click works" because the OS
- * clipboard ends up with unreadable data that some apps recover from on
- * a repeated paste. So we decode via `Image.fromBytes` first — that lands
- * us with a real Image resource whose RGBA buffer writeImage can use.
+ * Routes through a single Tauri command (`copy_image_to_clipboard`) that
+ * decodes the PNG/JPEG bytes and writes to the OS clipboard in one
+ * spawn_blocking task. Going through the JS `Image.fromBytes` + `writeImage`
+ * dance instead costs three IPC round-trips and ships the byte buffer
+ * over the bridge twice, which was producing a very noticeable lag on
+ * realistic-sized screenshots.
  */
 export async function copyAttachmentToClipboard(
   attachment: DownloadableAttachment,
-  deps: {
-    writeImage?: typeof writeImage;
-    imageFromBytes?: (bytes: Uint8Array | number[]) => Promise<Image>;
-  } = {},
+  deps: { invoke?: typeof invoke } = {},
 ): Promise<void> {
-  const writeImageFn = deps.writeImage ?? writeImage;
-  const fromBytesFn =
-    deps.imageFromBytes ?? ((b) => Image.fromBytes(b as Uint8Array));
+  const invokeFn = deps.invoke ?? invoke;
   const bytes = base64ToBytes(attachment.data_base64);
-  const image = await fromBytesFn(bytes);
-  try {
-    await writeImageFn(image);
-  } finally {
-    // Image is a Tauri Resource; close so the Rust side drops its handle.
-    await image.close().catch(() => undefined);
-  }
+  await invokeFn("copy_image_to_clipboard", {
+    bytes: Array.from(bytes),
+  });
 }
 
 /**

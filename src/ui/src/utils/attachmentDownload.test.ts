@@ -107,50 +107,20 @@ describe("openAttachmentInBrowser", () => {
 });
 
 describe("copyAttachmentToClipboard", () => {
-  function makeImageStub() {
-    const close = vi.fn().mockResolvedValue(undefined);
-    // Shaped enough to satisfy writeImage + finally-close; the real Image has
-    // a rid field and a Resource prototype but we only need the methods.
-    const image = { close } as unknown as import("@tauri-apps/api/image").Image;
-    return { image, close };
-  }
-
-  it("decodes bytes via Image.fromBytes before writing", async () => {
-    const writeImage = vi.fn().mockResolvedValue(undefined);
-    const { image, close } = makeImageStub();
-    const imageFromBytes = vi.fn().mockResolvedValue(image);
-
-    await copyAttachmentToClipboard(fixture, { writeImage, imageFromBytes });
-
-    expect(imageFromBytes).toHaveBeenCalledOnce();
-    // Called with the decoded bytes (hello = 104, 101, 108, 108, 111)
-    const passed = imageFromBytes.mock.calls[0][0];
-    expect(Array.from(passed)).toEqual([104, 101, 108, 108, 111]);
-    expect(writeImage).toHaveBeenCalledWith(image);
-    expect(close).toHaveBeenCalledOnce();
+  it("invokes copy_image_to_clipboard with the decoded bytes in one call", async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await copyAttachmentToClipboard(fixture, { invoke });
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(invoke).toHaveBeenCalledWith("copy_image_to_clipboard", {
+      bytes: [104, 101, 108, 108, 111],
+    });
   });
 
-  it("closes the Image resource even if writeImage throws", async () => {
-    const writeImage = vi.fn().mockRejectedValue(new Error("no clipboard"));
-    const { image, close } = makeImageStub();
-    const imageFromBytes = vi.fn().mockResolvedValue(image);
-
+  it("propagates clipboard errors from the backend", async () => {
+    const invoke = vi.fn().mockRejectedValue(new Error("clipboard unavailable"));
     await expect(
-      copyAttachmentToClipboard(fixture, { writeImage, imageFromBytes }),
-    ).rejects.toThrow("no clipboard");
-    expect(close).toHaveBeenCalledOnce();
-  });
-
-  it("propagates decode failures before ever calling writeImage", async () => {
-    const writeImage = vi.fn();
-    const imageFromBytes = vi
-      .fn()
-      .mockRejectedValue(new Error("unsupported format"));
-
-    await expect(
-      copyAttachmentToClipboard(fixture, { writeImage, imageFromBytes }),
-    ).rejects.toThrow("unsupported format");
-    expect(writeImage).not.toHaveBeenCalled();
+      copyAttachmentToClipboard(fixture, { invoke }),
+    ).rejects.toThrow("clipboard unavailable");
   });
 });
 

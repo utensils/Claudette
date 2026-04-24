@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State, image::Image};
+use tauri_plugin_clipboard_manager::ClipboardExt as _;
 use tokio::process::Command;
 
 use claudette::db::Database;
@@ -210,6 +211,26 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Decode encoded image bytes (PNG/JPEG/etc) and copy the result to the
+/// system clipboard in a single IPC round-trip.
+///
+/// The equivalent three-step JS flow (`Image.fromBytes` → `writeImage` →
+/// `image.close`) ships the full byte buffer over the Tauri bridge three
+/// times and re-allocates on each hop. Doing the work end-to-end in Rust
+/// keeps the whole thing on one spawn_blocking task so the UI thread isn't
+/// blocked on PNG decode, and eliminates two serializations worth of lag.
+#[tauri::command]
+pub async fn copy_image_to_clipboard(app: AppHandle, bytes: Vec<u8>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let image = Image::from_bytes(&bytes).map_err(|e| format!("decode image: {e}"))?;
+        app.clipboard()
+            .write_image(&image)
+            .map_err(|e| format!("clipboard write: {e}"))
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
 }
 
 #[tauri::command]
