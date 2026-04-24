@@ -561,9 +561,16 @@ export const useAppStore = create<AppState>((set) => ({
         workspaceTerminalCommands: newWorkspaceTerminalCommands,
       };
     }),
-  selectWorkspace: (id) => {
-    set({ selectedWorkspaceId: id, rightSidebarTab: "changes" });
-  },
+  selectWorkspace: (id) =>
+    set((s) => {
+      const updates: Partial<AppState> = { selectedWorkspaceId: id, rightSidebarTab: "changes" };
+      if (id && s.unreadCompletions.has(id)) {
+        const next = new Set(s.unreadCompletions);
+        next.delete(id);
+        updates.unreadCompletions = next;
+      }
+      return updates;
+    }),
 
   // -- Chat --
   chatMessages: {},
