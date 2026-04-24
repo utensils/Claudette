@@ -27,9 +27,14 @@ pub fn format_err(tool: &str) -> String {
 /// If `err` carries the sentinel [`SPAWN_ERR_PREFIX`], return the tool token.
 pub fn parse_err(err: &str) -> Option<&str> {
     let rest = err.strip_prefix(SPAWN_ERR_PREFIX)?;
-    // Tool token ends at the first `:` or end-of-string.
-    let end = rest.find(':').unwrap_or(rest.len());
-    Some(&rest[..end])
+    // The optional original-error suffix (produced by [`format_err`] callers
+    // that append context) is documented as `": <original error>"`. Split only
+    // on that unambiguous delimiter so colons inside the tool token — e.g.
+    // Windows drive letters in absolute paths (`C:\Tools\gh.exe`) — are
+    // preserved. Host-side normalization in `host_exec` usually collapses
+    // paths to bare names before emitting the sentinel, but parsing has to
+    // stay robust for legacy/hand-crafted payloads.
+    Some(rest.split_once(": ").map(|(tool, _)| tool).unwrap_or(rest))
 }
 
 /// Returns `true` when the I/O error's root cause is "executable not found".
@@ -235,6 +240,22 @@ mod tests {
     fn parse_err_rejects_non_sentinel() {
         assert_eq!(parse_err("Failed to spawn"), None);
         assert_eq!(parse_err(""), None);
+    }
+
+    #[test]
+    fn parse_err_preserves_windows_absolute_path_tool() {
+        // Regression for Copilot review on PR #417: splitting on the first
+        // `:` truncated Windows absolute paths (`MISSING_CLI:C:\Tools\gh.exe`
+        // parsed as `tool=C`). `parse_err` now splits only on the documented
+        // `": "` suffix delimiter.
+        assert_eq!(
+            parse_err(r"MISSING_CLI:C:\Tools\gh.exe"),
+            Some(r"C:\Tools\gh.exe")
+        );
+        assert_eq!(
+            parse_err(r"MISSING_CLI:C:\Tools\gh.exe: No such file or directory"),
+            Some(r"C:\Tools\gh.exe")
+        );
     }
 
     #[test]

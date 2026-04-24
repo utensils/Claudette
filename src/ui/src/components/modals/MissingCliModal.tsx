@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { openUrl } from "../../services/tauri";
 import { Modal } from "./Modal";
@@ -25,6 +25,16 @@ const PLATFORM_LABEL: Record<string, string> = {
   windows: "Windows",
 };
 
+function isInstallOption(value: unknown): value is InstallOption {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.label === "string" &&
+    (v.command === undefined || typeof v.command === "string") &&
+    (v.url === undefined || typeof v.url === "string")
+  );
+}
+
 function isMissingCliData(value: unknown): value is MissingCliData {
   if (value === null || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
@@ -33,7 +43,8 @@ function isMissingCliData(value: unknown): value is MissingCliData {
     typeof v.display_name === "string" &&
     typeof v.purpose === "string" &&
     typeof v.platform === "string" &&
-    Array.isArray(v.install_options)
+    Array.isArray(v.install_options) &&
+    v.install_options.every(isInstallOption)
   );
 }
 
@@ -41,6 +52,20 @@ export function MissingCliModal() {
   const closeModal = useAppStore((s) => s.closeModal);
   const modalData = useAppStore((s) => s.modalData);
   const [copied, setCopied] = useState<number | null>(null);
+  // Track the pending "Copied" reset so it can be cancelled on unmount and
+  // on repeat clicks — otherwise a timer could fire after the modal closes
+  // and call setState on an unmounted component.
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   const data = isMissingCliData(modalData) ? modalData : null;
   if (!data) return null;
@@ -51,7 +76,13 @@ export function MissingCliModal() {
     try {
       await navigator.clipboard.writeText(cmd);
       setCopied(idx);
-      setTimeout(() => setCopied((c) => (c === idx ? null : c)), 1500);
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopied((c) => (c === idx ? null : c));
+      }, 1500);
     } catch {
       // Clipboard API can reject in some sandboxes — silently ignore.
     }
