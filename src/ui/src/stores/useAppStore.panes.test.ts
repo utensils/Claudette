@@ -68,16 +68,14 @@ describe("pane slice: ensurePaneTree", () => {
 describe("pane slice: splitPane", () => {
   beforeEach(resetStore);
 
-  it("splits a leaf into a 70/30 horizontal split and focuses the new leaf", () => {
+  it("splits a leaf into a 50/50 horizontal split and focuses the new leaf", () => {
     const rootLeaf = useAppStore.getState().ensurePaneTree(1);
     const newLeaf = useAppStore.getState().splitPane(1, rootLeaf, "horizontal");
     expect(newLeaf).not.toBeNull();
     const tree = useAppStore.getState().terminalPaneTrees[1];
     if (tree.kind !== "split") throw new Error("expected split");
     expect(tree.direction).toBe("horizontal");
-    // Surviving pane keeps ~70% to minimize the reflow the shell sees on
-    // SIGWINCH — see splitLeaf in terminalPaneTree.ts for the rationale.
-    expect(tree.sizes).toEqual([70, 30]);
+    expect(tree.sizes).toEqual([50, 50]);
     expect(useAppStore.getState().activeTerminalPaneId[1]).toBe(newLeaf);
   });
 

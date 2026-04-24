@@ -100,6 +100,34 @@ interface XtermInternals {
   };
 }
 
+// Push the current visible rows into scrollback by writing newlines
+// directly to the xterm buffer. Why: when a pane is resized the shell
+// gets SIGWINCH and its prompt-redraw handler (zle `reset-prompt`,
+// powerlevel10k, starship's equivalent) typically emits \e[H\e[J —
+// cursor home then erase-to-end-of-display. Per VT spec, xterm erases
+// those visible rows in place and does NOT copy them to scrollback, so
+// everything the user was looking at a moment ago is destroyed. By
+// injecting blank lines ahead of the shell's redraw we make the erase
+// target a freshly-blank viewport while the real content slides safely
+// up into scrollback. The injection is synchronous inside
+// useLayoutEffect, whereas the shell's response arrives via an async
+// pty-output event — so the ordering is guaranteed.
+//
+// We cap the count by the actual rendered buffer height so a degenerate
+// call (rows = 0, large leftover scrollback) doesn't write forever.
+function padViewportIntoScrollback(inst: LeafInstance) {
+  const rows = inst.term.rows;
+  if (rows <= 0) return;
+  const buf = inst.term.buffer.active;
+  // Newlines needed to move the current cursor from its current row to
+  // the bottom of the viewport PLUS one full viewport-height of
+  // scrolls. That combination pushes every currently-visible row up
+  // into scrollback regardless of cursor position.
+  const count = 2 * rows - 1 - buf.cursorY;
+  if (count <= 0) return;
+  inst.term.write("\r" + "\n".repeat(count));
+}
+
 function scheduleReclaimHistory(inst: LeafInstance) {
   if (inst.reclaimDisposer) {
     inst.reclaimDisposer();
@@ -629,11 +657,18 @@ export const TerminalPanel = memo(function TerminalPanel() {
           // prompt is visible.
           inst.term.scrollToBottom();
         } else if (resized && inst.ptyId >= 0) {
-          // Existing pane that just got a new size (split/close changed
-          // the pane geometry). The shell will SIGWINCH-redraw its
-          // prompt at the top of the cleared viewport; wait for that
-          // and then scroll the display up so the preserved scrollback
-          // (the user's prior output) is visible above it.
+          // The shell is about to receive SIGWINCH and will typically
+          // respond with \e[H\e[J (cursor home + erase to end of
+          // display), which xterm implements as an in-place erase of
+          // the visible rows — the user's recent output is NOT moved
+          // to scrollback, it's wiped. To salvage it, synchronously
+          // pad the xterm buffer with enough blank lines that the
+          // current viewport content is safely above ybase before the
+          // shell's redraw arrives (this injection happens on the
+          // microtask queue ahead of any pty-output event). Once the
+          // shell has redrawn its prompt we also slide the display up
+          // so the user can see the reclaimed scrollback above it.
+          padViewportIntoScrollback(inst);
           scheduleReclaimHistory(inst);
         }
       }
