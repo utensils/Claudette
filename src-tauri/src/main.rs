@@ -477,6 +477,9 @@ fn main() {
             commands::scm::scm_create_pr,
             commands::scm::scm_merge_pr,
             commands::scm::scm_refresh,
+            // Env-provider diagnostic UI
+            commands::env::get_workspace_env_sources,
+            commands::env::reload_workspace_env,
             // Local server
             commands::remote::start_local_server,
             commands::remote::stop_local_server,

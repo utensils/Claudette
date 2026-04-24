@@ -6,6 +6,7 @@ pub mod data;
 #[cfg(debug_assertions)]
 pub mod debug;
 pub mod diff;
+pub mod env;
 pub mod files;
 pub mod mcp;
 pub mod metrics;
