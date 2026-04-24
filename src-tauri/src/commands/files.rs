@@ -176,13 +176,21 @@ pub fn write_image_as_html(
     let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
     let safe_stem = sanitize_stem(filename_stem);
     let title = html_escape(filename_stem);
+    let safe_media = html_escape(media_type);
+    // Include a unique suffix so opening the same attachment twice (or two
+    // differently-chatted files that share a filename stem) doesn't clobber
+    // the previous wrapper while it's still open in the user's browser.
+    let unique: u128 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     let html = format!(
         "<!doctype html><meta charset=\"utf-8\"><title>{title}</title>\
          <style>body{{margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh}}\
          img{{max-width:100vw;max-height:100vh}}</style>\
-         <img src=\"data:{media_type};base64,{b64}\" alt=\"{title}\">"
+         <img src=\"data:{safe_media};base64,{b64}\" alt=\"{title}\">"
     );
-    let path = dir.join(format!("{safe_stem}.html"));
+    let path = dir.join(format!("{safe_stem}-{unique}.html"));
     std::fs::write(&path, html)?;
     Ok(path)
 }
@@ -275,6 +283,26 @@ mod tests {
                 || content.contains("data:image/png;base64,")
         );
         assert!(content.contains("<title>cat photo.png</title>"));
+    }
+
+    #[test]
+    fn write_image_as_html_escapes_hostile_media_type() {
+        let dir = tempdir().unwrap();
+        let path =
+            write_image_as_html(dir.path(), "x", "image/png\" onload=\"alert(1)", b"\x89PNG")
+                .unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(!content.contains("onload=\"alert(1)"));
+        assert!(content.contains("&quot;"));
+    }
+
+    #[test]
+    fn write_image_as_html_uses_unique_suffix() {
+        let dir = tempdir().unwrap();
+        let p1 = write_image_as_html(dir.path(), "x", "image/png", b"a").unwrap();
+        std::thread::sleep(std::time::Duration::from_nanos(1));
+        let p2 = write_image_as_html(dir.path(), "x", "image/png", b"b").unwrap();
+        assert_ne!(p1, p2);
     }
 
     #[test]

@@ -41,10 +41,23 @@ branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 cwd="$(pwd)"
 started="$(date +%s)"
 
-# Emit JSON with a here-doc to avoid quoting headaches in paths.
-cat > "$discovery_file" <<EOF
-{"pid":$$,"debug_port":$debug_port,"vite_port":$vite_port,"cwd":"$cwd","branch":"$branch","started_at":$started}
-EOF
+# Build JSON via python3's json module so paths or branch names containing
+# quotes, backslashes, or newlines don't break the discovery file. `python3`
+# is already an explicit prerequisite of the debug eval helper, so making
+# the devshell depend on it too is consistent.
+python3 -c '
+import json, sys
+out, pid, debug_port, vite_port, started, cwd, branch = sys.argv[1:8]
+with open(out, "w") as f:
+    json.dump({
+        "pid": int(pid),
+        "debug_port": int(debug_port),
+        "vite_port": int(vite_port),
+        "cwd": cwd,
+        "branch": branch,
+        "started_at": int(started),
+    }, f)
+' "$discovery_file" "$$" "$debug_port" "$vite_port" "$started" "$cwd" "$branch"
 
 cleanup() { rm -f "$discovery_file"; }
 trap cleanup EXIT INT TERM

@@ -225,6 +225,10 @@ export function ChatPanel() {
     [],
   );
 
+  // navigator.canShare({ files: [probe] }) doesn't change across re-renders —
+  // it's a function of the platform / webview capabilities. Compute once.
+  const shareSupported = useMemo(() => isShareSupported(), []);
+
   // Prompt history: stores past user inputs per workspace.
   const historyRef = useRef<Record<string, string[]>>({});
   const historyIndexRef = useRef(-1);
@@ -1083,7 +1087,7 @@ export function ChatPanel() {
                 );
               },
             },
-            ...(isShareSupported()
+            ...(shareSupported
               ? [
                   {
                     label: "Share…",

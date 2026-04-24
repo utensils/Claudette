@@ -30,24 +30,27 @@ discover_port() {
   shopt -s nullglob
   for f in "$DISCOVERY_DIR"/*.json; do
     # Tolerate missing jq — parse with python3 which we already require below.
+    # Pass the path via sys.argv rather than string-interpolating it into the
+    # Python source, so filenames containing quotes/backslashes don't break
+    # the parser (and can't be used for shell-injection).
     local line
-    line=$(python3 -c "
+    line=$(python3 -c '
 import json, os, sys
+path = sys.argv[1]
 try:
-    d = json.load(open('$f'))
-    pid = d.get('pid')
+    with open(path) as fh:
+        d = json.load(fh)
+    pid = d.get("pid")
     if pid is None: sys.exit(0)
-    # Check pid alive
-    os.kill(pid, 0)
-    print(f\"{pid}|{d.get('debug_port','')}|{d.get('cwd','')}|{d.get('branch','')}\")
+    os.kill(pid, 0)  # check alive
+    print("{}|{}|{}|{}".format(pid, d.get("debug_port",""), d.get("cwd",""), d.get("branch","")))
 except (FileNotFoundError, json.JSONDecodeError, KeyError):
     sys.exit(0)
 except ProcessLookupError:
-    # Stale file from a crashed instance — clean up.
-    try: os.unlink('$f')
-    except: pass
+    try: os.unlink(path)
+    except OSError: pass
     sys.exit(0)
-" 2>/dev/null) || continue
+' "$f" 2>/dev/null) || continue
     [[ -n "$line" ]] && instances+=("$line")
   done
   shopt -u nullglob
