@@ -1,56 +1,59 @@
 import { memo } from "react";
 import { Group, Panel, Separator, type Layout } from "react-resizable-panels";
 import type { TerminalPaneNode } from "../../types/terminal";
-import { TerminalLeaf } from "./TerminalLeaf";
 import styles from "./TerminalPanel.module.css";
 
 export interface TerminalPaneTreeProps {
   tabId: number;
-  workspaceId: string;
-  worktreePath: string;
   node: TerminalPaneNode;
   activePaneId: string | null;
-  keyHandler: (ev: KeyboardEvent) => boolean;
   onActivatePane: (leafId: string) => void;
   onLayout: (splitId: string, sizes: [number, number]) => void;
+  onRetryLeaf: (leafId: string) => void;
 }
 
 /**
  * Recursive renderer for the split-pane binary tree.
  *
- * Each split node becomes a react-resizable-panels `Group` with two `Panel`s
- * and a `Separator` between them. The `orientation` we pass matches our
- * TerminalSplitDirection vocabulary directly:
+ * CRITICAL: leaves DO NOT render xterm themselves. They emit an empty
+ * target `<div data-pane-target={leafId}>` that the parent TerminalPanel
+ * later `appendChild`s the xterm host into via a useLayoutEffect. This
+ * keeps xterm instances alive across structural rewrites of the tree
+ * (splitting, closing, re-parenting) — if React owned the xterm, every
+ * split would remount the existing pane and respawn its PTY.
+ *
+ * Split nodes use react-resizable-panels `Group`/`Panel`/`Separator`.
+ * Our direction vocabulary matches the library's `orientation` prop:
  *   - "horizontal" → side-by-side columns (vertical divider)
  *   - "vertical"   → stacked rows (horizontal divider)
- *
- * Leaf nodes render a single TerminalLeaf, which owns its xterm + PTY.
  */
 export const TerminalPaneTree = memo(function TerminalPaneTree(
   props: TerminalPaneTreeProps,
 ) {
-  const {
-    tabId,
-    workspaceId,
-    worktreePath,
-    node,
-    activePaneId,
-    keyHandler,
-    onActivatePane,
-    onLayout,
-  } = props;
+  const { tabId, node, activePaneId, onActivatePane, onLayout, onRetryLeaf } = props;
 
   if (node.kind === "leaf") {
+    const isActive = activePaneId === node.id;
     return (
-      <TerminalLeaf
-        tabId={tabId}
-        leafId={node.id}
-        workspaceId={workspaceId}
-        worktreePath={worktreePath}
-        isActivePane={activePaneId === node.id}
-        keyHandler={keyHandler}
-        onActivate={() => onActivatePane(node.id)}
-      />
+      <div
+        className={`${styles.paneLeaf} ${isActive ? styles.paneLeafActive : ""}`}
+        data-pane-target={node.id}
+        data-pane-tab-id={tabId}
+        onPointerDown={() => onActivatePane(node.id)}
+      >
+        {node.spawnError && (
+          <div className={styles.paneLeafError} role="alert">
+            <div className={styles.spawnErrorTitle}>Failed to start shell</div>
+            <div className={styles.spawnErrorMessage}>{node.spawnError}</div>
+            <button
+              className={styles.spawnErrorRetry}
+              onClick={() => onRetryLeaf(node.id)}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -59,9 +62,6 @@ export const TerminalPaneTree = memo(function TerminalPaneTree(
       ? styles.paneHandleVertical
       : styles.paneHandleHorizontal;
 
-  // Stable panel ids — the parent split id plus a suffix. react-resizable-
-  // panels keys its Layout dict by panel id, so we read both back in order
-  // and write them into the store's sizes tuple.
   const leftId = `${node.id}-a`;
   const rightId = `${node.id}-b`;
 
@@ -81,26 +81,22 @@ export const TerminalPaneTree = memo(function TerminalPaneTree(
       <Panel id={leftId} defaultSize={node.sizes[0]} minSize={10}>
         <TerminalPaneTree
           tabId={tabId}
-          workspaceId={workspaceId}
-          worktreePath={worktreePath}
           node={node.children[0]}
           activePaneId={activePaneId}
-          keyHandler={keyHandler}
           onActivatePane={onActivatePane}
           onLayout={onLayout}
+          onRetryLeaf={onRetryLeaf}
         />
       </Panel>
       <Separator className={handleClass} />
       <Panel id={rightId} defaultSize={node.sizes[1]} minSize={10}>
         <TerminalPaneTree
           tabId={tabId}
-          workspaceId={workspaceId}
-          worktreePath={worktreePath}
           node={node.children[1]}
           activePaneId={activePaneId}
-          keyHandler={keyHandler}
           onActivatePane={onActivatePane}
           onLayout={onLayout}
+          onRetryLeaf={onRetryLeaf}
         />
       </Panel>
     </Group>
