@@ -24,6 +24,18 @@ end
 
 function M.export(args)
     local result = host.exec("mise", { "env", "--json" })
+
+    -- Auto-trust opt-in: when mise reports config files as not trusted
+    -- and the user has enabled auto_trust, run `mise trust` once and
+    -- retry. Single retry avoids an infinite loop if trust fails for
+    -- another reason.
+    if result.code ~= 0
+        and host.config("auto_trust") == true
+        and (result.stderr or ""):match("not trusted") then
+        host.exec("mise", { "trust" })
+        result = host.exec("mise", { "env", "--json" })
+    end
+
     if result.code ~= 0 then
         -- Common causes: config not trusted (run `mise trust`) or
         -- malformed TOML. Surface stderr verbatim.

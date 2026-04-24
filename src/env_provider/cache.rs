@@ -121,6 +121,14 @@ impl EnvCache {
         }
     }
 
+    /// Forget every cache entry for a given plugin, across all
+    /// worktrees. Called when a plugin's global enable state or
+    /// settings change — any cached export is potentially stale.
+    pub fn invalidate_plugin_everywhere(&self, plugin: &str) {
+        let mut guard = self.entries.write().unwrap();
+        guard.retain(|(_, p), _| p != plugin);
+    }
+
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.entries.read().unwrap().len()
@@ -226,6 +234,29 @@ mod tests {
         assert_eq!(cache.len(), 1);
         assert!(cache.get_fresh(tmp.path(), "env-direnv").is_none());
         assert!(cache.get_fresh(tmp.path(), "env-mise").is_some());
+    }
+
+    #[test]
+    fn invalidate_plugin_everywhere_drops_all_worktrees_for_plugin() {
+        let tmp_a = tempfile::tempdir().unwrap();
+        let tmp_b = tempfile::tempdir().unwrap();
+        let file_a = tmp_a.path().join(".envrc");
+        let file_b = tmp_b.path().join(".envrc");
+        std::fs::write(&file_a, "x").unwrap();
+        std::fs::write(&file_b, "x").unwrap();
+
+        let cache = EnvCache::new();
+        cache.put(tmp_a.path(), "env-direnv", &export_with_watched(&file_a));
+        cache.put(tmp_a.path(), "env-mise", &export_with_watched(&file_a));
+        cache.put(tmp_b.path(), "env-direnv", &export_with_watched(&file_b));
+        assert_eq!(cache.len(), 3);
+
+        cache.invalidate_plugin_everywhere("env-direnv");
+
+        assert_eq!(cache.len(), 1);
+        assert!(cache.get_fresh(tmp_a.path(), "env-direnv").is_none());
+        assert!(cache.get_fresh(tmp_b.path(), "env-direnv").is_none());
+        assert!(cache.get_fresh(tmp_a.path(), "env-mise").is_some());
     }
 
     #[test]

@@ -1,7 +1,19 @@
 /**
- * Matches `EnvSourceInfo` serialized by the Rust `get_workspace_env_sources`
- * Tauri command. One entry per env-provider plugin that was considered for
- * the workspace (detected or not).
+ * What to resolve env-provider state for. Mirrors the Rust `EnvTarget`
+ * enum with `#[serde(tag = "kind", rename_all = "snake_case")]`.
+ *
+ * Use `{ kind: "repo", repo_id }` in Repo Settings so the panel works
+ * before a workspace exists. Use `{ kind: "workspace", workspace_id }`
+ * from a workspace-scoped view.
+ */
+export type EnvTarget =
+  | { kind: "repo"; repo_id: string }
+  | { kind: "workspace"; workspace_id: string };
+
+/**
+ * Matches `EnvSourceInfo` serialized by the Rust `get_env_sources`
+ * Tauri command. One entry per env-provider plugin that was considered
+ * for the target (detected or not).
  */
 export interface EnvSourceInfo {
   /** Internal plugin id, e.g. `env-direnv`. Used for API calls. */

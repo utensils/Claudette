@@ -134,6 +134,12 @@ plugins/                — bundled Lua plugins (compiled in via include_str!)
 
 A single sandboxed Lua runtime (`src/plugin_runtime/`) serves multiple plugin kinds declared via `plugin.json`'s `kind` field (`scm` | `env-provider`, defaults to `scm`). Each kind has its own domain consumer (`src/scm/`, `src/env_provider/`) that dispatches operations on top of the shared runtime. Bundled plugins live in `plugins/*/` and are seeded into the user's plugin dir on first run. Users can drop their own plugins into `~/.claudette/plugins/<name>/` (one `plugin.json` + one `init.lua`); discovery picks them up at startup.
 
+**Plugin settings** (`manifest.settings: Vec<PluginSettingField>`) let a plugin declare typed user-configurable fields (boolean/text/select) that the Plugins settings section renders as a form. Values persist in `app_settings` as `plugin:{name}:setting:{key}` and are piped into the Lua `host.config("<key>")` surface at invocation time. Manifest defaults apply when no override is set. Global on/off state persists as `plugin:{name}:enabled = "false"` (absent key = enabled).
+
+**Settings UI** separates two plugin concepts:
+- **Plugins** (`src/ui/src/components/settings/sections/PluginsSettings.tsx`) — Claudette's own Lua plugins (SCM + env-provider). Always visible. Shows status, per-plugin toggle, and the manifest-declared settings form.
+- **Claude Code Plugins** (`ClaudeCodePluginsSettings.tsx`, route key `claude-code-plugins`) — the Claude CLI marketplace integration from `src/plugin.rs` (marketplaces, channels, install/uninstall). Gated behind the `pluginManagementEnabled` experimental flag.
+
 ### Guidelines for new code
 
 - **Data types** go in `model/` — keep them free of UI and IO dependencies. All model types must derive `Serialize`.

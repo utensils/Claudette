@@ -22,6 +22,20 @@ end
 
 function M.export(args)
     local result = host.exec("direnv", { "export", "json" })
+
+    -- If the .envrc is blocked and the user has opted into auto-allow,
+    -- run `direnv allow` once and retry. direnv normally hashes the
+    -- .envrc path so each worktree must be allowed independently —
+    -- opting in consciously trades that per-path safeguard for zero-
+    -- friction activation. Retry only once to avoid infinite loops if
+    -- `allow` somehow fails to unblock.
+    if result.code ~= 0
+        and host.config("auto_allow") == true
+        and (result.stderr or ""):match("is blocked") then
+        host.exec("direnv", { "allow" })
+        result = host.exec("direnv", { "export", "json" })
+    end
+
     if result.code ~= 0 then
         -- Non-zero exit from `direnv export json` usually means the
         -- `.envrc` hasn't been allowed yet. Propagate the stderr so the

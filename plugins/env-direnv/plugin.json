@@ -5,5 +5,14 @@
   "description": "Activate direnv-managed environment for workspace subprocesses",
   "kind": "env-provider",
   "required_clis": ["direnv"],
-  "operations": ["detect", "export"]
+  "operations": ["detect", "export"],
+  "settings": [
+    {
+      "type": "boolean",
+      "key": "auto_allow",
+      "label": "Always allow .envrc",
+      "description": "When direnv reports an .envrc as blocked, run `direnv allow` automatically. Note: direnv normally hashes the .envrc path so each worktree must be allowed separately — enabling this bypasses that per-path safeguard.",
+      "default": false
+    }
+  ]
 }

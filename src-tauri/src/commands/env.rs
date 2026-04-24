@@ -67,19 +67,31 @@ pub struct EnvSourceInfo {
     pub error: Option<String>,
 }
 
+/// Identifies what to resolve env for. `Repo` resolves against the
+/// repository's main checkout (useful before any workspace exists);
+/// `Workspace` resolves against the workspace's worktree (existing
+/// behavior). Per-provider toggles persist at repo scope, so both
+/// targets under the same repo share their enable/disable state.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum EnvTarget {
+    Repo { repo_id: String },
+    Workspace { workspace_id: String },
+}
+
 /// Return the list of env-provider plugins that ran (or would run) for
-/// this workspace, along with how many vars each contributed and
-/// whether the result is cached.
+/// this target, along with how many vars each contributed and whether
+/// the result is cached.
 ///
 /// Side effect: this triggers a full `resolve_for_workspace` pass,
 /// which respects the mtime cache — so repeated calls during a quiet
 /// period are cheap.
 #[tauri::command]
-pub async fn get_workspace_env_sources(
-    workspace_id: String,
+pub async fn get_env_sources(
+    target: EnvTarget,
     state: State<'_, AppState>,
 ) -> Result<Vec<EnvSourceInfo>, String> {
-    let (worktree, ws_info, repo_id) = lookup_ws_context(&state, &workspace_id).await?;
+    let (worktree, ws_info, repo_id) = resolve_target(&state, &target).await?;
     let disabled = {
         let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
         load_disabled_providers(&db, &repo_id)
@@ -129,17 +141,17 @@ pub async fn get_workspace_env_sources(
     Ok(sources)
 }
 
-/// Toggle whether an env-provider plugin runs for a workspace's repo.
+/// Toggle whether an env-provider plugin runs for the target's repo.
 /// Disabling evicts any cached result for every workspace under the
 /// repo so the next spawn reflects the change immediately.
 #[tauri::command]
 pub async fn set_env_provider_enabled(
-    workspace_id: String,
+    target: EnvTarget,
     plugin_name: String,
     enabled: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let (worktree, _, repo_id) = lookup_ws_context(&state, &workspace_id).await?;
+    let (worktree, _, repo_id) = resolve_target(&state, &target).await?;
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     let key = enabled_key(&repo_id, &plugin_name);
     // We persist only the "disabled" case; absent key = enabled (default).
@@ -158,30 +170,77 @@ pub async fn set_env_provider_enabled(
     Ok(())
 }
 
-/// Evict the env-provider cache for a workspace, forcing a fresh
+/// Evict the env-provider cache for the target, forcing a fresh
 /// `export` call on the next spawn / diagnostic query.
 ///
 /// If `plugin_name` is provided, only that plugin's cache entry is
 /// dropped. Otherwise every plugin's entry for this worktree is
 /// dropped.
 #[tauri::command]
-pub async fn reload_workspace_env(
-    workspace_id: String,
+pub async fn reload_env(
+    target: EnvTarget,
     plugin_name: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let (worktree, _, _) = lookup_ws_context(&state, &workspace_id).await?;
+    let (worktree, _, _) = resolve_target(&state, &target).await?;
     state
         .env_cache
         .invalidate(Path::new(&worktree), plugin_name.as_deref());
     Ok(())
 }
 
-/// Load workspace + repo from the DB and build a [`WorkspaceInfo`] for
-/// env-provider invocation. Shared by all commands in this module.
-async fn lookup_ws_context(
+/// Run a plugin's trust command (`direnv allow`, `mise trust`) in the
+/// target's worktree directory. Hard-coded dispatch by plugin name so
+/// a malicious plugin manifest can't declare arbitrary commands for
+/// us to auto-run. Inherits `HOME`/`USER`/`LOGNAME`/`SHELL`/`TERM`
+/// from the app process so the tool writes to the user's existing
+/// trust cache.
+#[tauri::command]
+pub async fn run_env_trust(
+    target: EnvTarget,
+    plugin_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (worktree, _, _) = resolve_target(&state, &target).await?;
+
+    let cmd: &[&str] = match plugin_name.as_str() {
+        "env-direnv" => &["direnv", "allow"],
+        "env-mise" => &["mise", "trust"],
+        _ => return Err(format!("no trust command defined for '{plugin_name}'")),
+    };
+
+    let mut command = tokio::process::Command::new(cmd[0]);
+    command.args(&cmd[1..]);
+    command.current_dir(&worktree);
+    command.env("PATH", claudette::env::enriched_path());
+    for key in ["HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG", "LC_ALL"] {
+        if let Ok(val) = std::env::var(key) {
+            command.env(key, val);
+        }
+    }
+
+    let output = command
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn {}: {e}", cmd[0]))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("{} failed: {}", cmd.join(" "), stderr.trim()));
+    }
+
+    // Trust state changed → evict so the next resolve re-runs export.
+    state
+        .env_cache
+        .invalidate(Path::new(&worktree), Some(&plugin_name));
+    Ok(())
+}
+
+/// Build a [`WorkspaceInfo`] for the given target, returning
+/// `(worktree_path, ws_info, repo_id)`.
+async fn resolve_target(
     state: &AppState,
-    workspace_id: &str,
+    target: &EnvTarget,
 ) -> Result<
     (
         String,
@@ -190,29 +249,52 @@ async fn lookup_ws_context(
     ),
     String,
 > {
-    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    let ws = db
-        .list_workspaces()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|w| w.id == workspace_id)
-        .ok_or("Workspace not found")?;
-    let worktree = ws
-        .worktree_path
-        .clone()
-        .ok_or("Workspace has no worktree")?;
-    let repo = db
-        .get_repository(&ws.repository_id)
-        .map_err(|e| e.to_string())?
-        .ok_or("Repository not found")?;
-    let repo_id = ws.repository_id.clone();
-
-    let ws_info = claudette::plugin_runtime::host_api::WorkspaceInfo {
-        id: ws.id.clone(),
-        name: ws.name.clone(),
-        branch: ws.branch_name.clone(),
-        worktree_path: worktree.clone(),
-        repo_path: repo.path,
-    };
-    Ok((worktree, ws_info, repo_id))
+    match target {
+        EnvTarget::Workspace { workspace_id } => {
+            let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+            let ws = db
+                .list_workspaces()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .find(|w| w.id == *workspace_id)
+                .ok_or("Workspace not found")?;
+            let worktree = ws
+                .worktree_path
+                .clone()
+                .ok_or("Workspace has no worktree")?;
+            let repo = db
+                .get_repository(&ws.repository_id)
+                .map_err(|e| e.to_string())?
+                .ok_or("Repository not found")?;
+            let repo_id = ws.repository_id.clone();
+            let ws_info = claudette::plugin_runtime::host_api::WorkspaceInfo {
+                id: ws.id.clone(),
+                name: ws.name.clone(),
+                branch: ws.branch_name.clone(),
+                worktree_path: worktree.clone(),
+                repo_path: repo.path,
+            };
+            Ok((worktree, ws_info, repo_id))
+        }
+        EnvTarget::Repo { repo_id } => {
+            let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+            let repo = db
+                .get_repository(repo_id)
+                .map_err(|e| e.to_string())?
+                .ok_or("Repository not found")?;
+            // The repo's main checkout IS a git worktree — safe to
+            // use as a resolution target. Synthetic WorkspaceInfo
+            // uses "repo:{id}" as id (guaranteed not to collide with
+            // any real workspace id) and an empty branch string
+            // (none of our plugins consume `args.branch`).
+            let ws_info = claudette::plugin_runtime::host_api::WorkspaceInfo {
+                id: format!("repo:{}", repo.id),
+                name: repo.name.clone(),
+                branch: String::new(),
+                worktree_path: repo.path.clone(),
+                repo_path: repo.path.clone(),
+            };
+            Ok((repo.path, ws_info, repo.id))
+        }
+    }
 }

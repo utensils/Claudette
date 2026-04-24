@@ -1085,6 +1085,64 @@
   background: var(--accent-bg);
 }
 
+.pluginSettingsForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.pluginSettingRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.pluginSettingLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.textInput {
+  margin-top: 4px;
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--input-bg, var(--selected-bg));
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.textInput:focus {
+  outline: none;
+  border-color: var(--accent-color, var(--text-primary));
+}
+
+.envErrorRunBtn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid var(--accent-color, var(--text-primary));
+  background: var(--accent-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.envErrorRunBtn:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.envErrorRunBtn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
 .envErrorDetails {
   font-size: 11px;
   color: var(--text-dim);

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
-  getWorkspaceEnvSources,
-  reloadWorkspaceEnv,
+  getEnvSources,
+  reloadEnv,
+  runEnvTrust,
   setEnvProviderEnabled,
 } from "../../../services/env";
-import type { EnvSourceInfo } from "../../../types/env";
+import type { EnvSourceInfo, EnvTarget } from "../../../types/env";
 import styles from "../Settings.module.css";
 
 interface ErrorInsight {
@@ -57,8 +58,26 @@ function analyzeError(pluginName: string, err: string): ErrorInsight {
   return { summary: core.slice(0, 240) };
 }
 
-interface WorkspaceEnvPanelProps {
-  workspaceId: string;
+interface EnvPanelProps {
+  target: EnvTarget;
+}
+
+/**
+ * Pattern-match an error to a plugin name that supports the one-click
+ * trust Run button. Returns `null` for plugins/errors we don't have a
+ * canned fix for — the UI still shows the Copy button in those cases.
+ */
+function trustablePluginFromError(
+  pluginName: string,
+  error: string,
+): "env-direnv" | "env-mise" | null {
+  if (pluginName === "env-mise" && /not trusted|mise trust/i.test(error)) {
+    return "env-mise";
+  }
+  if (pluginName === "env-direnv" && /is blocked|direnv allow/i.test(error)) {
+    return "env-direnv";
+  }
+  return null;
 }
 
 /**
@@ -108,11 +127,13 @@ function formatRelativeTime(ms: number): string {
  * in this workspace — useful after running `direnv allow` / `mise trust`
  * outside Claudette and wanting the new state reflected immediately.
  */
-export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
+export function EnvPanel({ target }: EnvPanelProps) {
   const [sources, setSources] = useState<EnvSourceInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [runningTrust, setRunningTrust] = useState<string | null>(null);
+  const [trustError, setTrustError] = useState<string | null>(null);
 
   const toggleExpanded = useCallback((name: string) => {
     setExpanded((prev) => {
@@ -127,14 +148,14 @@ export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
     setLoading(true);
     setFetchError(null);
     try {
-      const result = await getWorkspaceEnvSources(workspaceId);
+      const result = await getEnvSources(target);
       setSources(result);
     } catch (e) {
       setFetchError(String(e));
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [target]);
 
   useEffect(() => {
     void refresh();
@@ -142,23 +163,39 @@ export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
 
   const handleReloadAll = useCallback(async () => {
     try {
-      await reloadWorkspaceEnv(workspaceId);
+      await reloadEnv(target);
       await refresh();
     } catch (e) {
       setFetchError(String(e));
     }
-  }, [workspaceId, refresh]);
+  }, [target, refresh]);
 
   const handleToggle = useCallback(
     async (pluginName: string, nextEnabled: boolean) => {
       try {
-        await setEnvProviderEnabled(workspaceId, pluginName, nextEnabled);
+        await setEnvProviderEnabled(target, pluginName, nextEnabled);
         await refresh();
       } catch (e) {
         setFetchError(String(e));
       }
     },
-    [workspaceId, refresh],
+    [target, refresh],
+  );
+
+  const handleRunTrust = useCallback(
+    async (pluginName: string) => {
+      setRunningTrust(pluginName);
+      setTrustError(null);
+      try {
+        await runEnvTrust(target, pluginName);
+        await refresh();
+      } catch (e) {
+        setTrustError(String(e));
+      } finally {
+        setRunningTrust(null);
+      }
+    },
+    [target, refresh],
   );
 
   if (fetchError) {
@@ -249,12 +286,24 @@ export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
                 <ErrorCard
                   pluginName={source.plugin_name}
                   error={source.error!}
+                  trustablePlugin={trustablePluginFromError(
+                    source.plugin_name,
+                    source.error!,
+                  )}
+                  running={runningTrust === source.plugin_name}
+                  onRunTrust={() => handleRunTrust(source.plugin_name)}
                 />
               )}
             </div>
           );
         })}
       </div>
+
+      {trustError && (
+        <div className={styles.mcpError} role="alert">
+          Trust command failed: {trustError}
+        </div>
+      )}
 
       <div className={styles.buttonRow}>
         <button
@@ -273,9 +322,15 @@ export function WorkspaceEnvPanel({ workspaceId }: WorkspaceEnvPanelProps) {
 function ErrorCard({
   pluginName,
   error,
+  trustablePlugin,
+  running,
+  onRunTrust,
 }: {
   pluginName: string;
   error: string;
+  trustablePlugin: "env-direnv" | "env-mise" | null;
+  running: boolean;
+  onRunTrust: () => void;
 }) {
   const insight = analyzeError(pluginName, error);
   const [copiedCmd, setCopiedCmd] = useState(false);
@@ -309,6 +364,17 @@ function ErrorCard({
             <code className={styles.envErrorCmd}>
               {insight.suggestedCommand}
             </code>
+            {trustablePlugin && (
+              <button
+                type="button"
+                className={styles.envErrorRunBtn}
+                onClick={onRunTrust}
+                disabled={running}
+                title="Run this command in the workspace from Claudette"
+              >
+                {running ? "Running…" : "Run"}
+              </button>
+            )}
             <button
               type="button"
               className={styles.envErrorCopyBtn}

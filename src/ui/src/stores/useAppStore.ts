@@ -1195,14 +1195,26 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setSettingsSection: (section) =>
     set((state) => {
-      const nextSection = section === "plugins" && !state.pluginManagementEnabled
-        ? "experimental"
-        : section;
+      // Claude Code Plugins requires plugin management to be on; when
+      // disabled, fall through to the experimental pane so the setting
+      // stays reachable. The new "plugins" section (Claudette's own
+      // Lua plugins) is always available.
+      const nextSection =
+        section === "claude-code-plugins" && !state.pluginManagementEnabled
+          ? "experimental"
+          : section;
+      const resetMarketplaceIntent = nextSection === "claude-code-plugins";
       return {
         settingsSection: nextSection,
-        pluginSettingsIntent: nextSection === "plugins" ? null : state.pluginSettingsIntent,
-        pluginSettingsRepoId: nextSection === "plugins" ? null : state.pluginSettingsRepoId,
-        pluginSettingsTab: nextSection === "plugins" ? "available" : state.pluginSettingsTab,
+        pluginSettingsIntent: resetMarketplaceIntent
+          ? null
+          : state.pluginSettingsIntent,
+        pluginSettingsRepoId: resetMarketplaceIntent
+          ? null
+          : state.pluginSettingsRepoId,
+        pluginSettingsTab: resetMarketplaceIntent
+          ? "available"
+          : state.pluginSettingsTab,
       };
     }),
   pluginSettingsTab: "available",
@@ -1224,7 +1236,7 @@ export const useAppStore = create<AppState>((set) => ({
       };
       return {
         settingsOpen: true,
-        settingsSection: "plugins",
+        settingsSection: "claude-code-plugins",
         pluginSettingsTab: mergedIntent.tab,
         pluginSettingsRepoId: mergedIntent.repoId,
         pluginSettingsIntent: mergedIntent,
@@ -1385,9 +1397,10 @@ export const useAppStore = create<AppState>((set) => ({
   setPluginManagementEnabled: (enabled) =>
     set((state) => ({
       pluginManagementEnabled: enabled,
-      settingsSection: !enabled && state.settingsSection === "plugins"
-        ? "experimental"
-        : state.settingsSection,
+      settingsSection:
+        !enabled && state.settingsSection === "claude-code-plugins"
+          ? "experimental"
+          : state.settingsSection,
       pluginSettingsIntent: enabled ? state.pluginSettingsIntent : null,
       pluginSettingsRepoId: enabled ? state.pluginSettingsRepoId : null,
       pluginSettingsTab: enabled ? state.pluginSettingsTab : "available",

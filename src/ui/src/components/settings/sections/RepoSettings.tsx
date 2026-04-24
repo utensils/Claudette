@@ -14,7 +14,7 @@ import type { SavedMcpServer, McpSource } from "../../../types/mcp";
 import { MCP_SOURCE_LABELS } from "../../../types/mcp";
 import { RepoIcon } from "../../shared/RepoIcon";
 import { IconPicker } from "../../modals/IconPicker";
-import { WorkspaceEnvPanel } from "./WorkspaceEnvPanel";
+import { EnvPanel } from "./EnvPanel";
 import styles from "../Settings.module.css";
 
 interface RepoSettingsProps {
@@ -28,16 +28,8 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
   const repositories = useAppStore((s) => s.repositories);
   const mcpStatus = useAppStore((s) => s.mcpStatus);
   const setMcpStatus = useAppStore((s) => s.setMcpStatus);
-  const workspaces = useAppStore((s) => s.workspaces);
 
   const repo = repositories.find((r) => r.id === repoId);
-  // Env-provider resolution is per-worktree, not per-repo — we preview
-  // using the first active workspace for this repo. If there are no
-  // workspaces yet, the panel is skipped (nothing useful to show until
-  // a worktree exists).
-  const previewWorkspace = workspaces.find(
-    (w) => w.repository_id === repoId && w.worktree_path,
-  );
   const repoMcpStatus = mcpStatus[repoId];
 
   const [name, setName] = useState(repo?.name ?? "");
@@ -419,12 +411,10 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
         </label>
       </div>
 
-      {previewWorkspace && (
-        <div className={styles.fieldGroup}>
-          <div className={styles.fieldLabel}>Environment</div>
-          <WorkspaceEnvPanel workspaceId={previewWorkspace.id} />
-        </div>
-      )}
+      <div className={styles.fieldGroup}>
+        <div className={styles.fieldLabel}>Environment</div>
+        <EnvPanel target={{ kind: "repo", repo_id: repoId }} />
+      </div>
 
       <div className={styles.fieldGroup}>
         <div className={styles.fieldLabel}>Custom instructions</div>
