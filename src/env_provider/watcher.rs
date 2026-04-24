@@ -276,11 +276,17 @@ impl EnvWatcher {
                     self.state.lock().unwrap().os_watched.insert(path.clone());
                 }
                 Err(err) => {
-                    // Log and move on — the next register retries.
-                    // The per-resolve mtime check in EnvCache::get_fresh
-                    // also catches changes regardless, so invalidation
-                    // is at worst lazy until the watch succeeds.
-                    eprintln!("[env-watcher] failed to watch {}: {err}", path.display());
+                    // Silently skip the "file doesn't exist" case —
+                    // common with transient paths (e.g. a file deleted
+                    // between the plugin's export and our register
+                    // call) and not actionable. The per-resolve mtime
+                    // check in `EnvCache::get_fresh` still catches any
+                    // later change, and every subsequent register
+                    // retries via the `os_watched` diff. Louder errors
+                    // (permission denied, inotify limit) still print.
+                    if !is_path_not_found(&err) {
+                        eprintln!("[env-watcher] failed to watch {}: {err}", path.display());
+                    }
                 }
             }
         }
@@ -337,6 +343,21 @@ impl EnvWatcher {
     #[cfg(test)]
     pub fn registered_key_count(&self) -> usize {
         self.state.lock().unwrap().key_paths.len()
+    }
+}
+
+/// Classify a `notify::Error` as a "path doesn't exist" failure we
+/// can reasonably ignore. Both `Io(NotFound)` from backends like
+/// inotify/ReadDirectoryChangesW AND the platform-agnostic
+/// `PathNotFound` variant that `notify` emits when it pre-checks the
+/// path itself surface here — covers the macOS FSEvents and
+/// inotify/Windows cases under a single check.
+fn is_path_not_found(err: &notify::Error) -> bool {
+    use notify::ErrorKind;
+    match &err.kind {
+        ErrorKind::PathNotFound => true,
+        ErrorKind::Io(io) => io.kind() == std::io::ErrorKind::NotFound,
+        _ => false,
     }
 }
 
