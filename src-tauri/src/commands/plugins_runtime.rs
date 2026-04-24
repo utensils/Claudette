@@ -123,13 +123,13 @@ pub async fn set_claudette_plugin_enabled(
         .read()
         .await
         .set_disabled(&plugin_name, !enabled);
-    // When the state flips, we also want to evict any env-provider
-    // cache entries that might be keyed by this plugin across all
-    // worktrees. Simple approach: the env cache is in state; re-enable
-    // will force re-resolve on next spawn anyway, so we do nothing
-    // here — the existing invalidation paths in `set_env_provider_enabled`
-    // handle per-repo toggles, and `call_operation` now respects the
-    // global disabled flag on read.
+    // Global enable/disable changes can leave stale env-provider exports
+    // cached across worktrees. Invalidate any entries for this plugin on
+    // BOTH transitions: disabling means stale values must not continue
+    // applying, and re-enabling after out-of-band trust changes (e.g.
+    // the user ran `direnv allow` while the plugin was off) means the
+    // watched-mtime cache key wouldn't catch the change on its own.
+    state.env_cache.invalidate_plugin_everywhere(&plugin_name);
     Ok(())
 }
 

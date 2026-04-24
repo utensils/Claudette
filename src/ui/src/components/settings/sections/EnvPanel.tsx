@@ -138,6 +138,12 @@ export function EnvPanel({ target }: EnvPanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [runningTrust, setRunningTrust] = useState<string | null>(null);
   const [trustError, setTrustError] = useState<string | null>(null);
+  // Becomes true after the first successful `getEnvSources` resolve for
+  // the current target. While false, any rows we're showing came from
+  // the cheap placeholder fetch and don't yet reflect per-repo toggle
+  // state — so we lock per-row toggles to avoid the user acting on a
+  // placeholder value.
+  const [resolvedOnce, setResolvedOnce] = useState(false);
 
   const toggleExpanded = useCallback((name: string) => {
     setExpanded((prev) => {
@@ -154,6 +160,7 @@ export function EnvPanel({ target }: EnvPanelProps) {
     try {
       const result = await getEnvSources(target);
       setSources(result);
+      setResolvedOnce(true);
     } catch (e) {
       setFetchError(String(e));
     } finally {
@@ -165,6 +172,12 @@ export function EnvPanel({ target }: EnvPanelProps) {
   // pass so the toggle rows appear instantly, even on a fresh mount
   // where the full resolve (direnv/nix/mise) can take seconds. The
   // resolve result replaces the placeholder rows once it completes.
+  // Reset the "first resolve landed" flag whenever the target changes;
+  // the next refresh() call will flip it back to true.
+  useEffect(() => {
+    setResolvedOnce(false);
+  }, [target]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -266,9 +279,10 @@ export function EnvPanel({ target }: EnvPanelProps) {
     <>
       <div className={styles.settingDescription}>
         Tools whose env is merged into every subprocess Claudette spawns
-        for this workspace. Cached results invalidate automatically when
-        watched files (<code>.envrc</code>, <code>mise.toml</code>,{" "}
-        <code>.env</code>, <code>flake.lock</code>) change.
+        for this {target.kind === "repo" ? "repository" : "workspace"}.
+        Cached results invalidate automatically when watched files
+        (<code>.envrc</code>, <code>mise.toml</code>, <code>.env</code>,{" "}
+        <code>flake.lock</code>) change.
       </div>
 
       <div className={styles.mcpList}>
@@ -321,6 +335,12 @@ export function EnvPanel({ target }: EnvPanelProps) {
                     role="switch"
                     aria-checked={source.enabled}
                     aria-label={`${source.enabled ? "Disable" : "Enable"} ${source.display_name}`}
+                    disabled={!resolvedOnce}
+                    title={
+                      !resolvedOnce
+                        ? "Resolving environment providers…"
+                        : undefined
+                    }
                   >
                     <span className={styles.mcpToggleKnob} />
                   </button>

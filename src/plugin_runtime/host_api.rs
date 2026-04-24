@@ -534,6 +534,15 @@ mod tests {
         assert!(err.contains("null bytes"));
     }
 
+    /// Escape a filesystem path for embedding inside a Lua double-quoted
+    /// string literal. On Windows, paths like `C:\Users\...` contain
+    /// backslashes that Lua interprets as escape sequences (`\U` etc.)
+    /// — without escaping them to `\\` the path gets silently mangled.
+    /// POSIX paths have no backslashes, so this is a no-op there.
+    fn lua_escape(path: &std::path::Path) -> String {
+        path.to_string_lossy().replace('\\', "\\\\")
+    }
+
     #[test]
     fn test_host_file_exists_true() {
         let tmp = tempfile::tempdir().unwrap();
@@ -542,7 +551,7 @@ mod tests {
 
         let ctx = make_test_ctx();
         let lua = create_lua_vm(ctx).unwrap();
-        let path = file.to_string_lossy().into_owned();
+        let path = lua_escape(&file);
         let exists: bool = lua
             .load(format!(r#"return host.file_exists("{path}")"#))
             .eval()
@@ -557,7 +566,7 @@ mod tests {
         // Cross-platform nonexistent path: tempdir + a child that never got created.
         let tmp = tempfile::tempdir().unwrap();
         let missing = tmp.path().join("does-not-exist.xyz");
-        let path = missing.to_string_lossy().into_owned();
+        let path = lua_escape(&missing);
         let exists: bool = lua
             .load(format!(r#"return host.file_exists("{path}")"#))
             .eval()
@@ -573,7 +582,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let ctx = make_test_ctx();
         let lua = create_lua_vm(ctx).unwrap();
-        let path = tmp.path().to_string_lossy().into_owned();
+        let path = lua_escape(tmp.path());
         let exists: bool = lua
             .load(format!(r#"return host.file_exists("{path}")"#))
             .eval()
@@ -589,7 +598,7 @@ mod tests {
 
         let ctx = make_test_ctx();
         let lua = create_lua_vm(ctx).unwrap();
-        let path = file.to_string_lossy().into_owned();
+        let path = lua_escape(&file);
         let contents: String = lua
             .load(format!(r#"return host.read_file("{path}")"#))
             .eval()
@@ -603,7 +612,7 @@ mod tests {
         let missing = tmp.path().join("nope.txt");
         let ctx = make_test_ctx();
         let lua = create_lua_vm(ctx).unwrap();
-        let path = missing.to_string_lossy().into_owned();
+        let path = lua_escape(&missing);
         let result: LuaResult<String> = lua
             .load(format!(r#"return host.read_file("{path}")"#))
             .eval();
@@ -651,7 +660,7 @@ mod tests {
         // Use the Rust binary's path — exists for sure on every host
         // that runs this test, and is clearly outside the tempdir.
         let outside = std::env::current_exe().unwrap();
-        let outside_s = outside.to_string_lossy().replace('\\', "\\\\");
+        let outside_s = lua_escape(&outside);
         let exists: bool = lua
             .load(format!(r#"return host.file_exists("{outside_s}")"#))
             .eval()
@@ -669,7 +678,7 @@ mod tests {
         let lua = create_lua_vm(ctx).unwrap();
 
         let outside = std::env::current_exe().unwrap();
-        let outside_s = outside.to_string_lossy().replace('\\', "\\\\");
+        let outside_s = lua_escape(&outside);
         let result: LuaResult<String> = lua
             .load(format!(r#"return host.read_file("{outside_s}")"#))
             .eval();

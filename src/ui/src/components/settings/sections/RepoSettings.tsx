@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore } from "../../../stores/useAppStore";
 import { updateRepositorySettings, getRepoConfig, getAppSetting, setAppSetting, listGitRemotes, listGitRemoteBranches, getDefaultBranch } from "../../../services/tauri";
 import {
@@ -31,6 +31,14 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
 
   const repo = repositories.find((r) => r.id === repoId);
   const repoMcpStatus = mcpStatus[repoId];
+
+  // Stable reference for EnvPanel so its effects (keyed on the target
+  // object) don't re-fire on every RepoSettings re-render. Only the
+  // repoId string matters for resolution.
+  const envTarget = useMemo(
+    () => ({ kind: "repo" as const, repo_id: repoId }),
+    [repoId],
+  );
 
   const [name, setName] = useState(repo?.name ?? "");
   const [icon, setIcon] = useState(repo?.icon ?? "");
@@ -413,7 +421,7 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
 
       <div className={styles.fieldGroup}>
         <div className={styles.fieldLabel}>Environment</div>
-        <EnvPanel target={{ kind: "repo", repo_id: repoId }} />
+        <EnvPanel target={envTarget} />
       </div>
 
       <div className={styles.fieldGroup}>
