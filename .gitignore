@@ -61,3 +61,6 @@ tags
 
 # Claudette devshell runtime state (aws-win-* sidecars, etc.)
 /.claudette/
+
+# playwright-cli workspace (created transiently by capture scripts)
+.playwright-cli/
