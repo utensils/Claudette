@@ -58,6 +58,7 @@ import { WorkspaceActions } from "./WorkspaceActions";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
 import { AttachMenu } from "./AttachMenu";
 import { AttachmentContextMenu } from "./AttachmentContextMenu";
+import { AttachmentLightbox } from "./AttachmentLightbox";
 import {
   downloadAttachment,
   openAttachmentInBrowser,
@@ -220,6 +221,21 @@ export function ChatPanel() {
         x: e.clientX,
         y: e.clientY,
         attachment,
+      });
+    },
+    [],
+  );
+
+  const [lightbox, setLightbox] = useState<{
+    attachment: DownloadableAttachment;
+    returnFocus: HTMLElement | null;
+  } | null>(null);
+
+  const openLightbox = useCallback(
+    (e: React.MouseEvent, attachment: DownloadableAttachment) => {
+      setLightbox({
+        attachment,
+        returnFocus: (e.currentTarget as HTMLElement) ?? null,
       });
     },
     [],
@@ -931,6 +947,7 @@ export function ChatPanel() {
                   isRunning={isRunning}
                   onForkTurn={isRemote ? undefined : handleFork}
                   onAttachmentContextMenu={openAttachmentMenu}
+                  onAttachmentClick={openLightbox}
                 />
               )}
 
@@ -1056,6 +1073,7 @@ export function ChatPanel() {
         historyIndexRef={historyIndexRef}
         draftRef={draftRef}
         onAttachmentContextMenu={openAttachmentMenu}
+        onAttachmentClick={openLightbox}
       />
       {attachmentMenu && (
         <AttachmentContextMenu
@@ -1100,6 +1118,13 @@ export function ChatPanel() {
                 ]
               : []),
           ]}
+        />
+      )}
+      {lightbox && (
+        <AttachmentLightbox
+          attachment={lightbox.attachment}
+          returnFocusTo={lightbox.returnFocus}
+          onClose={() => setLightbox(null)}
         />
       )}
     </div>
@@ -1465,6 +1490,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   isRunning,
   onForkTurn,
   onAttachmentContextMenu,
+  onAttachmentClick,
 }: {
   messages: ChatMessage[];
   workspaceId: string;
@@ -1475,6 +1501,11 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   /** Right-click handler on message-image attachments. Lifted to ChatPanel so
    *  the context menu renders at the top of the component tree. */
   onAttachmentContextMenu?: (
+    e: React.MouseEvent,
+    attachment: DownloadableAttachment,
+  ) => void;
+  /** Left-click handler on message-image attachments — opens the lightbox. */
+  onAttachmentClick?: (
     e: React.MouseEvent,
     attachment: DownloadableAttachment,
   ) => void;
@@ -1728,6 +1759,13 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                         src={`data:${att.media_type};base64,${att.data_base64}`}
                         alt={att.filename}
                         className={styles.messageImage}
+                        onClick={(e) =>
+                          onAttachmentClick?.(e, {
+                            filename: att.filename,
+                            media_type: att.media_type,
+                            data_base64: att.data_base64,
+                          })
+                        }
                         onContextMenu={(e) =>
                           onAttachmentContextMenu?.(e, {
                             filename: att.filename,
@@ -1922,6 +1960,7 @@ function ChatInputArea({
   historyIndexRef,
   draftRef,
   onAttachmentContextMenu,
+  onAttachmentClick,
 }: {
   onSend: (
     content: string,
@@ -1938,6 +1977,10 @@ function ChatInputArea({
   historyIndexRef: React.MutableRefObject<number>;
   draftRef: React.MutableRefObject<string>;
   onAttachmentContextMenu?: (
+    e: React.MouseEvent,
+    attachment: DownloadableAttachment,
+  ) => void;
+  onAttachmentClick?: (
     e: React.MouseEvent,
     attachment: DownloadableAttachment,
   ) => void;
@@ -2520,6 +2563,13 @@ function ChatInputArea({
                 <img
                   src={att.preview_url}
                   alt={att.filename}
+                  onClick={(e) =>
+                    onAttachmentClick?.(e, {
+                      filename: att.filename,
+                      media_type: att.media_type,
+                      data_base64: att.data_base64,
+                    })
+                  }
                   onContextMenu={(e) =>
                     onAttachmentContextMenu?.(e, {
                       filename: att.filename,
@@ -2531,7 +2581,10 @@ function ChatInputArea({
               )}
               <button
                 className={styles.attachmentRemove}
-                onClick={() => removeAttachment(att.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeAttachment(att.id);
+                }}
                 title="Remove"
               >
                 <X size={12} />
