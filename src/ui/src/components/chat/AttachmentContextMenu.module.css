@@ -1,0 +1,44 @@
+.menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 220px;
+  background: var(--bg-elevated, #1e1e1e);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 13px;
+  user-select: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary, #e6e6e6);
+  text-align: left;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary, #a0a0a0);
+}
