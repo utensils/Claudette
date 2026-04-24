@@ -70,7 +70,8 @@ export function useAgentStream() {
           pendingToolCount: (useAppStore.getState().toolActivities[wsId] || []).length,
         });
         // Only finalize if the `result` event hasn't already done so.
-        if (!turnFinalizedRef.current[wsId]) {
+        const wasFinalized = turnFinalizedRef.current[wsId];
+        if (!wasFinalized) {
           finalizeTurn(
             wsId,
             turnMessageCountRef.current[wsId] || 0,
@@ -80,7 +81,9 @@ export function useAgentStream() {
         turnMessageCountRef.current[wsId] = 0;
         turnFinalizedRef.current[wsId] = false;
         turnCheckpointIdRef.current[wsId] = undefined;
-        updateWorkspace(wsId, { agent_status: "Idle" });
+        // Natural completion emits a `result` event (wasFinalized=true) → Idle.
+        // User stop or crash has no prior `result` → Stopped.
+        updateWorkspace(wsId, { agent_status: wasFinalized ? "Idle" : "Stopped" });
         useAppStore.getState().clearPromptStartTime(wsId);
         setStreamingContent(wsId, "");
         clearStreamingThinking(wsId);
@@ -410,6 +413,7 @@ export function useAgentStream() {
             turnFinalizedRef.current[wsId] = true;
             updateWorkspace(wsId, { agent_status: "Idle" });
             useAppStore.getState().clearPromptStartTime(wsId);
+            useAppStore.getState().markWorkspaceAsUnread(wsId);
             break;
           }
           case "user": {
