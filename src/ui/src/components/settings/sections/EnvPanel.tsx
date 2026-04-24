@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   getEnvSources,
@@ -172,10 +172,16 @@ export function EnvPanel({ target }: EnvPanelProps) {
   // pass so the toggle rows appear instantly, even on a fresh mount
   // where the full resolve (direnv/nix/mise) can take seconds. The
   // resolve result replaces the placeholder rows once it completes.
-  // Reset the "first resolve landed" flag whenever the target changes;
-  // the next refresh() call will flip it back to true.
+  // Reset panel state whenever the target changes. Without this, rows
+  // from the previous repo/workspace linger until refresh() resolves,
+  // and the placeholder fetch won't replace them because it only fills
+  // when sources===null. Clearing expanded/trustError too avoids
+  // surfacing error details from a different target.
   useEffect(() => {
     setResolvedOnce(false);
+    setSources(null);
+    setExpanded(new Set());
+    setTrustError(null);
   }, [target]);
 
   useEffect(() => {
@@ -399,13 +405,39 @@ function ErrorCard({
   const insight = analyzeError(pluginName, error);
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [copiedRaw, setCopiedRaw] = useState(false);
+  // Track the "Copied" flag reset timer per-flag so a fast second copy
+  // (or an unmount from collapsing/target-change) cancels the pending
+  // setState instead of firing after the component is gone.
+  const cmdResetRef = useRef<number | null>(null);
+  const rawResetRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cmdResetRef.current !== null) {
+        window.clearTimeout(cmdResetRef.current);
+      }
+      if (rawResetRef.current !== null) {
+        window.clearTimeout(rawResetRef.current);
+      }
+    };
+  }, []);
 
   const copy = useCallback(
-    async (text: string, setFlag: (v: boolean) => void) => {
+    async (
+      text: string,
+      setFlag: (v: boolean) => void,
+      timerRef: React.MutableRefObject<number | null>,
+    ) => {
       try {
         await writeText(text);
         setFlag(true);
-        setTimeout(() => setFlag(false), 1500);
+        if (timerRef.current !== null) {
+          window.clearTimeout(timerRef.current);
+        }
+        timerRef.current = window.setTimeout(() => {
+          setFlag(false);
+          timerRef.current = null;
+        }, 1500);
       } catch {
         // Clipboard access can fail in hardened webviews; silently no-op —
         // the raw text is still visible in the <pre> for manual selection.
@@ -442,7 +474,9 @@ function ErrorCard({
             <button
               type="button"
               className={styles.envErrorCopyBtn}
-              onClick={() => copy(insight.suggestedCommand!, setCopiedCmd)}
+              onClick={() =>
+                copy(insight.suggestedCommand!, setCopiedCmd, cmdResetRef)
+              }
             >
               {copiedCmd ? "Copied" : "Copy"}
             </button>
@@ -455,7 +489,7 @@ function ErrorCard({
         <button
           type="button"
           className={styles.envErrorCopyBtn}
-          onClick={() => copy(error, setCopiedRaw)}
+          onClick={() => copy(error, setCopiedRaw, rawResetRef)}
         >
           {copiedRaw ? "Copied" : "Copy full error"}
         </button>

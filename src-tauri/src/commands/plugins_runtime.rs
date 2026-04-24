@@ -109,6 +109,17 @@ pub async fn set_claudette_plugin_enabled(
     enabled: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Validate the plugin exists before touching the DB — otherwise a
+    // typo (or stale UI state) would accumulate stray
+    // `plugin:{name}:enabled` rows in `app_settings` that would unexpectedly
+    // take effect if a plugin with that name is later installed.
+    {
+        let registry = state.plugins.read().await;
+        if !registry.plugins.contains_key(&plugin_name) {
+            return Err(format!("unknown plugin: {plugin_name}"));
+        }
+    }
+
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     let key = format!("plugin:{plugin_name}:enabled");
     // Persist only the "disabled" case; absent key = enabled.

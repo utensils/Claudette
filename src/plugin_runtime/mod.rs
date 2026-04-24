@@ -221,7 +221,17 @@ impl PluginRegistry {
     /// `PluginDisabled` from `call_operation`; dispatchers that prefer
     /// silent filtering (env-provider resolution) check `is_disabled`
     /// first.
+    ///
+    /// No-op for plugin names that aren't registered — parallels
+    /// `set_setting`, and keeps startup hydration from app_settings
+    /// silently dropping entries for removed/renamed plugins instead of
+    /// ghost-disabling them. Callers at the API boundary (e.g.
+    /// `set_claudette_plugin_enabled`) should validate unknown names
+    /// explicitly and surface an error to the user.
     pub fn set_disabled(&self, plugin_name: &str, disabled: bool) {
+        if !self.plugins.contains_key(plugin_name) {
+            return;
+        }
         let mut guard = self.disabled.write().unwrap();
         if disabled {
             guard.insert(plugin_name.to_string());
@@ -604,12 +614,23 @@ mod tests {
     #[test]
     fn set_disabled_and_is_disabled_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
+        let registry = make_plugin_with_settings_manifest(dir.path());
+        assert!(!registry.is_disabled("settings-demo"));
+        registry.set_disabled("settings-demo", true);
+        assert!(registry.is_disabled("settings-demo"));
+        registry.set_disabled("settings-demo", false);
+        assert!(!registry.is_disabled("settings-demo"));
+    }
+
+    #[test]
+    fn set_disabled_ignores_unknown_plugin_name() {
+        let dir = tempfile::tempdir().unwrap();
         let registry = PluginRegistry::discover(dir.path());
-        assert!(!registry.is_disabled("x"));
-        registry.set_disabled("x", true);
-        assert!(registry.is_disabled("x"));
-        registry.set_disabled("x", false);
-        assert!(!registry.is_disabled("x"));
+        registry.set_disabled("does-not-exist", true);
+        assert!(
+            !registry.is_disabled("does-not-exist"),
+            "unknown plugin names must not accumulate in the disabled set"
+        );
     }
 
     #[tokio::test]

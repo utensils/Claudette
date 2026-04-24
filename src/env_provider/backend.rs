@@ -143,13 +143,23 @@ impl EnvProviderBackend for PluginRegistryBackend<'_> {
             None => EnvMap::default(),
         };
 
+        // Normalize every watched entry to an absolute path. Plugin
+        // authors naturally return relative names (".envrc",
+        // "mise.toml", "flake.lock"), and our bundled plugins already
+        // join to worktree — but third-party plugins shouldn't have to
+        // think about this, and without the join EnvCache would stat
+        // relative paths against the app's CWD and silently never
+        // invalidate.
         let watched: Vec<PathBuf> = obj
             .get("watched")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str())
-                    .map(PathBuf::from)
+                    .map(|s| {
+                        let p = PathBuf::from(s);
+                        if p.is_relative() { worktree.join(p) } else { p }
+                    })
                     .collect()
             })
             .unwrap_or_default();
