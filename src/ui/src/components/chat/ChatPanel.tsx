@@ -2563,13 +2563,18 @@ function ChatInputArea({
                 <img
                   src={att.preview_url}
                   alt={att.filename}
-                  onClick={(e) =>
+                  onClick={(e) => {
+                    // PDFs also render as an <img> here (preview_url is a blob
+                    // URL of the first-page thumbnail), but their data_base64
+                    // is PDF bytes — not renderable inside an <img>. Only open
+                    // the lightbox for actual image MIME types.
+                    if (!att.media_type.startsWith("image/")) return;
                     onAttachmentClick?.(e, {
                       filename: att.filename,
                       media_type: att.media_type,
                       data_base64: att.data_base64,
-                    })
-                  }
+                    });
+                  }}
                   onContextMenu={(e) =>
                     onAttachmentContextMenu?.(e, {
                       filename: att.filename,

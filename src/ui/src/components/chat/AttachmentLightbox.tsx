@@ -12,6 +12,42 @@ interface AttachmentLightboxProps {
   onClose: () => void;
 }
 
+/**
+ * Pure two-target focus-trap decision: given the active element and a Tab
+ * keypress, return which of the two targets should receive focus next, or
+ * `null` if the native tab order already cycles correctly.
+ *
+ * Exported for unit tests — keeps the component body focused on wiring.
+ */
+export function nextFocusTarget(
+  active: Element | null,
+  shift: boolean,
+  close: HTMLElement,
+  wrap: HTMLElement,
+): HTMLElement | null {
+  if (shift) {
+    // Shift+Tab: wrap → close, close → wrap (cycle backward).
+    if (active === wrap) return close;
+    if (active === close) return wrap;
+    return close;
+  }
+  // Tab: close → wrap, wrap → close (cycle forward).
+  if (active === close) return wrap;
+  if (active === wrap) return close;
+  return close;
+}
+
+/**
+ * Pure: should a mousedown on the overlay dismiss the lightbox? Yes iff the
+ * click lands on the backdrop element itself, not on a descendant.
+ */
+export function isBackdropDismiss(
+  target: EventTarget | null,
+  backdrop: HTMLElement | null,
+): boolean {
+  return target !== null && target === backdrop;
+}
+
 export function AttachmentLightbox({
   attachment,
   returnFocusTo,
@@ -30,7 +66,7 @@ export function AttachmentLightbox({
     };
   }, [returnFocusTo]);
 
-  // Escape, Tab trap. Capture phase so we swallow Escape before any
+  // Escape + Tab trap. Capture phase so we swallow Escape before any
   // underlying context-menu handler also bound at capture.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -41,20 +77,18 @@ export function AttachmentLightbox({
         return;
       }
       if (e.key === "Tab") {
-        // Two focusable targets — cycle between them so focus can't escape
-        // the overlay while it's open.
         const close = closeBtnRef.current;
         const wrap = imageWrapRef.current;
         if (!close || !wrap) return;
-        const active = document.activeElement;
-        if (e.shiftKey) {
-          if (active === close) {
-            e.preventDefault();
-            wrap.focus();
-          }
-        } else if (active === wrap) {
+        const target = nextFocusTarget(
+          document.activeElement,
+          e.shiftKey,
+          close,
+          wrap,
+        );
+        if (target) {
           e.preventDefault();
-          close.focus();
+          target.focus();
         }
       }
     }
@@ -72,9 +106,7 @@ export function AttachmentLightbox({
   }, []);
 
   function onBackdropMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    // Only dismiss when the click lands on the backdrop itself, not on the
-    // image, caption, or close button.
-    if (e.target === backdropRef.current) onClose();
+    if (isBackdropDismiss(e.target, backdropRef.current)) onClose();
   }
 
   const src = `data:${attachment.media_type};base64,${attachment.data_base64}`;
@@ -98,7 +130,7 @@ export function AttachmentLightbox({
       >
         <X size={18} />
       </button>
-      <div ref={imageWrapRef} className={styles.imageWrap} tabIndex={-1}>
+      <div ref={imageWrapRef} className={styles.imageWrap} tabIndex={0}>
         <img
           src={src}
           alt={attachment.filename}
