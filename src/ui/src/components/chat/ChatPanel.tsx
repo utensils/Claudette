@@ -2218,6 +2218,12 @@ function ChatInputArea({
         // Skip text/plain — pasting text should insert into the textarea,
         // not create a file attachment.
         if (item.type === "text/plain") continue;
+        // Some clipboard writers (notably `navigator.clipboard.write` with
+        // a ClipboardItem) expose the image both as a "string" item (its
+        // data URL) and a "file" item. We must check the file variant —
+        // getAsFile() returns null for string items, which would
+        // silently drop the paste.
+        if (item.kind !== "file") continue;
         if (SUPPORTED_ATTACHMENT_TYPES.has(item.type)) {
           e.preventDefault();
           const file = item.getAsFile();
