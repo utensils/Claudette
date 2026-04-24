@@ -497,6 +497,242 @@ async fn integration_mise_export_returns_env() {
     );
 }
 
+/// auto_allow default (unset / false): an unallowed .envrc must stay
+/// blocked. The plugin reports the error as-is; no retry is attempted,
+/// and no vars are contributed. This is the "safe by default" path that
+/// honors direnv's per-path trust model.
+#[cfg(has_direnv)]
+#[tokio::test]
+async fn integration_direnv_auto_allow_off_surfaces_blocked_error() {
+    let _scoped = ScopedHome::new();
+
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join(".envrc"),
+        "export CLAUDETTE_DIRENV_DENY=oops\n",
+    )
+    .unwrap();
+
+    // Intentionally DO NOT `direnv allow` — the .envrc must stay blocked.
+
+    let plugin_dir = tempfile::tempdir().unwrap();
+    crate::plugin_runtime::seed::seed_bundled_plugins(plugin_dir.path());
+    let registry = crate::plugin_runtime::PluginRegistry::discover(plugin_dir.path());
+    // Explicit default — make sure auto_allow=false behaves the same as
+    // "never configured" (manifest default).
+    registry.set_setting("env-direnv", "auto_allow", Some(serde_json::json!(false)));
+
+    let backend = crate::env_provider::backend::PluginRegistryBackend::new(&registry);
+    let cache = crate::env_provider::cache::EnvCache::new();
+    let ws_info = WorkspaceInfo {
+        id: "ws-deny".into(),
+        name: "test".into(),
+        branch: "main".into(),
+        worktree_path: tmp.path().to_string_lossy().into_owned(),
+        repo_path: tmp.path().to_string_lossy().into_owned(),
+    };
+
+    let resolved = crate::env_provider::resolve_for_workspace(
+        &backend,
+        &cache,
+        tmp.path(),
+        &ws_info,
+        &Default::default(),
+    )
+    .await;
+    let direnv_source = resolved
+        .sources
+        .iter()
+        .find(|s| s.plugin_name == "env-direnv")
+        .expect("env-direnv must appear in sources");
+    assert!(
+        direnv_source.error.is_some(),
+        "auto_allow=false must surface the blocked error, got sources={:#?}",
+        resolved.sources
+    );
+    let err = direnv_source.error.as_ref().unwrap();
+    assert!(
+        err.contains("blocked") || err.contains("allow"),
+        "error should describe a blocked .envrc; got: {err}"
+    );
+    assert_eq!(direnv_source.vars_contributed, 0);
+    assert!(
+        !resolved.vars.contains_key("CLAUDETTE_DIRENV_DENY"),
+        "no vars should leak from a blocked .envrc"
+    );
+}
+
+/// auto_allow=true must retry after `direnv allow` when the .envrc is
+/// blocked. After the retry the plugin reports success and vars flow
+/// through.
+#[cfg(has_direnv)]
+#[tokio::test]
+async fn integration_direnv_auto_allow_on_retries_after_blocked() {
+    let _scoped = ScopedHome::new();
+
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join(".envrc"),
+        "export CLAUDETTE_DIRENV_AUTO=yes\n",
+    )
+    .unwrap();
+
+    let plugin_dir = tempfile::tempdir().unwrap();
+    crate::plugin_runtime::seed::seed_bundled_plugins(plugin_dir.path());
+    let registry = crate::plugin_runtime::PluginRegistry::discover(plugin_dir.path());
+    registry.set_setting("env-direnv", "auto_allow", Some(serde_json::json!(true)));
+
+    let backend = crate::env_provider::backend::PluginRegistryBackend::new(&registry);
+    let cache = crate::env_provider::cache::EnvCache::new();
+    let ws_info = WorkspaceInfo {
+        id: "ws-auto".into(),
+        name: "test".into(),
+        branch: "main".into(),
+        worktree_path: tmp.path().to_string_lossy().into_owned(),
+        repo_path: tmp.path().to_string_lossy().into_owned(),
+    };
+
+    let resolved = crate::env_provider::resolve_for_workspace(
+        &backend,
+        &cache,
+        tmp.path(),
+        &ws_info,
+        &Default::default(),
+    )
+    .await;
+    let direnv_source = resolved
+        .sources
+        .iter()
+        .find(|s| s.plugin_name == "env-direnv")
+        .expect("env-direnv must appear in sources");
+    assert!(
+        direnv_source.error.is_none(),
+        "auto_allow=true must retry past the blocked error; got {:?}",
+        direnv_source.error
+    );
+    assert_eq!(
+        resolved
+            .vars
+            .get("CLAUDETTE_DIRENV_AUTO")
+            .and_then(|v| v.as_deref()),
+        Some("yes"),
+    );
+}
+
+/// auto_trust default (unset / false): an untrusted mise.toml must stay
+/// blocked — errors surface as-is, no retry, no vars contributed.
+#[cfg(has_mise)]
+#[tokio::test]
+async fn integration_mise_auto_trust_off_surfaces_untrusted_error() {
+    let _scoped = ScopedHome::new();
+
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("mise.toml"),
+        "[env]\nCLAUDETTE_MISE_DENY = \"nope\"\n",
+    )
+    .unwrap();
+
+    // Intentionally DO NOT `mise trust` — mise.toml must stay untrusted.
+
+    let plugin_dir = tempfile::tempdir().unwrap();
+    crate::plugin_runtime::seed::seed_bundled_plugins(plugin_dir.path());
+    let registry = crate::plugin_runtime::PluginRegistry::discover(plugin_dir.path());
+    registry.set_setting("env-mise", "auto_trust", Some(serde_json::json!(false)));
+
+    let backend = crate::env_provider::backend::PluginRegistryBackend::new(&registry);
+    let cache = crate::env_provider::cache::EnvCache::new();
+    let ws_info = WorkspaceInfo {
+        id: "ws-mise-deny".into(),
+        name: "test".into(),
+        branch: "main".into(),
+        worktree_path: tmp.path().to_string_lossy().into_owned(),
+        repo_path: tmp.path().to_string_lossy().into_owned(),
+    };
+
+    let resolved = crate::env_provider::resolve_for_workspace(
+        &backend,
+        &cache,
+        tmp.path(),
+        &ws_info,
+        &Default::default(),
+    )
+    .await;
+    let mise_source = resolved
+        .sources
+        .iter()
+        .find(|s| s.plugin_name == "env-mise")
+        .expect("env-mise must appear in sources");
+    assert!(
+        mise_source.error.is_some(),
+        "auto_trust=false must surface untrusted error; sources={:#?}",
+        resolved.sources
+    );
+    let err = mise_source.error.as_ref().unwrap();
+    assert!(
+        err.contains("trust") || err.contains("not trusted"),
+        "error should mention trust; got: {err}"
+    );
+    assert_eq!(mise_source.vars_contributed, 0);
+    assert!(!resolved.vars.contains_key("CLAUDETTE_MISE_DENY"));
+}
+
+/// auto_trust=true must retry after `mise trust` when the mise.toml is
+/// untrusted, and then report success with vars flowing through.
+#[cfg(has_mise)]
+#[tokio::test]
+async fn integration_mise_auto_trust_on_retries_after_untrusted() {
+    let _scoped = ScopedHome::new();
+
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("mise.toml"),
+        "[env]\nCLAUDETTE_MISE_AUTO = \"yes\"\n",
+    )
+    .unwrap();
+
+    let plugin_dir = tempfile::tempdir().unwrap();
+    crate::plugin_runtime::seed::seed_bundled_plugins(plugin_dir.path());
+    let registry = crate::plugin_runtime::PluginRegistry::discover(plugin_dir.path());
+    registry.set_setting("env-mise", "auto_trust", Some(serde_json::json!(true)));
+
+    let backend = crate::env_provider::backend::PluginRegistryBackend::new(&registry);
+    let cache = crate::env_provider::cache::EnvCache::new();
+    let ws_info = WorkspaceInfo {
+        id: "ws-mise-auto".into(),
+        name: "test".into(),
+        branch: "main".into(),
+        worktree_path: tmp.path().to_string_lossy().into_owned(),
+        repo_path: tmp.path().to_string_lossy().into_owned(),
+    };
+
+    let resolved = crate::env_provider::resolve_for_workspace(
+        &backend,
+        &cache,
+        tmp.path(),
+        &ws_info,
+        &Default::default(),
+    )
+    .await;
+    let mise_source = resolved
+        .sources
+        .iter()
+        .find(|s| s.plugin_name == "env-mise")
+        .expect("env-mise must appear in sources");
+    assert!(
+        mise_source.error.is_none(),
+        "auto_trust=true must retry past the untrusted error; got {:?}",
+        mise_source.error
+    );
+    assert_eq!(
+        resolved
+            .vars
+            .get("CLAUDETTE_MISE_AUTO")
+            .and_then(|v| v.as_deref()),
+        Some("yes"),
+    );
+}
+
 // nix print-dev-env on a fresh flake evaluates the flake.nix from
 // scratch, which can take 10-60s the first time. Skip the integration
 // test for now — cargo test wall-clock matters more than coverage
