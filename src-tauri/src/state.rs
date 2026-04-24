@@ -288,6 +288,11 @@ pub struct AppState {
     pub pending_update: tokio::sync::Mutex<Option<tauri_plugin_updater::Update>>,
     /// CESP sound pack playback state (no-repeat + debounce tracking).
     pub cesp_playback: Mutex<claudette::cesp::SoundPlaybackState>,
+    /// Handle to an in-flight `claude auth login` subprocess, if any.
+    /// Stored so a Cancel button can kill the child without blocking on it
+    /// to exit (OAuth flows can hang indefinitely if the user abandons the
+    /// browser).
+    pub auth_login_child: tokio::sync::Mutex<Option<tokio::process::Child>>,
 }
 
 impl AppState {
@@ -309,6 +314,7 @@ impl AppState {
             scm_semaphore: Arc::new(Semaphore::new(4)),
             pending_update: tokio::sync::Mutex::new(None),
             cesp_playback: Mutex::new(claudette::cesp::SoundPlaybackState::new()),
+            auth_login_child: tokio::sync::Mutex::new(None),
         }
     }
 
