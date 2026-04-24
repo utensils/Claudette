@@ -565,429 +565,53 @@
                 help = "Run all Rust tests";
                 category = "quality";
               }
+              # Windows cross-build + deploy + AWS ephemeral-host helpers.
+              # All bodies live in ./scripts/ — the devshell commands are
+              # thin wrappers so flake.nix doesn't carry hundreds of lines
+              # of bash-in-nix-strings. See scripts/*.sh for the logic and
+              # scripts/_aws-common.sh for the shared helpers (profile/
+              # region defaults, state dir under $PRJ_ROOT/.claudette/,
+              # instance discovery).
               {
                 name = "build-win-arm64";
-                command = ''
-                  set -euo pipefail
-                  # Rebuild the frontend — tauri-codegen bakes src/ui/dist/
-                  # into the .exe at build time, so a stale dist silently
-                  # produces a stale binary.
-                  (cd src/ui && bun install --frozen-lockfile && bun run build)
-                  # Cross-compile the Tauri binary. Three things make this
-                  # the correct invocation:
-                  #
-                  # 1. --features tauri/custom-protocol — without this,
-                  #    tauri-build emits cargo:rustc-cfg=dev and the
-                  #    resulting binary loads http://localhost:1420 at
-                  #    runtime instead of the embedded asset protocol.
-                  #    `cargo tauri build` passes this automatically;
-                  #    plain `cargo build`/`cargo xwin build` do not.
-                  # 2. Default cargo-xwin mode (clang-cl) — the devshell's
-                  #    clangXwinShim rewrites /imsvc → -isystem so ring's
-                  #    direct-clang .S assembly compile doesn't choke on
-                  #    MSVC-style include flags leaked into CFLAGS.
-                  # 3. --release — tauri-codegen embeds the frontend only
-                  #    when the binary isn't in debug profile.
-                  #
-                  # We skip `cargo tauri build --runner` because tauri-cli
-                  # shells out to rustup to verify the target is installed,
-                  # and our fenix toolchain supplies the rust-std outside
-                  # rustup's knowledge. Driving `cargo xwin build` directly
-                  # sidesteps the check; asset embedding is handled by
-                  # the feature flag above.
-                  cargo xwin build --release \
-                    --features tauri/custom-protocol \
-                    --target aarch64-pc-windows-msvc -p claudette-tauri
-                  echo ""
-                  echo "Built: $PWD/target/aarch64-pc-windows-msvc/release/claudette.exe"
-                '';
+                command = ''exec "$PRJ_ROOT/scripts/build-win.sh" arm64 "$@"'';
                 help = "Cross-compile claudette.exe for aarch64-pc-windows-msvc (Windows on ARM)";
                 category = "windows";
               }
               {
                 name = "deploy-win-arm64";
-                command = ''
-                  set -euo pipefail
-                  # Build, then stop any running instance on the test VM and
-                  # copy the fresh .exe over. The remote process has a file
-                  # lock on claudette.exe while running, so scp cannot
-                  # overwrite it without the Stop-Process step.
-                  #
-                  # Host and remote path are overridable for cases where the
-                  # VM's DHCP lease changes or someone else tests against a
-                  # different machine. Defaults match the project's shared
-                  # Windows-on-ARM test VM (see project memory).
-                  HOST=''${CLAUDETTE_WIN_HOST:-brink@172.16.52.129}
-                  REMOTE_PATH=''${CLAUDETTE_WIN_REMOTE_PATH:-OneDrive/Desktop/claudette.exe}
-                  build-win-arm64
-                  echo ""
-                  echo "Stopping running claudette on $HOST (if any)..."
-                  ssh "$HOST" 'Stop-Process -Name claudette -Force -ErrorAction SilentlyContinue'
-                  echo "Copying to $HOST:$REMOTE_PATH ..."
-                  scp target/aarch64-pc-windows-msvc/release/claudette.exe "$HOST:$REMOTE_PATH"
-                  echo ""
-                  echo "Deployed. Double-click claudette.exe on the VM desktop to run."
-                '';
+                command = ''exec "$PRJ_ROOT/scripts/deploy-win.sh" arm64 "$@"'';
                 help = "Build + deploy aarch64-pc-windows-msvc exe to the test VM (overridable via CLAUDETTE_WIN_HOST / CLAUDETTE_WIN_REMOTE_PATH)";
                 category = "windows";
               }
               {
                 name = "build-win-x64";
-                command = ''
-                  set -euo pipefail
-                  (cd src/ui && bun install --frozen-lockfile && bun run build)
-                  cargo xwin build --release \
-                    --features tauri/custom-protocol \
-                    --target x86_64-pc-windows-msvc -p claudette-tauri
-                  echo ""
-                  echo "Built: $PWD/target/x86_64-pc-windows-msvc/release/claudette.exe"
-                '';
+                command = ''exec "$PRJ_ROOT/scripts/build-win.sh" x64 "$@"'';
                 help = "Cross-compile claudette.exe for x86_64-pc-windows-msvc";
                 category = "windows";
               }
               {
                 name = "deploy-win-x64";
-                command = ''
-                  set -euo pipefail
-                  # Parallel of deploy-win-arm64. Used against fresh EC2
-                  # Windows hosts launched by aws-win-spinup — those default
-                  # to Administrator@... with Desktop\ at the profile root
-                  # (no OneDrive redirect, unlike James's personal test VM).
-                  HOST=''${CLAUDETTE_WIN_HOST:-Administrator@CHANGEME}
-                  REMOTE_PATH=''${CLAUDETTE_WIN_REMOTE_PATH:-Desktop/claudette.exe}
-                  if [ "$HOST" = "Administrator@CHANGEME" ]; then
-                    echo "error: set CLAUDETTE_WIN_HOST (e.g. 'eval \"\$(aws-win-spinup)\"')" >&2
-                    exit 1
-                  fi
-                  build-win-x64
-                  echo ""
-                  echo "Stopping running claudette on $HOST (if any)..."
-                  ssh -o StrictHostKeyChecking=accept-new "$HOST" 'Stop-Process -Name claudette -Force -ErrorAction SilentlyContinue'
-                  echo "Copying to $HOST:$REMOTE_PATH ..."
-                  scp -o StrictHostKeyChecking=accept-new target/x86_64-pc-windows-msvc/release/claudette.exe "$HOST:$REMOTE_PATH"
-                  echo ""
-                  echo "Deployed. Double-click claudette.exe on the remote Desktop to run."
-                '';
-                help = "Build + deploy x86_64-pc-windows-msvc exe to CLAUDETTE_WIN_HOST (e.g. an aws-win-spinup instance)";
+                command = ''exec "$PRJ_ROOT/scripts/deploy-win.sh" x64 "$@"'';
+                help = "Build + deploy x86_64-pc-windows-msvc exe (auto-discovers aws-win-spinup instance, or override via CLAUDETTE_WIN_HOST)";
                 category = "windows";
               }
               {
                 name = "aws-win-spinup";
-                command = ''
-                  set -euo pipefail
-                  # Spin up an ephemeral, publicly-reachable Windows Server
-                  # EC2 instance with OpenSSH enabled, the caller's pubkey
-                  # pre-authorized, and a known Administrator password baked
-                  # in via user-data. Prints `export` lines that point the
-                  # deploy-win-* helpers at it and store the admin password
-                  # in $TMPDIR for aws-win-rdp to pick up.
-                  #
-                  # Usage:
-                  #   eval "$(nix develop -c aws-win-spinup)"
-                  #   aws-win-rdp                # opens Windows App (macOS)
-                  #   deploy-win-x64             # build + copy claudette.exe
-                  #   aws-win-destroy            # when finished
-                  #
-                  # Everything is tagged Project=claudette-spinup so
-                  # aws-win-destroy can find and terminate the fleet.
-                  #
-                  # Defaults are chosen so a teammate with a standard
-                  # ~/.ssh/id_ed25519.pub just works — no RSA-specific path
-                  # is required because the admin password is set by user-
-                  # data rather than decrypted via get-password-data.
-                  PROFILE=''${AWS_PROFILE:-dev.urandom.io}
-                  REGION=''${AWS_REGION:-us-west-2}
-                  # Fallback chain for the default pubkey: try ed25519 first
-                  # (present on 99% of dev Macs), then rsa, then the legacy
-                  # project key. SPINUP_PUB_KEY overrides everything.
-                  if [ -n "''${SPINUP_PUB_KEY:-}" ]; then
-                    PUB_KEY_FILE="$SPINUP_PUB_KEY"
-                  elif [ -r "$HOME/.ssh/id_ed25519.pub" ]; then
-                    PUB_KEY_FILE="$HOME/.ssh/id_ed25519.pub"
-                  elif [ -r "$HOME/.ssh/id_rsa.pub" ]; then
-                    PUB_KEY_FILE="$HOME/.ssh/id_rsa.pub"
-                  else
-                    PUB_KEY_FILE="$HOME/.ssh/dev.urandom.io.pub"
-                  fi
-                  SG_NAME=''${SPINUP_SG_NAME:-claudette-spinup-sg}
-                  INSTANCE_TYPE=''${SPINUP_INSTANCE_TYPE:-t3.medium}
-                  NAME_TAG=''${SPINUP_NAME_TAG:-claudette-spinup-$(date +%Y%m%d-%H%M%S)}
-                  AMI_FILTER=''${SPINUP_AMI_FILTER:-Windows_Server-2022-English-Full-Base-*}
-                  # Admin password: caller can pin one for reproducibility,
-                  # otherwise generate 32 hex chars + `Aa1!` to guarantee
-                  # all four Windows local-policy character classes (upper,
-                  # lower, digit, symbol) without introducing characters
-                  # that need PowerShell escaping.
-                  ADMIN_PASS=''${SPINUP_ADMIN_PASSWORD:-$(openssl rand -hex 16)Aa1!}
-
-                  log() { echo "[aws-win-spinup] $*" >&2; }
-                  aws_() { aws --profile "$PROFILE" --region "$REGION" "$@"; }
-
-                  [ -r "$PUB_KEY_FILE" ] || { log "pubkey $PUB_KEY_FILE not readable"; exit 1; }
-                  PUBKEY=$(cat "$PUB_KEY_FILE")
-                  log "pubkey: $PUB_KEY_FILE"
-
-                  # No EC2 key pair: ed25519 is not accepted for Windows
-                  # AMIs ("Unsupported: ED25519 key pairs are not supported
-                  # with Windows AMIs"), and we don't need one because
-                  # user-data installs the pubkey into
-                  # administrators_authorized_keys directly. Side benefit:
-                  # get-password-data becomes a non-option, which forces
-                  # us down the user-data-password path (already the
-                  # simplest and most reliable).
-
-                  # 1. Security group: 22 + 3389 open to 0.0.0.0/0 (ephemeral).
-                  VPC_ID=$(aws_ ec2 describe-vpcs \
-                    --filters "Name=is-default,Values=true" \
-                    --query 'Vpcs[0].VpcId' --output text)
-                  [ "$VPC_ID" != "None" ] || { log "no default VPC in $REGION"; exit 1; }
-                  SG_ID=$(aws_ ec2 describe-security-groups \
-                    --filters "Name=group-name,Values=$SG_NAME" "Name=vpc-id,Values=$VPC_ID" \
-                    --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo None)
-                  if [ "$SG_ID" = "None" ] || [ -z "$SG_ID" ]; then
-                    log "creating security group $SG_NAME in $VPC_ID"
-                    SG_ID=$(aws_ ec2 create-security-group \
-                      --group-name "$SG_NAME" \
-                      --description "Claudette ephemeral Windows test SG (SSH+RDP public)" \
-                      --vpc-id "$VPC_ID" \
-                      --tag-specifications "ResourceType=security-group,Tags=[{Key=Project,Value=claudette-spinup}]" \
-                      --query 'GroupId' --output text)
-                    aws_ ec2 authorize-security-group-ingress --group-id "$SG_ID" \
-                      --ip-permissions \
-                        'IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=0.0.0.0/0,Description=ssh}]' \
-                        'IpProtocol=tcp,FromPort=3389,ToPort=3389,IpRanges=[{CidrIp=0.0.0.0/0,Description=rdp}]' \
-                      >/dev/null
-                  fi
-                  log "security group: $SG_ID"
-
-                  # 2. Latest Windows Server 2022 AMI (amazon-owned).
-                  AMI_ID=$(aws_ ec2 describe-images --owners amazon \
-                    --filters "Name=name,Values=$AMI_FILTER" "Name=architecture,Values=x86_64" "Name=state,Values=available" \
-                    --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text)
-                  [ -n "$AMI_ID" ] && [ "$AMI_ID" != "None" ] || { log "no AMI matching $AMI_FILTER"; exit 1; }
-                  log "AMI: $AMI_ID"
-
-                  # 3. Render user-data. EC2Launch v2 runs the <powershell>
-                  #    block once on first boot. Windows Server 2022 ships
-                  #    OpenSSH Server pre-installed — just enable, start, and
-                  #    drop the pubkey into administrators_authorized_keys
-                  #    (takes precedence over per-user ~/.ssh/authorized_keys
-                  #    for anyone in the local Administrators group).
-                  USER_DATA=$(mktemp)
-                  trap 'rm -f "$USER_DATA"' EXIT
-                  cat > "$USER_DATA" <<EOF
-<powershell>
-\$ErrorActionPreference = 'Stop'
-try {
-  # Pin the Administrator password to our known value before anything else
-  # so if the rest of user-data fails, RDP is still usable for diagnosis.
-  # PowerShell here-string with single quotes is literal — $ADMIN_PASS only
-  # contains hex + Aa1! so it's safe to interpolate without escaping.
-  net user Administrator '$ADMIN_PASS' | Out-Null
-
-  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue | Out-Null
-  Set-Service -Name sshd -StartupType Automatic
-  Start-Service sshd
-  if (!(Test-Path 'C:\ProgramData\ssh')) { New-Item -ItemType Directory -Path 'C:\ProgramData\ssh' | Out-Null }
-  \$authKey = 'C:\ProgramData\ssh\administrators_authorized_keys'
-  \$pub = @'
-$PUBKEY
-'@
-  Set-Content -Path \$authKey -Value \$pub -Encoding ascii
-  icacls.exe \$authKey /inheritance:r /grant 'Administrators:F' /grant 'SYSTEM:F' | Out-Null
-  if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
-  }
-  New-ItemProperty -Path 'HKLM:\SOFTWARE\OpenSSH' -Name DefaultShell -Value 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -PropertyType String -Force | Out-Null
-  Restart-Service sshd
-} catch {
-  Write-Host "user-data error: \$_"
-  throw
-}
-</powershell>
-<persist>false</persist>
-EOF
-
-                  # 4. Launch. Intentionally no --key-name (see note above).
-                  log "launching $INSTANCE_TYPE ($NAME_TAG)"
-                  INSTANCE_ID=$(aws_ ec2 run-instances \
-                    --image-id "$AMI_ID" \
-                    --instance-type "$INSTANCE_TYPE" \
-                    --security-group-ids "$SG_ID" \
-                    --user-data "file://$USER_DATA" \
-                    --metadata-options 'HttpTokens=required,HttpEndpoint=enabled' \
-                    --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=50,VolumeType=gp3,DeleteOnTermination=true}' \
-                    --tag-specifications \
-                      "ResourceType=instance,Tags=[{Key=Project,Value=claudette-spinup},{Key=Name,Value=$NAME_TAG}]" \
-                      "ResourceType=volume,Tags=[{Key=Project,Value=claudette-spinup},{Key=Name,Value=$NAME_TAG}]" \
-                    --query 'Instances[0].InstanceId' --output text)
-                  log "instance: $INSTANCE_ID — waiting for running state"
-                  aws_ ec2 wait instance-running --instance-ids "$INSTANCE_ID"
-                  PUBLIC_IP=$(aws_ ec2 describe-instances --instance-ids "$INSTANCE_ID" \
-                    --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-                  log "public IP: $PUBLIC_IP — waiting for sshd (Windows first-boot + user-data is slow, ~5-8 min)"
-
-                  # 5. Poll sshd via ssh-keyscan. Using ssh-keyscan (not a
-                  #    full ssh login) dodges two orthogonal problems:
-                  #    - passphrase-protected private keys need a TTY for
-                  #      ssh to prompt, so BatchMode=yes auth-polling fails
-                  #      forever on perfectly healthy hosts;
-                  #    - we'd be confounding "sshd is up" with "my key is
-                  #      authorized", and only the first is the helper's
-                  #      concern — user-data already installed the key.
-                  #    A successful keyscan means sshd finished starting,
-                  #    which on Windows is what takes the time.
-                  DEADLINE=$(( $(date +%s) + 900 ))
-                  while [ $(date +%s) -lt $DEADLINE ]; do
-                    if ssh-keyscan -T 5 -t rsa "$PUBLIC_IP" 2>/dev/null | grep -q ssh-rsa; then
-                      log "sshd ready"
-                      break
-                    fi
-                    sleep 15
-                  done
-                  if [ $(date +%s) -ge $DEADLINE ]; then
-                    log "timed out waiting for sshd on $PUBLIC_IP (instance $INSTANCE_ID)"
-                    log "inspect with: aws --profile $PROFILE --region $REGION ec2 get-console-output --instance-id $INSTANCE_ID --latest --output text"
-                    exit 1
-                  fi
-
-                  # 6. Stash the password in a mode-600 sidecar under
-                  #    $TMPDIR so aws-win-rdp can find it after a shell
-                  #    restart. Key insight: the password was baked into
-                  #    user-data (visible to anyone with
-                  #    ec2:DescribeInstanceAttribute on this account), so
-                  #    we've already accepted "password sits in AWS-side
-                  #    plaintext for the life of the instance" — dropping
-                  #    it in a mode-600 local file doesn't lower the bar.
-                  PASS_FILE="''${TMPDIR:-/tmp}/claudette-spinup-$INSTANCE_ID.pass"
-                  ( umask 077; printf '%s' "$ADMIN_PASS" > "$PASS_FILE" )
-
-                  # 7. Emit exports on stdout (so `eval "$(aws-win-spinup)"`
-                  #    drops them into the caller's shell); human status
-                  #    went to stderr via log().
-                  cat <<EOF
-export CLAUDETTE_WIN_HOST=Administrator@$PUBLIC_IP
-export CLAUDETTE_WIN_REMOTE_PATH=Desktop/claudette.exe
-export CLAUDETTE_WIN_INSTANCE_ID=$INSTANCE_ID
-export CLAUDETTE_WIN_ADMIN_PASSWORD='$ADMIN_PASS'
-# Host:    $PUBLIC_IP
-# SSH:     ssh Administrator@$PUBLIC_IP
-# RDP:     aws-win-rdp            # macOS; opens Windows App with password on clipboard
-# Deploy:  deploy-win-x64
-# Destroy: aws-win-destroy
-EOF
-                '';
-                help = "Launch ephemeral Windows EC2 (us-west-2) with SSH+pubkey pre-configured; prints export lines for deploy-win-x64";
+                command = ''exec "$PRJ_ROOT/scripts/aws-win-spinup.sh" "$@"'';
+                help = "Launch ephemeral Windows EC2 (us-west-2) with SSH+pubkey pre-configured and admin password baked in";
                 category = "windows";
               }
               {
                 name = "aws-win-rdp";
-                command = ''
-                  set -euo pipefail
-                  # macOS helper: look up the current aws-win-spinup instance,
-                  # generate a minimal .rdp file, try to fetch+copy the
-                  # Administrator password, and hand the .rdp to `open` so
-                  # the Windows App (formerly Microsoft Remote Desktop)
-                  # launches a session. Non-darwin callers exit cleanly.
-                  if [ "$(uname)" != "Darwin" ]; then
-                    echo "aws-win-rdp is macOS-only (uses 'open' + 'pbcopy')." >&2
-                    exit 2
-                  fi
-
-                  PROFILE=''${AWS_PROFILE:-dev.urandom.io}
-                  REGION=''${AWS_REGION:-us-west-2}
-                  INSTANCE_ID=''${CLAUDETTE_WIN_INSTANCE_ID:-}
-                  aws_() { aws --profile "$PROFILE" --region "$REGION" "$@"; }
-
-                  # If no instance was exported by aws-win-spinup, pick the
-                  # newest running claudette-spinup instance. Keeps the
-                  # helper useful across shell restarts where the env var
-                  # was lost.
-                  if [ -z "$INSTANCE_ID" ]; then
-                    INSTANCE_ID=$(aws_ ec2 describe-instances \
-                      --filters "Name=tag:Project,Values=claudette-spinup" \
-                                "Name=instance-state-name,Values=running" \
-                      --query 'sort_by(Reservations[].Instances[], &LaunchTime)[-1].InstanceId' \
-                      --output text)
-                    [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ] \
-                      || { echo "no running claudette-spinup instance found" >&2; exit 1; }
-                  fi
-
-                  PUBLIC_IP=$(aws_ ec2 describe-instances --instance-ids "$INSTANCE_ID" \
-                    --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-                  [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "None" ] \
-                    || { echo "instance $INSTANCE_ID has no public IP" >&2; exit 1; }
-
-                  # Password lookup: env var wins (set by `eval aws-win-spinup`),
-                  # otherwise read the mode-600 sidecar that aws-win-spinup
-                  # wrote. No RSA/PEM/passphrase dance — the password was
-                  # baked into user-data, so we already know it.
-                  PASS_FILE="''${TMPDIR:-/tmp}/claudette-spinup-$INSTANCE_ID.pass"
-                  PASSWORD="''${CLAUDETTE_WIN_ADMIN_PASSWORD:-}"
-                  if [ -z "$PASSWORD" ] && [ -r "$PASS_FILE" ]; then
-                    PASSWORD=$(cat "$PASS_FILE")
-                  fi
-                  if [ -n "$PASSWORD" ]; then
-                    printf %s "$PASSWORD" | pbcopy
-                    echo "Administrator password copied to clipboard (⌘-V in the password field)."
-                  else
-                    echo "(no cached password found — was this instance launched by aws-win-spinup?)"
-                    echo "  expected file: $PASS_FILE"
-                    echo "  or set CLAUDETTE_WIN_ADMIN_PASSWORD before calling aws-win-rdp"
-                  fi
-
-                  # Minimal .rdp file — Windows App is happy with just the
-                  # address + username. Host key / CA / gateway are left
-                  # unset; the client will prompt on first connect.
-                  # Fixed path (not mktemp): a .rdp is disposable, and reusing
-                  # the same path means re-running against the same instance
-                  # doesn't litter $TMPDIR. Also sidesteps the GNU/BSD mktemp
-                  # template-syntax mismatch the devshell exposes.
-                  RDP_FILE="''${TMPDIR:-/tmp}/claudette-spinup-$INSTANCE_ID.rdp"
-                  cat > "$RDP_FILE" <<EOF
-full address:s:$PUBLIC_IP
-username:s:Administrator
-prompt for credentials:i:1
-EOF
-                  echo "opening $RDP_FILE -> $PUBLIC_IP"
-                  open "$RDP_FILE"
-                '';
-                help = "macOS: generate a .rdp, copy Admin password to clipboard, and open the current aws-win-spinup instance in Windows App";
+                command = ''exec "$PRJ_ROOT/scripts/aws-win-rdp.sh" "$@"'';
+                help = "macOS: open the current aws-win-spinup instance in Windows App with admin password on clipboard";
                 category = "windows";
               }
               {
                 name = "aws-win-destroy";
-                command = ''
-                  set -euo pipefail
-                  # Terminate every instance tagged Project=claudette-spinup
-                  # in the target region. Safe to run with none present.
-                  PROFILE=''${AWS_PROFILE:-dev.urandom.io}
-                  REGION=''${AWS_REGION:-us-west-2}
-                  aws_() { aws --profile "$PROFILE" --region "$REGION" "$@"; }
-
-                  mapfile -t IDS < <(aws_ ec2 describe-instances \
-                    --filters "Name=tag:Project,Values=claudette-spinup" \
-                              "Name=instance-state-name,Values=pending,running,stopping,stopped" \
-                    --query 'Reservations[].Instances[].InstanceId' --output text | tr '\t' '\n' | sed '/^$/d')
-                  if [ ''${#IDS[@]} -eq 0 ]; then
-                    echo "no claudette-spinup instances to destroy in $REGION"
-                    exit 0
-                  fi
-                  echo "terminating: ''${IDS[*]}"
-                  aws_ ec2 terminate-instances --instance-ids "''${IDS[@]}" \
-                    --query 'TerminatingInstances[].[InstanceId,CurrentState.Name]' --output text
-                  aws_ ec2 wait instance-terminated --instance-ids "''${IDS[@]}"
-                  # Scrub the local password + .rdp sidecars for these
-                  # instances so their plaintext admin password doesn't
-                  # linger in $TMPDIR after the instance is gone.
-                  for ID in "''${IDS[@]}"; do
-                    rm -f "''${TMPDIR:-/tmp}/claudette-spinup-$ID.pass" \
-                          "''${TMPDIR:-/tmp}/claudette-spinup-$ID.rdp" 2>/dev/null || true
-                  done
-                  echo "terminated."
-                  echo "note: keypair and SG (claudette-spinup-sg) are left in place for reuse."
-                '';
-                help = "Terminate all claudette-spinup tagged EC2 instances in AWS_REGION (default us-west-2)";
+                command = ''exec "$PRJ_ROOT/scripts/aws-win-destroy.sh" "$@"'';
+                help = "Terminate all claudette-spinup tagged EC2 instances in AWS_REGION (default us-west-2) and scrub local state";
                 category = "windows";
               }
               {
