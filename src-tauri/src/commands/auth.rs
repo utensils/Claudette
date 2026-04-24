@@ -39,12 +39,16 @@ pub struct AuthLoginComplete {
 /// above to drive UI state. Call [`cancel_claude_auth_login`] to abort.
 #[tauri::command]
 pub async fn claude_auth_login(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    // Resolve the binary path before taking the lock — path resolution can do
+    // filesystem work, and holding `auth_login_cancel` across that await would
+    // stall a concurrent Cancel unnecessarily.
+    let claude_path = claudette::agent::resolve_claude_path().await;
+
     let mut slot = state.auth_login_cancel.lock().await;
     if slot.is_some() {
         return Err("A sign-in flow is already in progress.".into());
     }
 
-    let claude_path = claudette::agent::resolve_claude_path().await;
     let mut child = Command::new(&claude_path)
         .no_console_window()
         .args(["auth", "login"])
@@ -79,26 +83,21 @@ pub async fn claude_auth_login(app: AppHandle, state: State<'_, AppState>) -> Re
     tokio::spawn(async move {
         use tauri::Manager;
         let event = tokio::select! {
-            result = child.wait() => match result {
-                Ok(status) if status.success() => AuthLoginComplete {
-                    success: true,
-                    error: None,
-                },
-                Ok(status) => AuthLoginComplete {
-                    success: false,
-                    error: Some(format!("`claude auth login` exited with {status}")),
-                },
-                Err(e) => AuthLoginComplete {
-                    success: false,
-                    error: Some(format!("Failed to wait on `claude auth login`: {e}")),
-                },
-            },
+            result = child.wait() => status_to_event(result),
             _ = cancel_rx => {
-                let _ = child.start_kill();
-                let _ = child.wait().await;
-                AuthLoginComplete {
-                    success: false,
-                    error: Some("Sign-in cancelled.".into()),
+                // Race guard: if the child already exited by the time the cancel
+                // signal fired, report the real exit status instead of masking a
+                // successful sign-in as a cancellation.
+                match child.try_wait() {
+                    Ok(Some(status)) => status_to_event(Ok(status)),
+                    _ => {
+                        let _ = child.start_kill();
+                        let _ = child.wait().await;
+                        AuthLoginComplete {
+                            success: false,
+                            error: Some("Sign-in cancelled.".into()),
+                        }
+                    }
                 }
             }
         };
@@ -110,6 +109,23 @@ pub async fn claude_auth_login(app: AppHandle, state: State<'_, AppState>) -> Re
     });
 
     Ok(())
+}
+
+fn status_to_event(result: std::io::Result<std::process::ExitStatus>) -> AuthLoginComplete {
+    match result {
+        Ok(status) if status.success() => AuthLoginComplete {
+            success: true,
+            error: None,
+        },
+        Ok(status) => AuthLoginComplete {
+            success: false,
+            error: Some(format!("`claude auth login` exited with {status}")),
+        },
+        Err(e) => AuthLoginComplete {
+            success: false,
+            error: Some(format!("Failed to wait on `claude auth login`: {e}")),
+        },
+    }
 }
 
 /// Request cancellation of any in-flight `claude auth login` subprocess.

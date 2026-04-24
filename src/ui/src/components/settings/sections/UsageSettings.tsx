@@ -212,10 +212,14 @@ export function UsageSettings() {
         if (current.status !== "running" || current.manualUrl !== null) return current;
         return { status: "running", manualUrl: match[0] };
       });
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisteners.push(fn);
-    });
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisteners.push(fn);
+      })
+      .catch((err) => {
+        console.error("Failed to subscribe to auth://login-progress", err);
+      });
 
     listen<AuthLoginComplete>("auth://login-complete", (event) => {
       const { success, error } = event.payload;
@@ -228,10 +232,14 @@ export function UsageSettings() {
           error: error ?? "Sign-in failed.",
         });
       }
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisteners.push(fn);
-    });
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisteners.push(fn);
+      })
+      .catch((err) => {
+        console.error("Failed to subscribe to auth://login-complete", err);
+      });
 
     return () => {
       cancelled = true;
