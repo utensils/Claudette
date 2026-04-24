@@ -1,5 +1,6 @@
 import { memo, useRef, useState, useMemo, useCallback, useEffect } from "react";
 import { useAppStore } from "../../stores/useAppStore";
+import { isAgentBusy } from "../../utils/agentStatus";
 import {
   archiveWorkspace,
   reorderRepositories,
@@ -271,7 +272,7 @@ export const Sidebar = memo(function Sidebar() {
     const badge: "ask" | "plan" | "done" | null =
       agentQuestions[ws.id] ? "ask" :
       planApprovals[ws.id] ? "plan" :
-      unreadCompletions.has(ws.id) && ws.agent_status !== "Running" ? "done" :
+      unreadCompletions.has(ws.id) && !isAgentBusy(ws.agent_status) ? "done" :
       null;
     return (
       <div
@@ -527,7 +528,7 @@ export const Sidebar = memo(function Sidebar() {
           if (bucketWorkspaces.length === 0) return null;
           const groupKey = `status:${key}`;
           const collapsed = statusGroupCollapsed[groupKey];
-          const runningCount = bucketWorkspaces.filter((ws) => ws.agent_status === "Running").length;
+          const runningCount = bucketWorkspaces.filter((ws) => isAgentBusy(ws.agent_status)).length;
           return (
             <div key={groupKey} className={styles.statusGroup}>
               <div
@@ -621,7 +622,7 @@ export const Sidebar = memo(function Sidebar() {
             .filter((ws) => ws.repository_id === repo.id)
             .sort((a, b) => getScmSortPriority(scmSummary[a.id]) - getScmSortPriority(scmSummary[b.id]));
           const runningCount = repoWorkspaces.filter(
-            (ws) => ws.agent_status === "Running"
+            (ws) => isAgentBusy(ws.agent_status)
           ).length;
 
           return (
@@ -1139,7 +1140,7 @@ function RemoteConnectionGroup({
                     className={`${styles.wsItem} ${selectedWorkspaceId === ws.id ? styles.wsSelected : ""}`}
                     onClick={() => selectWorkspace(ws.id)}
                   >
-                    {ws.agent_status === "Running" ? (
+                    {isAgentBusy(ws.agent_status) ? (
                       <span className={styles.statusSpinner} aria-hidden="true">
                         <LoaderCircle size={14} />
                       </span>
