@@ -1,4 +1,4 @@
-import React, { createElement, useContext, useEffect, useState } from "react";
+import React, { createElement, useContext, useEffect, useReducer } from "react";
 import type { PluggableList } from "unified";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -124,11 +124,23 @@ interface HighlightedCodeProps {
 }
 
 /**
+ * Delay (ms) before dispatching a streaming code block to the worker. Only
+ * blocks whose source text is stable for at least this long get highlighted
+ * mid-stream. The actively-streaming (last) block changes per typewriter tick,
+ * so its debounce timer keeps resetting and no wasted work hits the worker;
+ * earlier blocks (closing-fence already written) become stable and highlight.
+ */
+const STREAMING_DEBOUNCE_MS = 120;
+
+/**
  * Markdown `<code>` override. Inline code (no `language-*` class) renders as
- * a plain `<code>`. Fenced blocks dispatch to the Shiki worker on mount and
- * swap to highlighted HTML once it returns. While the enclosing subtree is
- * streaming (StreamingContext === true) the dispatch is suppressed; the block
- * stays plain and is highlighted once the message finalizes.
+ * a plain `<code>`. Fenced blocks read the highlight cache on every render —
+ * a hit immediately upgrades to the highlighted spans; a miss schedules a
+ * worker dispatch (debounced while streaming) and force-renders once the
+ * worker resolves. The cache is keyed on `(lang, code)`, so changing `code`
+ * during a stream produces a fresh lookup; React's reconciliation reuses the
+ * same component instance, but the per-render cache read keeps the displayed
+ * tokens in sync with the displayed text.
  */
 export function HighlightedCode({
   className,
@@ -140,26 +152,30 @@ export function HighlightedCode({
     : null;
   const isStreaming = useContext(StreamingContext);
   const code = lang ? extractText(children) : "";
-  const [html, setHtml] = useState<string | null>(() =>
-    lang ? getCachedHighlight(code, lang) : null,
-  );
+  const cached = lang ? getCachedHighlight(code, lang) : null;
+  const [, forceUpdate] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
-    if (!lang || isStreaming || html != null) return;
+    if (!lang) return;
+    if (cached != null) return;
     let cancelled = false;
-    void highlightCode(code, lang).then((result) => {
-      if (!cancelled) setHtml(result);
-    });
+    const delay = isStreaming ? STREAMING_DEBOUNCE_MS : 0;
+    const timer = setTimeout(() => {
+      void highlightCode(code, lang).then((result) => {
+        if (!cancelled && result != null) forceUpdate();
+      });
+    }, delay);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [code, lang, isStreaming, html]);
+  }, [code, lang, isStreaming, cached]);
 
-  if (lang && html != null) {
+  if (lang && cached != null) {
     return createElement("code", {
       ...props,
       className,
-      dangerouslySetInnerHTML: { __html: html },
+      dangerouslySetInnerHTML: { __html: cached },
     });
   }
   return createElement("code", { ...props, className }, children);
