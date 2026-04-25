@@ -1,0 +1,595 @@
+use std::path::{Path, PathBuf};
+
+use async_trait::async_trait;
+use claudette::db::Database;
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+use tokio::io::AsyncWriteExt;
+
+const SELECTED_PROVIDER_KEY: &str = "voice:selected_provider";
+const AUTO_PROVIDER_KEY: &str = "voice:auto_provider";
+const PLATFORM_ID: &str = "voice-platform-system";
+const DISTIL_ID: &str = "voice-distil-whisper-candle";
+const DISTIL_CACHE_DIR: &str = "distil-whisper-large-v3";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum VoiceProviderKind {
+    Platform,
+    LocalModel,
+    External,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum VoiceProviderStatus {
+    Ready,
+    NeedsSetup,
+    Downloading,
+    Unavailable,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceProviderMetadata {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub kind: VoiceProviderKind,
+    pub privacy_label: String,
+    pub offline: bool,
+    pub download_required: bool,
+    pub model_size_label: Option<String>,
+    pub cache_path: Option<String>,
+    pub accelerator_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceProviderInfo {
+    #[serde(flatten)]
+    pub metadata: VoiceProviderMetadata,
+    pub status: VoiceProviderStatus,
+    pub status_label: String,
+    pub enabled: bool,
+    pub selected: bool,
+    pub setup_required: bool,
+    pub can_remove_model: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceDownloadProgress {
+    pub provider_id: String,
+    pub filename: String,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub overall_downloaded_bytes: u64,
+    pub overall_total_bytes: Option<u64>,
+    pub percent: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceErrorEvent {
+    pub provider_id: Option<String>,
+    pub message: String,
+}
+
+#[async_trait]
+pub trait VoiceProvider: Send + Sync {
+    fn id(&self) -> &'static str;
+    fn metadata(&self, registry: &VoiceProviderRegistry) -> VoiceProviderMetadata;
+    fn status(&self, registry: &VoiceProviderRegistry, db: &Database) -> VoiceProviderInfo;
+    async fn prepare(
+        &self,
+        registry: &VoiceProviderRegistry,
+        app: &AppHandle,
+        db_path: &Path,
+    ) -> Result<VoiceProviderInfo, String>;
+    async fn start_recording(&self) -> Result<(), String>;
+    async fn stop_and_transcribe(&self) -> Result<String, String>;
+    async fn cancel(&self) -> Result<(), String>;
+}
+
+#[derive(Debug)]
+pub struct VoiceProviderRegistry {
+    model_root: PathBuf,
+}
+
+impl VoiceProviderRegistry {
+    pub fn new(model_root: PathBuf) -> Self {
+        Self { model_root }
+    }
+
+    pub fn default_model_root() -> PathBuf {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".claudette")
+            .join("models")
+            .join("voice")
+    }
+
+    pub fn distil_cache_path(&self) -> PathBuf {
+        self.model_root.join(DISTIL_CACHE_DIR)
+    }
+
+    pub fn list_providers(&self, db: &Database) -> Vec<VoiceProviderInfo> {
+        vec![
+            PlatformVoiceProvider.status(self, db),
+            DistilWhisperCandleProvider.status(self, db),
+        ]
+    }
+
+    pub fn set_selected_provider(
+        &self,
+        db: &Database,
+        provider_id: Option<&str>,
+    ) -> Result<(), String> {
+        if let Some(provider_id) = provider_id {
+            self.ensure_known(provider_id)?;
+            db.set_app_setting(SELECTED_PROVIDER_KEY, provider_id)
+                .map_err(|e| e.to_string())?;
+        } else {
+            db.delete_app_setting(SELECTED_PROVIDER_KEY)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    pub fn set_enabled(
+        &self,
+        db: &Database,
+        provider_id: &str,
+        enabled: bool,
+    ) -> Result<(), String> {
+        self.ensure_known(provider_id)?;
+        db.set_app_setting(
+            &enabled_key(provider_id),
+            if enabled { "true" } else { "false" },
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    pub async fn prepare_provider(
+        &self,
+        app: &AppHandle,
+        db_path: &Path,
+        provider_id: &str,
+    ) -> Result<VoiceProviderInfo, String> {
+        match provider_id {
+            PLATFORM_ID => PlatformVoiceProvider.prepare(self, app, db_path).await,
+            DISTIL_ID => {
+                DistilWhisperCandleProvider
+                    .prepare(self, app, db_path)
+                    .await
+            }
+            _ => Err(format!("Unknown voice provider: {provider_id}")),
+        }
+    }
+
+    pub async fn remove_provider_model(
+        &self,
+        db_path: &Path,
+        provider_id: &str,
+    ) -> Result<VoiceProviderInfo, String> {
+        self.ensure_known(provider_id)?;
+        if provider_id != DISTIL_ID {
+            return Err("This provider does not use a removable local model".to_string());
+        }
+
+        let path = self.distil_cache_path();
+        if tokio::fs::try_exists(&path)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            tokio::fs::remove_dir_all(&path)
+                .await
+                .map_err(|e| format!("Failed to remove model cache: {e}"))?;
+        }
+        let db = Database::open(db_path).map_err(|e| e.to_string())?;
+        db.set_app_setting(&model_status_key(provider_id), "not-installed")
+            .map_err(|e| e.to_string())?;
+        Ok(DistilWhisperCandleProvider.status(self, &db))
+    }
+
+    pub async fn start_recording(
+        &self,
+        db: &Database,
+        provider_id: Option<&str>,
+    ) -> Result<(), String> {
+        let provider_id = self.resolve_provider_id(db, provider_id)?;
+        match provider_id.as_str() {
+            PLATFORM_ID => PlatformVoiceProvider.start_recording().await,
+            DISTIL_ID => DistilWhisperCandleProvider.start_recording().await,
+            _ => Err(format!("Unknown voice provider: {provider_id}")),
+        }
+    }
+
+    pub async fn stop_and_transcribe(
+        &self,
+        db: &Database,
+        provider_id: Option<&str>,
+    ) -> Result<String, String> {
+        let provider_id = self.resolve_provider_id(db, provider_id)?;
+        match provider_id.as_str() {
+            PLATFORM_ID => PlatformVoiceProvider.stop_and_transcribe().await,
+            DISTIL_ID => DistilWhisperCandleProvider.stop_and_transcribe().await,
+            _ => Err(format!("Unknown voice provider: {provider_id}")),
+        }
+    }
+
+    pub async fn cancel_recording(
+        &self,
+        db: &Database,
+        provider_id: Option<&str>,
+    ) -> Result<(), String> {
+        let provider_id = self.resolve_provider_id(db, provider_id)?;
+        match provider_id.as_str() {
+            PLATFORM_ID => PlatformVoiceProvider.cancel().await,
+            DISTIL_ID => DistilWhisperCandleProvider.cancel().await,
+            _ => Err(format!("Unknown voice provider: {provider_id}")),
+        }
+    }
+
+    fn ensure_known(&self, provider_id: &str) -> Result<(), String> {
+        match provider_id {
+            PLATFORM_ID | DISTIL_ID => Ok(()),
+            _ => Err(format!("Unknown voice provider: {provider_id}")),
+        }
+    }
+
+    fn selected_provider(&self, db: &Database) -> Option<String> {
+        db.get_app_setting(SELECTED_PROVIDER_KEY).ok().flatten()
+    }
+
+    fn auto_provider_enabled(&self, db: &Database) -> bool {
+        db.get_app_setting(AUTO_PROVIDER_KEY)
+            .ok()
+            .flatten()
+            .map(|v| v != "false")
+            .unwrap_or(true)
+    }
+
+    fn enabled(&self, db: &Database, provider_id: &str) -> bool {
+        db.get_app_setting(&enabled_key(provider_id))
+            .ok()
+            .flatten()
+            .map(|v| v != "false")
+            .unwrap_or(true)
+    }
+
+    fn resolve_provider_id(
+        &self,
+        db: &Database,
+        requested: Option<&str>,
+    ) -> Result<String, String> {
+        if let Some(requested) = requested {
+            self.ensure_known(requested)?;
+            return Ok(requested.to_string());
+        }
+        if let Some(selected) = self.selected_provider(db) {
+            self.ensure_known(&selected)?;
+            return Ok(selected);
+        }
+        if self.auto_provider_enabled(db) {
+            return Ok(PLATFORM_ID.to_string());
+        }
+        Err("No voice provider is selected".to_string())
+    }
+}
+
+struct PlatformVoiceProvider;
+
+#[async_trait]
+impl VoiceProvider for PlatformVoiceProvider {
+    fn id(&self) -> &'static str {
+        PLATFORM_ID
+    }
+
+    fn metadata(&self, _registry: &VoiceProviderRegistry) -> VoiceProviderMetadata {
+        VoiceProviderMetadata {
+            id: self.id().to_string(),
+            name: "System dictation".to_string(),
+            description:
+                "Uses the webview or operating system speech recognition surface when available."
+                    .to_string(),
+            kind: VoiceProviderKind::Platform,
+            privacy_label: "Uses platform services; offline behavior varies by OS".to_string(),
+            offline: false,
+            download_required: false,
+            model_size_label: None,
+            cache_path: None,
+            accelerator_label: Some("No setup".to_string()),
+        }
+    }
+
+    fn status(&self, registry: &VoiceProviderRegistry, db: &Database) -> VoiceProviderInfo {
+        let enabled = registry.enabled(db, self.id());
+        VoiceProviderInfo {
+            metadata: self.metadata(registry),
+            status: if enabled {
+                VoiceProviderStatus::Ready
+            } else {
+                VoiceProviderStatus::Unavailable
+            },
+            status_label: if enabled {
+                "Ready when the webview supports speech recognition".to_string()
+            } else {
+                "Disabled".to_string()
+            },
+            enabled,
+            selected: registry.selected_provider(db).as_deref() == Some(self.id()),
+            setup_required: false,
+            can_remove_model: false,
+            error: None,
+        }
+    }
+
+    async fn prepare(
+        &self,
+        registry: &VoiceProviderRegistry,
+        _app: &AppHandle,
+        db_path: &Path,
+    ) -> Result<VoiceProviderInfo, String> {
+        let db = Database::open(db_path).map_err(|e| e.to_string())?;
+        Ok(self.status(registry, &db))
+    }
+
+    async fn start_recording(&self) -> Result<(), String> {
+        Err("System dictation records in the webview when supported".to_string())
+    }
+
+    async fn stop_and_transcribe(&self) -> Result<String, String> {
+        Err("System dictation records in the webview when supported".to_string())
+    }
+
+    async fn cancel(&self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+struct DistilWhisperCandleProvider;
+
+#[async_trait]
+impl VoiceProvider for DistilWhisperCandleProvider {
+    fn id(&self) -> &'static str {
+        DISTIL_ID
+    }
+
+    fn metadata(&self, registry: &VoiceProviderRegistry) -> VoiceProviderMetadata {
+        let cache_path = registry.distil_cache_path();
+        VoiceProviderMetadata {
+            id: self.id().to_string(),
+            name: "Distil-Whisper Large v3".to_string(),
+            description: "Private offline transcription using distil-whisper/distil-large-v3 through the native provider interface.".to_string(),
+            kind: VoiceProviderKind::LocalModel,
+            privacy_label: "Private after download; audio stays local".to_string(),
+            offline: true,
+            download_required: true,
+            model_size_label: Some("About 1.5 GB plus tokenizer/config files".to_string()),
+            cache_path: Some(cache_path.display().to_string()),
+            accelerator_label: Some("CPU now; Candle backend is isolated for Metal/CUDA builds".to_string()),
+        }
+    }
+
+    fn status(&self, registry: &VoiceProviderRegistry, db: &Database) -> VoiceProviderInfo {
+        let enabled = registry.enabled(db, self.id());
+        let cache_path = registry.distil_cache_path();
+        let model_status = db
+            .get_app_setting(&model_status_key(self.id()))
+            .ok()
+            .flatten();
+        let installed = distil_model_ready(&cache_path);
+        let (status, status_label, setup_required, error) = if !enabled {
+            (
+                VoiceProviderStatus::Unavailable,
+                "Disabled".to_string(),
+                false,
+                None,
+            )
+        } else if model_status.as_deref() == Some("downloading") {
+            (
+                VoiceProviderStatus::Downloading,
+                "Downloading model".to_string(),
+                true,
+                None,
+            )
+        } else if installed {
+            (
+                VoiceProviderStatus::Ready,
+                "Model is installed".to_string(),
+                false,
+                None,
+            )
+        } else if model_status
+            .as_deref()
+            .is_some_and(|status| status.starts_with("error:"))
+        {
+            (
+                VoiceProviderStatus::Error,
+                "Download failed".to_string(),
+                true,
+                model_status.map(|s| s.trim_start_matches("error:").to_string()),
+            )
+        } else {
+            (
+                VoiceProviderStatus::NeedsSetup,
+                "Download required".to_string(),
+                true,
+                None,
+            )
+        };
+
+        VoiceProviderInfo {
+            metadata: self.metadata(registry),
+            status,
+            status_label,
+            enabled,
+            selected: registry.selected_provider(db).as_deref() == Some(self.id()),
+            setup_required,
+            can_remove_model: installed,
+            error,
+        }
+    }
+
+    async fn prepare(
+        &self,
+        registry: &VoiceProviderRegistry,
+        app: &AppHandle,
+        db_path: &Path,
+    ) -> Result<VoiceProviderInfo, String> {
+        let cache_path = registry.distil_cache_path();
+        tokio::fs::create_dir_all(&cache_path)
+            .await
+            .map_err(|e| format!("Failed to create model cache: {e}"))?;
+        {
+            let db = Database::open(db_path).map_err(|e| e.to_string())?;
+            db.set_app_setting(&model_status_key(self.id()), "downloading")
+                .map_err(|e| e.to_string())?;
+        }
+
+        let result = download_distil_model(app, self.id(), &cache_path).await;
+        match result {
+            Ok(()) => {
+                let db = Database::open(db_path).map_err(|e| e.to_string())?;
+                db.set_app_setting(&model_status_key(self.id()), "installed")
+                    .map_err(|e| e.to_string())?;
+                let info = self.status(registry, &db);
+                let _ = app.emit("voice-provider-status", &info);
+                Ok(info)
+            }
+            Err(err) => {
+                let db = Database::open(db_path).map_err(|e| e.to_string())?;
+                let _ = db.set_app_setting(&model_status_key(self.id()), &format!("error:{err}"));
+                let _ = app.emit(
+                    "voice-error",
+                    VoiceErrorEvent {
+                        provider_id: Some(self.id().to_string()),
+                        message: err.clone(),
+                    },
+                );
+                Err(err)
+            }
+        }
+    }
+
+    async fn start_recording(&self) -> Result<(), String> {
+        Err(
+            "Distil-Whisper model management is installed; native Candle recording/transcription is not enabled in this build yet."
+                .to_string(),
+        )
+    }
+
+    async fn stop_and_transcribe(&self) -> Result<String, String> {
+        Err(
+            "Distil-Whisper model management is installed; native Candle transcription is not enabled in this build yet."
+                .to_string(),
+        )
+    }
+
+    async fn cancel(&self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+fn enabled_key(provider_id: &str) -> String {
+    format!("voice:{provider_id}:enabled")
+}
+
+fn model_status_key(provider_id: &str) -> String {
+    format!("voice:{provider_id}:model_status")
+}
+
+fn distil_model_ready(cache_path: &Path) -> bool {
+    let model = cache_path.join("model.safetensors");
+    let tokenizer = cache_path.join("tokenizer.json");
+    let config = cache_path.join("config.json");
+    model.metadata().is_ok_and(|m| m.len() > 100_000_000) && tokenizer.is_file() && config.is_file()
+}
+
+async fn download_distil_model(
+    app: &AppHandle,
+    provider_id: &str,
+    cache_path: &Path,
+) -> Result<(), String> {
+    let files: [(&str, Option<u64>); 5] = [
+        ("config.json", None),
+        ("generation_config.json", None),
+        ("preprocessor_config.json", None),
+        ("tokenizer.json", None),
+        ("model.safetensors", Some(1_500_000_000)),
+    ];
+    let known_total = files.iter().filter_map(|(_, size)| *size).sum::<u64>();
+    let mut overall_downloaded = 0_u64;
+    let client = reqwest::Client::new();
+
+    for (filename, known_size) in files {
+        let destination = cache_path.join(filename);
+        if destination.is_file() {
+            overall_downloaded += destination.metadata().map(|m| m.len()).unwrap_or(0);
+            continue;
+        }
+
+        let url = format!(
+            "https://huggingface.co/distil-whisper/distil-large-v3/resolve/main/{filename}"
+        );
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download {filename}: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("Failed to download {filename}: {e}"))?;
+
+        let total = response.content_length().or(known_size);
+        let part_path = destination.with_extension("part");
+        let mut file = tokio::fs::File::create(&part_path)
+            .await
+            .map_err(|e| format!("Failed to write {filename}: {e}"))?;
+        let mut stream = response.bytes_stream();
+        let mut downloaded = 0_u64;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("Failed while downloading {filename}: {e}"))?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| format!("Failed to write {filename}: {e}"))?;
+            downloaded += chunk.len() as u64;
+            let denominator = known_total.max(total.unwrap_or(0));
+            let percent = if denominator > 0 {
+                Some(((overall_downloaded + downloaded) as f64 / denominator as f64).min(1.0))
+            } else {
+                None
+            };
+            let _ = app.emit(
+                "voice-download-progress",
+                VoiceDownloadProgress {
+                    provider_id: provider_id.to_string(),
+                    filename: filename.to_string(),
+                    downloaded_bytes: downloaded,
+                    total_bytes: total,
+                    overall_downloaded_bytes: overall_downloaded + downloaded,
+                    overall_total_bytes: if known_total > 0 {
+                        Some(known_total)
+                    } else {
+                        None
+                    },
+                    percent,
+                },
+            );
+        }
+        file.flush()
+            .await
+            .map_err(|e| format!("Failed to flush {filename}: {e}"))?;
+        tokio::fs::rename(&part_path, &destination)
+            .await
+            .map_err(|e| format!("Failed to finalize {filename}: {e}"))?;
+        overall_downloaded += downloaded;
+    }
+
+    Ok(())
+}

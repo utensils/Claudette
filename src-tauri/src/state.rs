@@ -15,6 +15,7 @@ use claudette::scm::types::{CiCheck, PullRequest};
 use crate::commands::apps::DetectedApp;
 use crate::remote::DiscoveredServer;
 use crate::usage::UsageCacheEntry;
+use crate::voice::VoiceProviderRegistry;
 
 /// Re-export for use in tray module without direct tauri::tray import.
 pub type TrayIcon = tauri::tray::TrayIcon;
@@ -302,6 +303,8 @@ pub struct AppState {
     pub usage_cache: RwLock<Option<UsageCacheEntry>>,
     /// SCM provider plugin registry.
     pub plugins: RwLock<PluginRegistry>,
+    /// Native voice provider registry and model cache metadata.
+    pub voice: Arc<VoiceProviderRegistry>,
     /// mtime-keyed cache of env-provider exports. One entry per
     /// `(worktree, plugin_name)` pair, invalidated when any watched
     /// file (`.envrc`, `mise.toml`, `.env`, `flake.lock`, etc.) changes.
@@ -346,6 +349,9 @@ impl AppState {
             next_tray_seq: AtomicU64::new(1),
             usage_cache: RwLock::new(None),
             plugins: RwLock::new(plugins),
+            voice: Arc::new(VoiceProviderRegistry::new(
+                VoiceProviderRegistry::default_model_root(),
+            )),
             env_cache: Arc::new(EnvCache::new()),
             env_watcher: RwLock::new(None),
             scm_cache: ScmCache::new(),

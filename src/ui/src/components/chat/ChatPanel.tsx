@@ -2,7 +2,7 @@ import React, { createContext, memo, useContext, useEffect, useRef, useState, us
 import { isAgentBusy } from "../../utils/agentStatus";
 import Markdown from "react-markdown";
 import { preprocessContent, MARKDOWN_COMPONENTS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../utils/markdown";
-import { FileText, GitBranch, LoaderCircle, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
+import { FileText, GitBranch, LoaderCircle, Mic, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
 import {
@@ -101,6 +101,7 @@ import { deriveTasks, processActivities, turnHasTaskActivity, hasTaskActivity } 
 import type { TaskTrackerResult, TrackedTask } from "../../hooks/useTaskTracker";
 import { ScrollToBottomPill } from "./ScrollToBottomPill";
 import { useStickyScroll } from "../../hooks/useStickyScroll";
+import { useVoiceInput } from "../../hooks/useVoiceInput";
 import { debugChat } from "../../utils/chatDebug";
 import styles from "./ChatPanel.module.css";
 import caretStyles from "./caret.module.css";
@@ -2260,6 +2261,33 @@ function ChatInputArea({
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [contextPopoverOpen, setContextPopoverOpen] = useState(false);
   const pluginRefreshToken = useAppStore((s) => s.pluginRefreshToken);
+  const openSettings = useAppStore((s) => s.openSettings);
+
+  const insertTranscript = useCallback((transcript: string) => {
+    const ta = textareaRef.current;
+    const start = ta?.selectionStart ?? cursorPos;
+    const end = ta?.selectionEnd ?? cursorPos;
+    const before = chatInput.slice(0, start);
+    const after = chatInput.slice(end);
+    const needsLeadingSpace = before.length > 0 && !/\s$/.test(before);
+    const needsTrailingSpace = after.length > 0 && !/^\s/.test(after);
+    const insertion = `${needsLeadingSpace ? " " : ""}${transcript}${needsTrailingSpace ? " " : ""}`;
+    const nextText = before + insertion + after;
+    const nextCursor = before.length + insertion.length;
+    setChatInput(nextText);
+    setCursorPos(nextCursor);
+    requestAnimationFrame(() => {
+      const current = textareaRef.current;
+      if (!current) return;
+      current.focus();
+      current.selectionStart = current.selectionEnd = nextCursor;
+    });
+  }, [chatInput, cursorPos]);
+
+  const voice = useVoiceInput(
+    insertTranscript,
+    () => openSettings("plugins"),
+  );
 
   // Per-workspace draft storage: save input when switching away,
   // restore when switching back.
@@ -2284,6 +2312,7 @@ function ChatInputArea({
         }
         return [];
       });
+      voice.cancel();
     }
   }, [selectedWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2614,6 +2643,7 @@ function ChatInputArea({
   }, [addAttachment]);
 
   const handleSend = () => {
+    voice.cancel();
     // Only include files whose @path tokens are still in the text, so that
     // removed references don't get expanded.
     const activeFiles = new Set<string>();
@@ -2648,6 +2678,12 @@ function ChatInputArea({
   const setPlanMode = useAppStore((s) => s.setPlanMode);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && voice.state === "recording") {
+      e.preventDefault();
+      voice.cancel();
+      return;
+    }
+
     // Shift+Tab: toggle plan mode
     if (e.key === "Tab" && e.shiftKey) {
       e.preventDefault();
@@ -2922,6 +2958,50 @@ function ChatInputArea({
             workspaceId={selectedWorkspaceId}
             onClick={() => setContextPopoverOpen((v) => !v)}
           />
+          {voice.state === "recording" && (
+            <div className={styles.voiceRecordingStatus} aria-live="polite">
+              <span className={styles.voiceWaveform} aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span>{formatElapsedSeconds(voice.elapsedSeconds)}</span>
+            </div>
+          )}
+          {voice.state === "transcribing" && (
+            <div className={styles.voiceStatusText} aria-live="polite">
+              Transcribing…
+            </div>
+          )}
+          {voice.state === "error" && voice.error && (
+            <button
+              type="button"
+              className={styles.voiceErrorBtn}
+              onClick={() => openSettings("plugins")}
+              title={voice.error}
+            >
+              Voice unavailable
+            </button>
+          )}
+          <button
+            type="button"
+            className={`${styles.voiceBtn} ${voice.state === "recording" ? styles.voiceBtnRecording : ""}`}
+            onClick={() => {
+              if (voice.state === "recording") voice.stop();
+              else void voice.start();
+            }}
+            disabled={isRunning || voice.state === "transcribing"}
+            title={
+              voice.state === "recording"
+                ? "Stop voice input"
+                : voice.platformSupported
+                  ? "Voice input"
+                  : "Voice providers"
+            }
+            aria-label={voice.state === "recording" ? "Stop voice input" : "Voice input"}
+          >
+            <Mic size={16} />
+          </button>
           <button
             className={`${styles.sendBtn} ${isRunning ? styles.sendBtnStop : ""}`}
             onClick={isRunning ? onStop : handleSend}

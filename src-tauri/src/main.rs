@@ -12,6 +12,7 @@ mod state;
 mod transport;
 mod tray;
 mod usage;
+mod voice;
 mod webview2_check;
 
 use std::path::PathBuf;
@@ -582,6 +583,15 @@ fn main() {
             // Built-in Claudette plugins (Rust-implemented agent surfaces)
             commands::plugins_runtime::list_builtin_claudette_plugins,
             commands::plugins_runtime::set_builtin_claudette_plugin_enabled,
+            // Voice providers
+            commands::voice::voice_list_providers,
+            commands::voice::voice_set_selected_provider,
+            commands::voice::voice_set_provider_enabled,
+            commands::voice::voice_prepare_provider,
+            commands::voice::voice_remove_provider_model,
+            commands::voice::voice_start_recording,
+            commands::voice::voice_stop_and_transcribe,
+            commands::voice::voice_cancel_recording,
             // Local server
             commands::remote::start_local_server,
             commands::remote::stop_local_server,

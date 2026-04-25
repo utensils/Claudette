@@ -22,4 +22,5 @@ pub mod slash_commands;
 pub mod terminal;
 pub mod updater;
 pub mod usage;
+pub mod voice;
 pub mod workspace;
