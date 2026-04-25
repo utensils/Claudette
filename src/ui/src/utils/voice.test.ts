@@ -72,6 +72,32 @@ describe("chooseVoiceProvider", () => {
       ]),
     ).toBe(platform);
   });
+
+  it("falls back to platform when local provider engine is unavailable", () => {
+    const platform = provider({ id: "voice-platform-system" });
+    expect(
+      chooseVoiceProvider([
+        provider({
+          id: "voice-distil-whisper-candle",
+          kind: "local-model",
+          status: "engine-unavailable",
+        }),
+        platform,
+      ]),
+    ).toBe(platform);
+  });
+
+  it("does not choose a disabled platform provider", () => {
+    expect(
+      chooseVoiceProvider([
+        provider({
+          id: "voice-platform-system",
+          enabled: false,
+          status: "unavailable",
+        }),
+      ]),
+    ).toBeNull();
+  });
 });
 
 describe("insertTranscriptAtSelection", () => {

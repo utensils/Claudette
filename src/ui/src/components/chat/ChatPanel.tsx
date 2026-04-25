@@ -2975,7 +2975,7 @@ function ChatInputArea({
               onClick={() => openSettings("plugins")}
               title={voice.error}
             >
-              Voice unavailable
+              {voice.error}
             </button>
           )}
           <button

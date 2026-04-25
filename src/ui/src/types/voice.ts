@@ -4,6 +4,7 @@ export type VoiceProviderStatus =
   | "ready"
   | "needs-setup"
   | "downloading"
+  | "engine-unavailable"
   | "unavailable"
   | "error";
 
@@ -36,4 +37,3 @@ export interface VoiceDownloadProgress {
   overallTotalBytes: number | null;
   percent: number | null;
 }
-

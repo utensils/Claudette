@@ -12,6 +12,7 @@ const AUTO_PROVIDER_KEY: &str = "voice:auto_provider";
 const PLATFORM_ID: &str = "voice-platform-system";
 const DISTIL_ID: &str = "voice-distil-whisper-candle";
 const DISTIL_CACHE_DIR: &str = "distil-whisper-large-v3";
+const DISTIL_ENGINE_UNAVAILABLE_MESSAGE: &str = "Distil-Whisper is downloaded, but local transcription is not available in this build yet. Use System dictation for now, or install a Claudette build compiled with the Candle voice engine.";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -27,6 +28,7 @@ pub enum VoiceProviderStatus {
     Ready,
     NeedsSetup,
     Downloading,
+    EngineUnavailable,
     Unavailable,
     Error,
 }
@@ -388,10 +390,10 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             )
         } else if installed {
             (
-                VoiceProviderStatus::Ready,
-                "Model is installed".to_string(),
+                VoiceProviderStatus::EngineUnavailable,
+                "Model installed, engine unavailable".to_string(),
                 false,
-                None,
+                Some(DISTIL_ENGINE_UNAVAILABLE_MESSAGE.to_string()),
             )
         } else if model_status
             .as_deref()
@@ -466,17 +468,11 @@ impl VoiceProvider for DistilWhisperCandleProvider {
     }
 
     async fn start_recording(&self) -> Result<(), String> {
-        Err(
-            "Distil-Whisper model management is installed; native Candle recording/transcription is not enabled in this build yet."
-                .to_string(),
-        )
+        Err(DISTIL_ENGINE_UNAVAILABLE_MESSAGE.to_string())
     }
 
     async fn stop_and_transcribe(&self) -> Result<String, String> {
-        Err(
-            "Distil-Whisper model management is installed; native Candle transcription is not enabled in this build yet."
-                .to_string(),
-        )
+        Err(DISTIL_ENGINE_UNAVAILABLE_MESSAGE.to_string())
     }
 
     async fn cancel(&self) -> Result<(), String> {
@@ -672,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_distil_model_reports_ready() {
+    fn complete_distil_model_reports_engine_unavailable() {
         let (_db_dir, db_path) = test_db_path();
         let model_dir = tempdir().expect("model dir");
         let cache_path = model_dir.path().join(DISTIL_CACHE_DIR);
@@ -691,9 +687,15 @@ mod tests {
             .find(|provider| provider.metadata.id == DISTIL_ID)
             .expect("distil provider");
 
-        assert_eq!(provider.status, VoiceProviderStatus::Ready);
+        assert_eq!(provider.status, VoiceProviderStatus::EngineUnavailable);
         assert!(!provider.setup_required);
         assert!(provider.can_remove_model);
+        assert!(
+            provider
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("not available in this build"))
+        );
     }
 
     #[tokio::test]

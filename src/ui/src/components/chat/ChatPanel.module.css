@@ -1121,6 +1121,9 @@
 .voiceErrorBtn {
   cursor: pointer;
   color: var(--status-stopped);
+  max-width: min(360px, 45vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .voiceWaveform {

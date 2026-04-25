@@ -129,18 +129,25 @@ export function useVoiceInput(
     setActiveProvider(provider);
 
     if (!provider) {
-      setError("No voice provider is available.");
+      setError("No enabled voice provider is ready. Open Plugins settings to enable System dictation or set up an offline provider.");
       setState("error");
       return;
     }
 
     if (provider.id !== "voice-platform-system") {
+      const providerMessage = provider.error ?? provider.statusLabel;
+      if (provider.status === "engine-unavailable" || provider.status === "error") {
+        setError(providerMessage);
+        setState("error");
+        return;
+      }
       if (provider.setupRequired || provider.status !== "ready") {
+        setError(providerMessage);
         setState("setup-required");
         onNeedsSetup();
         return;
       }
-      setError("This local provider is installed, but native transcription is not enabled in this build yet.");
+      setError(providerMessage || "This local provider is not available.");
       setState("error");
       return;
     }

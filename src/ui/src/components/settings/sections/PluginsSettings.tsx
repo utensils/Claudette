@@ -378,10 +378,10 @@ function VoiceProviderRow({
     ? "var(--text-faint)"
     : provider.status === "ready"
       ? "var(--status-running)"
-      : provider.status === "error"
+      : provider.status === "error" || provider.status === "engine-unavailable"
         ? "var(--status-stopped)"
         : "var(--accent-primary)";
-  const badge = provider.selected ? "selected" : provider.statusLabel;
+  const badge = provider.selected ? `selected - ${provider.statusLabel}` : provider.statusLabel;
   const canDownload =
     provider.downloadRequired &&
     provider.enabled &&

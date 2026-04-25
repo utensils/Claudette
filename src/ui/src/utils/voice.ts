@@ -11,7 +11,10 @@ export function chooseVoiceProvider(
       provider.status === "ready",
   );
   const platform = providers.find(
-    (provider) => provider.id === "voice-platform-system",
+    (provider) =>
+      provider.id === "voice-platform-system" &&
+      provider.enabled &&
+      provider.status === "ready",
   );
   return selected ?? readyLocal ?? platform ?? null;
 }
@@ -33,4 +36,3 @@ export function insertTranscriptAtSelection(
     cursor: before.length + insertion.length,
   };
 }
-
