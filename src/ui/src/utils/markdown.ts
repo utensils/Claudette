@@ -7,6 +7,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeHighlight from "rehype-highlight";
 import { AnsiUp } from "ansi_up";
 import { openUrl } from "../services/tauri";
+import { CodeBlock } from "../components/chat/CodeBlock";
 
 // Shared AnsiUp instance for converting ANSI escape sequences to HTML.
 const ansiUp = new AnsiUp();
@@ -142,6 +143,9 @@ export const MARKDOWN_COMPONENTS: Components = {
       },
       children,
     ),
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  pre: ({ node, children, ...props }) =>
+    createElement(CodeBlock, props, children),
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   code: ({ node, className, children, ...props }) => {
     const isFenced =
