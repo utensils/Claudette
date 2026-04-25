@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CircleDollarSign, Sparkles, BookOpen } from "lucide-react";
 import { useAppStore } from "../../../stores/useAppStore";
 import { getAppSetting, setAppSetting } from "../../../services/tauri";
-import { ModelSelector, MODELS, is1mContextModel } from "../ModelSelector";
+import { ModelSelector, MODELS, is1mContextModel, get1mFallback } from "../ModelSelector";
 import { isFastSupported, isEffortSupported, isXhighEffortAllowed, isMaxEffortAllowed } from "../modelCapabilities";
 import { applySelectedModel } from "../applySelectedModel";
 import { applyPlanModeMountDefault } from "../applyPlanModeMountDefault";
@@ -112,7 +112,7 @@ export function ComposerToolbar({ workspaceId, disabled }: ComposerToolbarProps)
   useEffect(() => {
     if (!loaded || !disable1mContext) return;
     if (is1mContextModel(selectedModel)) {
-      void applySelectedModel(workspaceId, "sonnet");
+      void applySelectedModel(workspaceId, get1mFallback(selectedModel));
     }
   }, [loaded, disable1mContext, selectedModel, workspaceId]);
 

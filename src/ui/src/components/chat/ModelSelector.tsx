@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { CircleDollarSign, ChevronRight } from "lucide-react";
 import styles from "./ModelSelector.module.css";
-import { MODELS, is1mContextModel, type Model } from "./modelRegistry";
+import { MODELS, type Model } from "./modelRegistry";
 import { useAppStore } from "../../stores/useAppStore";
 
-export { MODELS, is1mContextModel } from "./modelRegistry";
+export { MODELS, is1mContextModel, get1mFallback } from "./modelRegistry";
 
 interface ModelSelectorProps {
   selected: string;
@@ -19,7 +19,7 @@ export function ModelSelector({
 }: ModelSelectorProps) {
   const disable1mContext = useAppStore((s) => s.disable1mContext);
   const visibleModels = disable1mContext
-    ? MODELS.filter((m) => !is1mContextModel(m.id))
+    ? MODELS.filter((m) => m.contextWindowTokens < 1_000_000)
     : MODELS;
   const primary = visibleModels.filter((m) => !m.legacy);
   const legacy = visibleModels.filter((m) => m.legacy);

@@ -6,7 +6,7 @@ import {
   isMaxEffortAllowed,
   isXhighEffortAllowed,
 } from "./modelCapabilities";
-import { is1mContextModel } from "./modelRegistry";
+import { is1mContextModel, get1mFallback } from "./modelRegistry";
 
 /**
  * Apply a model change for a workspace.
@@ -26,7 +26,7 @@ export async function applySelectedModel(
 ): Promise<void> {
   const store = useAppStore.getState();
   const model = store.disable1mContext && is1mContextModel(nextModel)
-    ? "sonnet"
+    ? get1mFallback(nextModel)
     : nextModel;
   store.setSelectedModel(workspaceId, model);
   await setAppSetting(`model:${workspaceId}`, model);
