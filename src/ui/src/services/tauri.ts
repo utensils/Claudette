@@ -610,6 +610,14 @@ export function revertFile(
   return invoke("revert_file", { worktreePath, mergeBase, filePath, status });
 }
 
+export function discardFile(
+  worktreePath: string,
+  filePath: string,
+  isUntracked: boolean
+): Promise<void> {
+  return invoke("discard_file", { worktreePath, filePath, isUntracked });
+}
+
 // -- Terminal --
 
 export function createTerminalTab(
