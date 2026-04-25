@@ -76,25 +76,6 @@ public func claudette_platform_speech_transcribe_file(
     }
     claudette_platform_speech_free_string(status.message)
 
-    if status.engine == engineSpeechAnalyzer {
-        if #available(macOS 26.0, *) {
-            let result = waitForAsync {
-                do {
-                    let text = try await transcribeWithSpeechAnalyzer(url: url)
-                    return transcriptionSuccess(engineSpeechAnalyzer, text)
-                } catch {
-                    return transcriptionError(
-                        statusEngineUnavailable,
-                        engineSpeechAnalyzer,
-                        "Apple SpeechAnalyzer transcription failed: \(error.localizedDescription)"
-                    )
-                }
-            }
-            writeTranscription(result, code, engine, text, message)
-            return
-        }
-    }
-
     writeTranscription(transcribeWithSFSpeech(url: url), code, engine, text, message)
 }
 
@@ -106,12 +87,8 @@ public func claudette_platform_speech_free_string(_ pointer: UnsafeMutablePointe
 }
 
 private func platformSpeechStatus(prepare: Bool) -> ClaudettePlatformSpeechStatus {
-    if let missingUsageDescription = missingTCCUsageDescriptionKey() {
-        return status(
-            statusEngineUnavailable,
-            engineNone,
-            "App bundle is missing \(missingUsageDescription). Rebuild Claudette so macOS can show the required privacy prompt."
-        )
+    if let preflightFailure = tccPreflightFailureMessage() {
+        return status(statusEngineUnavailable, engineNone, preflightFailure)
     }
 
     let microphoneStatus = microphoneAuthorizationStatus(prepare: prepare)
@@ -132,25 +109,21 @@ private func platformSpeechStatus(prepare: Bool) -> ClaudettePlatformSpeechStatu
         )
     }
 
-    if #available(macOS 26.0, *) {
-        let analyzerStatus = waitForAsync {
-            await speechAnalyzerStatus(prepare: prepare)
-        }
-        if analyzerStatus.engine == engineSpeechAnalyzer {
-            return analyzerStatus
-        }
-    }
-
     return sfSpeechStatus()
 }
 
-private func missingTCCUsageDescriptionKey() -> String? {
-    let infoDictionary = Bundle.main.infoDictionary ?? [:]
+private func tccPreflightFailureMessage() -> String? {
+    let bundle = Bundle.main
+    if bundle.bundleURL.pathExtension.lowercased() != "app" {
+        return "Apple Speech permissions require Claudette to run from a macOS .app bundle. Start Claudette with the dev helper (scripts/dev.sh) or a packaged build."
+    }
+
+    let infoDictionary = bundle.infoDictionary ?? [:]
     if usageDescriptionValue("NSMicrophoneUsageDescription", in: infoDictionary) == nil {
-        return "NSMicrophoneUsageDescription"
+        return "App bundle is missing NSMicrophoneUsageDescription. Rebuild Claudette so macOS can show the required privacy prompt."
     }
     if usageDescriptionValue("NSSpeechRecognitionUsageDescription", in: infoDictionary) == nil {
-        return "NSSpeechRecognitionUsageDescription"
+        return "App bundle is missing NSSpeechRecognitionUsageDescription. Rebuild Claudette so macOS can show the required privacy prompt."
     }
     return nil
 }
@@ -194,68 +167,6 @@ private func speechAuthorizationStatus(prepare: Bool) -> SFSpeechRecognizerAutho
     return SFSpeechRecognizer.authorizationStatus()
 }
 
-@available(macOS 26.0, *)
-private func speechAnalyzerStatus(prepare: Bool) async -> ClaudettePlatformSpeechStatus {
-    guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: Locale.current) else {
-        return status(
-            statusUnavailable,
-            engineNone,
-            "Apple SpeechAnalyzer does not support the current locale."
-        )
-    }
-
-    let transcriber = DictationTranscriber(locale: locale, preset: .shortDictation)
-    let modules: [any SpeechModule] = [transcriber]
-    let assetStatus = await AssetInventory.status(forModules: modules)
-    switch assetStatus {
-    case .installed:
-        return status(statusReady, engineSpeechAnalyzer, "Ready via Apple SpeechAnalyzer")
-    case .supported:
-        guard prepare else {
-            return status(
-                statusNeedsAssets,
-                engineSpeechAnalyzer,
-                "Needs Apple SpeechAnalyzer language assets"
-            )
-        }
-        do {
-            guard let request = try await AssetInventory.assetInstallationRequest(supporting: modules) else {
-                return status(
-                    statusEngineUnavailable,
-                    engineSpeechAnalyzer,
-                    "Apple SpeechAnalyzer assets are supported, but macOS did not provide an installation request."
-                )
-            }
-            try await request.downloadAndInstall()
-            return status(statusReady, engineSpeechAnalyzer, "Ready via Apple SpeechAnalyzer")
-        } catch {
-            return status(
-                statusEngineUnavailable,
-                engineSpeechAnalyzer,
-                "Apple SpeechAnalyzer asset installation failed: \(error.localizedDescription)"
-            )
-        }
-    case .downloading:
-        return status(
-            statusNeedsAssets,
-            engineSpeechAnalyzer,
-            "Apple SpeechAnalyzer language assets are downloading"
-        )
-    case .unsupported:
-        return status(
-            statusUnavailable,
-            engineNone,
-            "Apple SpeechAnalyzer is unsupported for the current locale."
-        )
-    @unknown default:
-        return status(
-            statusUnavailable,
-            engineNone,
-            "Apple SpeechAnalyzer returned an unknown asset status."
-        )
-    }
-}
-
 private func sfSpeechStatus() -> ClaudettePlatformSpeechStatus {
     guard let recognizer = SFSpeechRecognizer(locale: Locale.current) else {
         return status(
@@ -272,31 +183,6 @@ private func sfSpeechStatus() -> ClaudettePlatformSpeechStatus {
         )
     }
     return status(statusReady, engineSFSpeech, "Ready via Apple Speech")
-}
-
-@available(macOS 26.0, *)
-private func transcribeWithSpeechAnalyzer(url: URL) async throws -> String {
-    let locale = await DictationTranscriber.supportedLocale(equivalentTo: Locale.current)
-        ?? Locale(identifier: "en-US")
-    let transcriber = DictationTranscriber(locale: locale, preset: .shortDictation)
-    let modules: [any SpeechModule] = [transcriber]
-    let audioFile = try AVAudioFile(forReading: url)
-    let resultsTask = Task {
-        var transcript = ""
-        for try await result in transcriber.results {
-            if result.isFinal {
-                transcript += String(result.text.characters)
-            }
-        }
-        return transcript
-    }
-
-    _ = try await SpeechAnalyzer(
-        inputAudioFile: audioFile,
-        modules: modules,
-        finishAfterFile: true
-    )
-    return try await resultsTask.value
 }
 
 private func transcribeWithSFSpeech(url: URL) -> ClaudettePlatformSpeechTranscription {
@@ -368,21 +254,6 @@ private func transcribeWithSFSpeech(url: URL) -> ClaudettePlatformSpeechTranscri
         )
     }
     return transcriptionSuccess(engineSFSpeech, finalTranscript)
-}
-
-private func waitForAsync<T>(_ operation: @escaping () async -> T) -> T {
-    let semaphore = DispatchSemaphore(value: 0)
-    let box = AsyncBox<T>()
-    Task {
-        box.value = await operation()
-        semaphore.signal()
-    }
-    semaphore.wait()
-    return box.value!
-}
-
-private final class AsyncBox<T>: @unchecked Sendable {
-    var value: T?
 }
 
 private func writeStatus(
