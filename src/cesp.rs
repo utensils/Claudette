@@ -249,7 +249,7 @@ fn extract_tarball(data: &[u8], target_dir: &Path, source_path: &str) -> Result<
         for component in relative.components() {
             match component {
                 std::path::Component::Normal(_) => {}
-                _ => return Err(format!("Path traversal detected: {}", inner_str)),
+                _ => return Err(format!("Path traversal detected: {inner_str}")),
             }
         }
 

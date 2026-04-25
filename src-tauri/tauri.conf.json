@@ -57,9 +57,7 @@
         "windowSize": { "width": 660, "height": 400 }
       },
       "minimumSystemVersion": "11.0",
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "Claudette uses the microphone for voice input in chat prompts."
-      }
+      "infoPlist": "Info.plist"
     }
   },
   "plugins": {

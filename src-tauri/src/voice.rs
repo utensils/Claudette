@@ -196,39 +196,27 @@ impl VoiceProviderRegistry {
         Ok(DistilWhisperCandleProvider.status(self, &db))
     }
 
-    pub async fn start_recording(
-        &self,
-        db: &Database,
-        provider_id: Option<&str>,
-    ) -> Result<(), String> {
-        let provider_id = self.resolve_provider_id(db, provider_id)?;
-        match provider_id.as_str() {
+    pub async fn start_recording(&self, provider_id: &str) -> Result<(), String> {
+        self.ensure_known(provider_id)?;
+        match provider_id {
             PLATFORM_ID => PlatformVoiceProvider.start_recording().await,
             DISTIL_ID => DistilWhisperCandleProvider.start_recording().await,
             _ => Err(format!("Unknown voice provider: {provider_id}")),
         }
     }
 
-    pub async fn stop_and_transcribe(
-        &self,
-        db: &Database,
-        provider_id: Option<&str>,
-    ) -> Result<String, String> {
-        let provider_id = self.resolve_provider_id(db, provider_id)?;
-        match provider_id.as_str() {
+    pub async fn stop_and_transcribe(&self, provider_id: &str) -> Result<String, String> {
+        self.ensure_known(provider_id)?;
+        match provider_id {
             PLATFORM_ID => PlatformVoiceProvider.stop_and_transcribe().await,
             DISTIL_ID => DistilWhisperCandleProvider.stop_and_transcribe().await,
             _ => Err(format!("Unknown voice provider: {provider_id}")),
         }
     }
 
-    pub async fn cancel_recording(
-        &self,
-        db: &Database,
-        provider_id: Option<&str>,
-    ) -> Result<(), String> {
-        let provider_id = self.resolve_provider_id(db, provider_id)?;
-        match provider_id.as_str() {
+    pub async fn cancel_recording(&self, provider_id: &str) -> Result<(), String> {
+        self.ensure_known(provider_id)?;
+        match provider_id {
             PLATFORM_ID => PlatformVoiceProvider.cancel().await,
             DISTIL_ID => DistilWhisperCandleProvider.cancel().await,
             _ => Err(format!("Unknown voice provider: {provider_id}")),
@@ -262,7 +250,7 @@ impl VoiceProviderRegistry {
             .unwrap_or(true)
     }
 
-    fn resolve_provider_id(
+    pub(crate) fn resolve_provider_id(
         &self,
         db: &Database,
         requested: Option<&str>,
@@ -592,4 +580,147 @@ async fn download_distil_model(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn test_db_path() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("claudette.db");
+        let db = Database::open(&db_path).expect("open db");
+        drop(db);
+        (dir, db_path)
+    }
+
+    fn open_test_db(path: &Path) -> Database {
+        Database::open(path).expect("open db")
+    }
+
+    #[test]
+    fn distil_cache_path_uses_provider_specific_directory() {
+        let root = PathBuf::from("/tmp/claudette-test-models");
+        let registry = VoiceProviderRegistry::new(root.clone());
+
+        assert_eq!(
+            registry.distil_cache_path(),
+            root.join("distil-whisper-large-v3")
+        );
+    }
+
+    #[test]
+    fn selected_provider_is_persisted_and_reflected_in_status() {
+        let (_dir, db_path) = test_db_path();
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(PathBuf::from("/tmp/models"));
+
+        registry
+            .set_selected_provider(&db, Some(DISTIL_ID))
+            .expect("set selected provider");
+
+        let providers = registry.list_providers(&db);
+        assert!(
+            providers
+                .iter()
+                .any(|provider| provider.metadata.id == DISTIL_ID && provider.selected)
+        );
+        assert!(
+            providers
+                .iter()
+                .any(|provider| provider.metadata.id == PLATFORM_ID && !provider.selected)
+        );
+    }
+
+    #[test]
+    fn disabled_provider_reports_unavailable() {
+        let (_dir, db_path) = test_db_path();
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(PathBuf::from("/tmp/models"));
+
+        registry
+            .set_enabled(&db, PLATFORM_ID, false)
+            .expect("disable platform provider");
+
+        let provider = registry
+            .list_providers(&db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == PLATFORM_ID)
+            .expect("platform provider");
+        assert_eq!(provider.status, VoiceProviderStatus::Unavailable);
+        assert!(!provider.enabled);
+        assert!(!provider.setup_required);
+    }
+
+    #[test]
+    fn missing_distil_model_requires_setup() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(model_dir.path().to_path_buf());
+
+        let provider = registry
+            .list_providers(&db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == DISTIL_ID)
+            .expect("distil provider");
+
+        assert_eq!(provider.status, VoiceProviderStatus::NeedsSetup);
+        assert!(provider.setup_required);
+        assert!(!provider.can_remove_model);
+    }
+
+    #[test]
+    fn complete_distil_model_reports_ready() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let cache_path = model_dir.path().join(DISTIL_CACHE_DIR);
+        std::fs::create_dir_all(&cache_path).expect("create model cache");
+        std::fs::write(cache_path.join("tokenizer.json"), "{}").expect("write tokenizer");
+        std::fs::write(cache_path.join("config.json"), "{}").expect("write config");
+        let model_file =
+            std::fs::File::create(cache_path.join("model.safetensors")).expect("create model");
+        model_file.set_len(100_000_001).expect("size model");
+
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(model_dir.path().to_path_buf());
+        let provider = registry
+            .list_providers(&db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == DISTIL_ID)
+            .expect("distil provider");
+
+        assert_eq!(provider.status, VoiceProviderStatus::Ready);
+        assert!(!provider.setup_required);
+        assert!(provider.can_remove_model);
+    }
+
+    #[tokio::test]
+    async fn remove_distil_model_clears_cache_and_status() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let cache_path = model_dir.path().join(DISTIL_CACHE_DIR);
+        std::fs::create_dir_all(&cache_path).expect("create model cache");
+        std::fs::write(cache_path.join("tokenizer.json"), "{}").expect("write tokenizer");
+        let db = open_test_db(&db_path);
+        db.set_app_setting(&model_status_key(DISTIL_ID), "installed")
+            .expect("set model status");
+        drop(db);
+
+        let registry = VoiceProviderRegistry::new(model_dir.path().to_path_buf());
+        let provider = registry
+            .remove_provider_model(&db_path, DISTIL_ID)
+            .await
+            .expect("remove model");
+
+        assert!(!cache_path.exists());
+        assert_eq!(provider.status, VoiceProviderStatus::NeedsSetup);
+        let db = open_test_db(&db_path);
+        assert_eq!(
+            db.get_app_setting(&model_status_key(DISTIL_ID))
+                .expect("get model status"),
+            Some("not-installed".to_string())
+        );
+    }
 }

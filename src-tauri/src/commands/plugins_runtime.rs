@@ -203,10 +203,10 @@ pub async fn reseed_bundled_plugins(state: State<'_, AppState>) -> Result<Vec<St
             if let Some((plugin_name, tail)) = rest.split_once(':') {
                 if tail == "enabled" && value == "false" {
                     new_registry.set_disabled(plugin_name, true);
-                } else if let Some(setting_key) = tail.strip_prefix("setting:") {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&value) {
-                        new_registry.set_setting(plugin_name, setting_key, Some(v));
-                    }
+                } else if let Some(setting_key) = tail.strip_prefix("setting:")
+                    && let Ok(v) = serde_json::from_str::<serde_json::Value>(&value)
+                {
+                    new_registry.set_setting(plugin_name, setting_key, Some(v));
                 }
             }
         }

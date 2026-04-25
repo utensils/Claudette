@@ -148,18 +148,18 @@ fn main() {
     // user setting overrides) from app_settings so the very first call
     // after startup reflects what the user configured previously. Any
     // failure here is non-fatal: the registry just runs with defaults.
-    if let Ok(db) = Database::open(&db_path) {
-        if let Ok(entries) = db.list_app_settings_with_prefix("plugin:") {
-            for (key, value) in entries {
-                let rest = &key["plugin:".len()..];
-                if let Some((plugin_name, tail)) = rest.split_once(':') {
-                    if tail == "enabled" && value == "false" {
-                        plugins.set_disabled(plugin_name, true);
-                    } else if let Some(setting_key) = tail.strip_prefix("setting:") {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&value) {
-                            plugins.set_setting(plugin_name, setting_key, Some(v));
-                        }
-                    }
+    if let Ok(db) = Database::open(&db_path)
+        && let Ok(entries) = db.list_app_settings_with_prefix("plugin:")
+    {
+        for (key, value) in entries {
+            let rest = &key["plugin:".len()..];
+            if let Some((plugin_name, tail)) = rest.split_once(':') {
+                if tail == "enabled" && value == "false" {
+                    plugins.set_disabled(plugin_name, true);
+                } else if let Some(setting_key) = tail.strip_prefix("setting:")
+                    && let Ok(v) = serde_json::from_str::<serde_json::Value>(&value)
+                {
+                    plugins.set_setting(plugin_name, setting_key, Some(v));
                 }
             }
         }

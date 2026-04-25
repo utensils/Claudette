@@ -236,12 +236,11 @@ fn repo_worktree_paths(db: &Database, repo_id: &str) -> Vec<String> {
     let mut paths = vec![repo.path.clone()];
     if let Ok(workspaces) = db.list_workspaces() {
         for ws in workspaces {
-            if ws.repository_id == repo_id {
-                if let Some(wt) = ws.worktree_path {
-                    if wt != repo.path {
-                        paths.push(wt);
-                    }
-                }
+            if ws.repository_id == repo_id
+                && let Some(wt) = ws.worktree_path
+                && wt != repo.path
+            {
+                paths.push(wt);
             }
         }
     }
@@ -388,12 +387,11 @@ async fn resolve_trust_paths(state: &AppState, target: &EnvTarget) -> Result<Vec
             let mut paths = vec![repo.path.clone()];
             let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
             for ws in workspaces {
-                if ws.repository_id == *repo_id {
-                    if let Some(wt) = ws.worktree_path {
-                        if wt != repo.path {
-                            paths.push(wt);
-                        }
-                    }
+                if ws.repository_id == *repo_id
+                    && let Some(wt) = ws.worktree_path
+                    && wt != repo.path
+                {
+                    paths.push(wt);
                 }
             }
             Ok(paths)

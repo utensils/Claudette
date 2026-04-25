@@ -103,6 +103,7 @@ import { ScrollToBottomPill } from "./ScrollToBottomPill";
 import { useStickyScroll } from "../../hooks/useStickyScroll";
 import { useVoiceInput } from "../../hooks/useVoiceInput";
 import { debugChat } from "../../utils/chatDebug";
+import { insertTranscriptAtSelection } from "../../utils/voice";
 import styles from "./ChatPanel.module.css";
 import caretStyles from "./caret.module.css";
 
@@ -2267,20 +2268,14 @@ function ChatInputArea({
     const ta = textareaRef.current;
     const start = ta?.selectionStart ?? cursorPos;
     const end = ta?.selectionEnd ?? cursorPos;
-    const before = chatInput.slice(0, start);
-    const after = chatInput.slice(end);
-    const needsLeadingSpace = before.length > 0 && !/\s$/.test(before);
-    const needsTrailingSpace = after.length > 0 && !/^\s/.test(after);
-    const insertion = `${needsLeadingSpace ? " " : ""}${transcript}${needsTrailingSpace ? " " : ""}`;
-    const nextText = before + insertion + after;
-    const nextCursor = before.length + insertion.length;
-    setChatInput(nextText);
-    setCursorPos(nextCursor);
+    const next = insertTranscriptAtSelection(chatInput, transcript, start, end);
+    setChatInput(next.text);
+    setCursorPos(next.cursor);
     requestAnimationFrame(() => {
       const current = textareaRef.current;
       if (!current) return;
       current.focus();
-      current.selectionStart = current.selectionEnd = nextCursor;
+      current.selectionStart = current.selectionEnd = next.cursor;
     });
   }, [chatInput, cursorPos]);
 

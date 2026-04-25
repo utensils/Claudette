@@ -905,7 +905,7 @@ pub async fn run_turn(
 
     let mut child = cmd.spawn().map_err(|e| {
         crate::missing_cli::map_spawn_err(&e, "claude", || {
-            format!("Failed to spawn claude at {:?}: {e}", claude_path)
+            format!("Failed to spawn claude at {claude_path:?}: {e}")
         })
     })?;
 
@@ -1178,10 +1178,7 @@ impl PersistentSession {
 
         let mut child = cmd.spawn().map_err(|e| {
             crate::missing_cli::map_spawn_err(&e, "claude", || {
-                format!(
-                    "Failed to spawn persistent session at {:?}: {e}",
-                    claude_path
-                )
+                format!("Failed to spawn persistent session at {claude_path:?}: {e}")
             })
         })?;
 
@@ -1563,10 +1560,7 @@ pub async fn generate_branch_name(
 
     let output = cmd.output().await.map_err(|e| {
         crate::missing_cli::map_spawn_err(&e, "claude", || {
-            format!(
-                "Failed to spawn claude at {:?} for branch name: {e}",
-                claude_path
-            )
+            format!("Failed to spawn claude at {claude_path:?} for branch name: {e}")
         })
     })?;
 

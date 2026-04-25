@@ -13,7 +13,7 @@
 //! needing to pre-create an empty assistant message.
 
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use base64::Engine;
@@ -184,7 +184,7 @@ async fn send_attachment(
     BridgeResponse::ok(attachment_id)
 }
 
-fn persist_row(db_path: &PathBuf, row: &Attachment) -> Result<(), String> {
+fn persist_row(db_path: &Path, row: &Attachment) -> Result<(), String> {
     let db = Database::open(db_path).map_err(|e| format!("open: {e}"))?;
     db.insert_attachment(row)
         .map_err(|e| format!("insert: {e}"))

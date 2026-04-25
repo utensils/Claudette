@@ -65,11 +65,13 @@ pub async fn voice_start_recording(
     provider_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let db = open_db(&state)?;
-    state
-        .voice
-        .start_recording(&db, provider_id.as_deref())
-        .await
+    let provider_id = {
+        let db = open_db(&state)?;
+        state
+            .voice
+            .resolve_provider_id(&db, provider_id.as_deref())?
+    };
+    state.voice.start_recording(&provider_id).await
 }
 
 #[tauri::command]
@@ -77,11 +79,13 @@ pub async fn voice_stop_and_transcribe(
     provider_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let db = open_db(&state)?;
-    state
-        .voice
-        .stop_and_transcribe(&db, provider_id.as_deref())
-        .await
+    let provider_id = {
+        let db = open_db(&state)?;
+        state
+            .voice
+            .resolve_provider_id(&db, provider_id.as_deref())?
+    };
+    state.voice.stop_and_transcribe(&provider_id).await
 }
 
 #[tauri::command]
@@ -89,9 +93,11 @@ pub async fn voice_cancel_recording(
     provider_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let db = open_db(&state)?;
-    state
-        .voice
-        .cancel_recording(&db, provider_id.as_deref())
-        .await
+    let provider_id = {
+        let db = open_db(&state)?;
+        state
+            .voice
+            .resolve_provider_id(&db, provider_id.as_deref())?
+    };
+    state.voice.cancel_recording(&provider_id).await
 }

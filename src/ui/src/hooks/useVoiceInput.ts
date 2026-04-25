@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listVoiceProviders } from "../services/voice";
 import type { VoiceProviderInfo } from "../types/voice";
+import { chooseVoiceProvider } from "../utils/voice";
 
 type VoiceState =
   | "idle"
@@ -90,10 +91,7 @@ export function useVoiceInput(
   const platformSupported = Boolean(Recognition);
 
   useEffect(() => {
-    if (state !== "recording") {
-      setElapsedSeconds(0);
-      return;
-    }
+    if (state !== "recording") return;
     const started = Date.now();
     const interval = window.setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - started) / 1000));
@@ -127,15 +125,7 @@ export function useVoiceInput(
       return;
     }
 
-    const selected = providers.find((provider) => provider.selected);
-    const platform = providers.find((provider) => provider.id === "voice-platform-system");
-    const readyLocal = providers.find(
-      (candidate) =>
-        candidate.kind === "local-model" &&
-        candidate.enabled &&
-        candidate.status === "ready",
-    );
-    const provider = selected ?? readyLocal ?? platform ?? null;
+    const provider = chooseVoiceProvider(providers);
     setActiveProvider(provider);
 
     if (!provider) {
@@ -166,6 +156,7 @@ export function useVoiceInput(
     recognition.interimResults = true;
     recognition.lang = navigator.language || "en-US";
     recognition.onstart = () => {
+      setElapsedSeconds(0);
       setState("recording");
     };
     recognition.onresult = (event) => {

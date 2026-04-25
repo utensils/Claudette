@@ -682,7 +682,10 @@ mod tests {
 
     fn make_cache_with_usage(fetched_at: u64) -> RwLock<Option<UsageCacheEntry>> {
         RwLock::new(Some(UsageCacheEntry {
-            access_token: "tok".into(),
+            // Deliberately invalid header value so stale-cache tests exercise
+            // the non-401 fallback path without making a live authenticated
+            // API request when network is available locally.
+            access_token: "tok\ninvalid".into(),
             refresh_token: "ref".into(),
             token_expires_at: now_millis() + 3_600_000,
             subscription_type: Some("max".into()),
