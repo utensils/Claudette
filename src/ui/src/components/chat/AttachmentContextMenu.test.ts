@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { clampMenuToViewport } from "./AttachmentContextMenu";
+import {
+  attachmentNounFor,
+  buildAttachmentMenuLabels,
+  clampMenuToViewport,
+} from "./AttachmentContextMenu";
 
 // The component itself is thin wiring around a few DOM listeners and a
 // portal; its integration is verified manually in the running app. The
@@ -45,5 +49,58 @@ describe("clampMenuToViewport", () => {
   it("honors a custom margin", () => {
     const { x } = clampMenuToViewport(5, 100, 220, 80, 1200, 800, 16);
     expect(x).toBe(16);
+  });
+});
+
+describe("attachmentNounFor", () => {
+  // The default-image labels read awkwardly for PDFs and text files
+  // ("Download Image" for a PDF). Map media types to a sensible noun so
+  // the menu labels match the artifact kind. See issue #430.
+
+  it("returns 'Image' for raster image types", () => {
+    expect(attachmentNounFor("image/png")).toBe("Image");
+    expect(attachmentNounFor("image/jpeg")).toBe("Image");
+    expect(attachmentNounFor("image/gif")).toBe("Image");
+    expect(attachmentNounFor("image/webp")).toBe("Image");
+    expect(attachmentNounFor("image/svg+xml")).toBe("Image");
+  });
+
+  it("returns 'PDF' for application/pdf", () => {
+    expect(attachmentNounFor("application/pdf")).toBe("PDF");
+  });
+
+  it("returns 'File' for text/plain", () => {
+    expect(attachmentNounFor("text/plain")).toBe("File");
+  });
+
+  it("falls back to 'File' for anything else", () => {
+    expect(attachmentNounFor("application/octet-stream")).toBe("File");
+    expect(attachmentNounFor("")).toBe("File");
+  });
+});
+
+describe("buildAttachmentMenuLabels", () => {
+  it("uses 'Image' verbs for image attachments", () => {
+    expect(buildAttachmentMenuLabels("image/png")).toEqual({
+      download: "Download Image",
+      copy: "Copy Image",
+      open: "Open in New Window",
+    });
+  });
+
+  it("uses 'PDF' verbs for PDFs", () => {
+    expect(buildAttachmentMenuLabels("application/pdf")).toEqual({
+      download: "Download PDF",
+      copy: "Copy PDF",
+      open: "Open in New Window",
+    });
+  });
+
+  it("uses 'File' verbs for text/plain", () => {
+    expect(buildAttachmentMenuLabels("text/plain")).toEqual({
+      download: "Download File",
+      copy: "Copy File",
+      open: "Open in New Window",
+    });
   });
 });

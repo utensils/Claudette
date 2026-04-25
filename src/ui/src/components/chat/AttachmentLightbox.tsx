@@ -10,6 +10,10 @@ interface AttachmentLightboxProps {
   /** Element to return focus to on close — typically the originating <img>. */
   returnFocusTo?: HTMLElement | null;
   onClose: () => void;
+  /** Right-click handler for the previewed image. When set, suppresses the
+   *  WebKit default image context menu (Open in New Window, Copy Image, …)
+   *  and lets the caller surface its own attachment menu. See issue #433. */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -48,10 +52,24 @@ export function isBackdropDismiss(
   return target !== null && target === backdrop;
 }
 
+/**
+ * Pure: does this attachment need the SVG fallback minimum size in the
+ * lightbox? SVGs that only declare a viewBox (no width/height on the root
+ * <svg>) collapse to 0×0 when loaded through <img>, because the data URL
+ * sandbox doesn't expose intrinsic dimensions. Force a floor for those.
+ *
+ * Raster types always carry intrinsic pixel dimensions, so they don't need
+ * the fallback — applying it would also blow up tiny pixel-art images.
+ */
+export function needsSvgFallbackSize(mediaType: string): boolean {
+  return mediaType === "image/svg+xml";
+}
+
 export function AttachmentLightbox({
   attachment,
   returnFocusTo,
   onClose,
+  onContextMenu,
 }: AttachmentLightboxProps) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -134,8 +152,13 @@ export function AttachmentLightbox({
         <img
           src={src}
           alt={attachment.filename}
-          className={styles.image}
+          className={
+            needsSvgFallbackSize(attachment.media_type)
+              ? `${styles.image} ${styles.imageSvg}`
+              : styles.image
+          }
           draggable={false}
+          onContextMenu={onContextMenu}
         />
       </div>
       <div className={styles.caption}>{attachment.filename}</div>

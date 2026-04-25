@@ -32,6 +32,15 @@
   cursor: default;
 }
 
+/* SVGs that only declare a viewBox (no width/height attrs on <svg>) have no
+   intrinsic pixel dimensions when loaded through <img>, so the lightbox
+   collapses to 0×0. Force a generous floor so the rendered SVG fills the
+   wrap and scales up via the existing max-width/max-height ceiling. */
+.imageSvg {
+  min-width: min(480px, calc(100vw - 64px));
+  min-height: min(480px, calc(100vh - 128px));
+}
+
 .caption {
   color: var(--text-primary);
   font-size: 13px;

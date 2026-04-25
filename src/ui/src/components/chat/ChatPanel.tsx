@@ -57,7 +57,10 @@ import { ContextPopover } from "./composer/ContextPopover";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
 import { AttachMenu } from "./AttachMenu";
-import { AttachmentContextMenu } from "./AttachmentContextMenu";
+import {
+  AttachmentContextMenu,
+  buildAttachmentMenuLabels,
+} from "./AttachmentContextMenu";
 import { AttachmentLightbox } from "./AttachmentLightbox";
 import {
   downloadAttachment,
@@ -130,11 +133,15 @@ function formatDurationMs(ms: number): string {
  * (fetches the body from the backend on demand). Shows a loading pill with
  * the filename while the thumbnail generates.
  */
-function PdfThumbnail({ dataBase64, attachmentId, filename, className }: {
+function PdfThumbnail({ dataBase64, attachmentId, filename, className, onContextMenu }: {
   dataBase64?: string;
   attachmentId?: string;
   filename: string;
   className?: string;
+  /** Right-click handler. Wired so PDF thumbnails get the same Claudette
+   *  context menu (Download / Copy / Open) as image attachments rather than
+   *  WebKit's default image menu. See issue #430. */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
@@ -159,13 +166,13 @@ function PdfThumbnail({ dataBase64, attachmentId, filename, className }: {
 
   if (!src) {
     return (
-      <div className={styles.messagePdf}>
+      <div className={styles.messagePdf} onContextMenu={onContextMenu}>
         <FileText size={16} />
         <span>{filename}</span>
       </div>
     );
   }
-  return <img src={src} alt={filename} className={className} />;
+  return <img src={src} alt={filename} className={className} onContextMenu={onContextMenu} />;
 }
 
 /** Semantic colors for tool names — makes tool activity scannable at a glance. */
@@ -1092,56 +1099,62 @@ export function ChatPanel() {
         onAttachmentContextMenu={openAttachmentMenu}
         onAttachmentClick={openLightbox}
       />
-      {attachmentMenu && (
-        <AttachmentContextMenu
-          x={attachmentMenu.x}
-          y={attachmentMenu.y}
-          onClose={() => setAttachmentMenu(null)}
-          items={[
-            {
-              label: "Download Image",
-              onSelect: () => {
-                downloadAttachment(attachmentMenu.attachment).catch((err) =>
-                  console.error("Download failed:", err),
-                );
+      {attachmentMenu && (() => {
+        const labels = buildAttachmentMenuLabels(
+          attachmentMenu.attachment.media_type,
+        );
+        return (
+          <AttachmentContextMenu
+            x={attachmentMenu.x}
+            y={attachmentMenu.y}
+            onClose={() => setAttachmentMenu(null)}
+            items={[
+              {
+                label: labels.download,
+                onSelect: () => {
+                  downloadAttachment(attachmentMenu.attachment).catch((err) =>
+                    console.error("Download failed:", err),
+                  );
+                },
               },
-            },
-            {
-              label: "Copy Image",
-              onSelect: () => {
-                copyAttachmentToClipboard(attachmentMenu.attachment).catch(
-                  (err) => console.error("Copy failed:", err),
-                );
+              {
+                label: labels.copy,
+                onSelect: () => {
+                  copyAttachmentToClipboard(attachmentMenu.attachment).catch(
+                    (err) => console.error("Copy failed:", err),
+                  );
+                },
               },
-            },
-            {
-              label: "Open in New Window",
-              onSelect: () => {
-                openAttachmentInBrowser(attachmentMenu.attachment).catch(
-                  (err) => console.error("Open in browser failed:", err),
-                );
+              {
+                label: labels.open,
+                onSelect: () => {
+                  openAttachmentInBrowser(attachmentMenu.attachment).catch(
+                    (err) => console.error("Open in browser failed:", err),
+                  );
+                },
               },
-            },
-            ...(shareSupported
-              ? [
-                  {
-                    label: "Share…",
-                    onSelect: () => {
-                      shareAttachment(attachmentMenu.attachment).catch((err) =>
-                        console.error("Share failed:", err),
-                      );
+              ...(shareSupported
+                ? [
+                    {
+                      label: "Share…",
+                      onSelect: () => {
+                        shareAttachment(attachmentMenu.attachment).catch((err) =>
+                          console.error("Share failed:", err),
+                        );
+                      },
                     },
-                  },
-                ]
-              : []),
-          ]}
-        />
-      )}
+                  ]
+                : []),
+            ]}
+          />
+        );
+      })()}
       {lightbox && (
         <AttachmentLightbox
           attachment={lightbox.attachment}
           returnFocusTo={lightbox.returnFocus}
           onClose={() => setLightbox(null)}
+          onContextMenu={(e) => openAttachmentMenu(e, lightbox.attachment)}
         />
       )}
     </div>
@@ -1846,9 +1859,26 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                         attachmentId={att.id}
                         filename={att.filename}
                         className={styles.messageImage}
+                        onContextMenu={(e) =>
+                          onAttachmentContextMenu?.(e, {
+                            filename: att.filename,
+                            media_type: att.media_type,
+                            data_base64: att.data_base64,
+                          })
+                        }
                       />
                     ) : att.media_type === "text/plain" ? (
-                      <div key={att.id} className={styles.messagePdf}>
+                      <div
+                        key={att.id}
+                        className={styles.messagePdf}
+                        onContextMenu={(e) =>
+                          onAttachmentContextMenu?.(e, {
+                            filename: att.filename,
+                            media_type: att.media_type,
+                            data_base64: att.data_base64,
+                          })
+                        }
+                      >
                         <FileText size={14} />
                         <span>{att.filename}</span>
                         <span className={styles.textFileSize}>
