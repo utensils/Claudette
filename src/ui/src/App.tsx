@@ -143,7 +143,7 @@ function App() {
       .then((val) => { if (val === "true") setPluginManagementEnabled(true); })
       .catch(() => {});
     getHostEnvFlags()
-      .then(({ disable1mContext }) => { if (disable1mContext) setDisable1mContext(true); })
+      .then(({ disable_1m_context }) => { if (disable_1m_context) setDisable1mContext(true); })
       .catch(() => {});
 
     // Listen for terminal command events

@@ -674,7 +674,7 @@ export function setAppSetting(key: string, value: string): Promise<void> {
   return invoke("set_app_setting", { key, value });
 }
 
-export function getHostEnvFlags(): Promise<{ disable1mContext: boolean }> {
+export function getHostEnvFlags(): Promise<{ disable_1m_context: boolean }> {
   return invoke("get_host_env_flags");
 }
 
