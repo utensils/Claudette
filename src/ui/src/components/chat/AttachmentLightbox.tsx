@@ -10,6 +10,10 @@ interface AttachmentLightboxProps {
   /** Element to return focus to on close — typically the originating <img>. */
   returnFocusTo?: HTMLElement | null;
   onClose: () => void;
+  /** Right-click handler for the previewed image. When set, suppresses the
+   *  WebKit default image context menu (Open in New Window, Copy Image, …)
+   *  and lets the caller surface its own attachment menu. See issue 433. */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -48,10 +52,29 @@ export function isBackdropDismiss(
   return target !== null && target === backdrop;
 }
 
+/**
+ * Pure: should the lightbox apply the SVG fallback minimum size to this
+ * attachment? Returns true for *any* `image/svg+xml` regardless of
+ * whether the root `<svg>` declares explicit width/height — detecting the
+ * viewBox-only subset would require decoding the data URL and parsing
+ * the markup, which is more work than the value justifies. The
+ * `min-width`/`min-height` floor is a no-op for SVGs that already render
+ * larger than the floor (max-width / max-height still cap them), so
+ * applying it broadly is safe.
+ *
+ * Raster types always carry intrinsic pixel dimensions, so they don't
+ * need the fallback — and applying a 480px floor would visibly upscale
+ * tiny pixel-art images.
+ */
+export function needsSvgFallbackSize(mediaType: string): boolean {
+  return mediaType === "image/svg+xml";
+}
+
 export function AttachmentLightbox({
   attachment,
   returnFocusTo,
   onClose,
+  onContextMenu,
 }: AttachmentLightboxProps) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -134,8 +157,13 @@ export function AttachmentLightbox({
         <img
           src={src}
           alt={attachment.filename}
-          className={styles.image}
+          className={
+            needsSvgFallbackSize(attachment.media_type)
+              ? `${styles.image} ${styles.imageSvg}`
+              : styles.image
+          }
           draggable={false}
+          onContextMenu={onContextMenu}
         />
       </div>
       <div className={styles.caption}>{attachment.filename}</div>

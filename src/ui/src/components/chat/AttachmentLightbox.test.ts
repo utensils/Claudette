@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isBackdropDismiss,
+  needsSvgFallbackSize,
   nextFocusTarget,
 } from "./AttachmentLightbox";
 
@@ -58,5 +59,28 @@ describe("nextFocusTarget", () => {
 
   it("Shift+Tab from an element outside the trap also pulls focus to close", () => {
     expect(nextFocusTarget(null, true, close, wrap)).toBe(close);
+  });
+});
+
+describe("needsSvgFallbackSize", () => {
+  // SVGs with only a viewBox (no width/height attributes on <svg>) have no
+  // intrinsic pixel dimensions when loaded through <img>, so the lightbox
+  // collapses to 0×0. Other image types always carry intrinsic pixel
+  // dimensions, so they don't need the fallback. See issue 432.
+
+  it("returns true for image/svg+xml", () => {
+    expect(needsSvgFallbackSize("image/svg+xml")).toBe(true);
+  });
+
+  it("returns false for raster image types", () => {
+    expect(needsSvgFallbackSize("image/png")).toBe(false);
+    expect(needsSvgFallbackSize("image/jpeg")).toBe(false);
+    expect(needsSvgFallbackSize("image/gif")).toBe(false);
+    expect(needsSvgFallbackSize("image/webp")).toBe(false);
+  });
+
+  it("returns false for non-image types", () => {
+    expect(needsSvgFallbackSize("application/pdf")).toBe(false);
+    expect(needsSvgFallbackSize("text/plain")).toBe(false);
   });
 });

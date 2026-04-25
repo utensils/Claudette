@@ -243,6 +243,218 @@ pub async fn open_attachment_in_browser(
     })
 }
 
+/// Pick a sensible file extension for a media type. Used when staging an
+/// attachment to a temp file so the OS routes the open-with handler to the
+/// right app (e.g. `.pdf` → Preview / Adobe / etc).
+///
+/// Common types that have a canonical extension different from their MIME
+/// subtype (`text/plain` → `txt`, `image/jpeg` → `jpg`, `+json` types → `json`)
+/// get an explicit mapping. Everything else falls back to the subtype with
+/// any `+xml` / `+json` suffix stripped.
+///
+/// Returns a `Cow<'static, str>` so the explicit-map cases (the common
+/// path) cost nothing, while the catch-all case yields an owned `String`
+/// without leaking memory across sessions.
+fn extension_for_media_type(media_type: &str) -> std::borrow::Cow<'static, str> {
+    use std::borrow::Cow;
+    match media_type {
+        "text/plain" => return Cow::Borrowed("txt"),
+        "text/html" => return Cow::Borrowed("html"),
+        "text/css" => return Cow::Borrowed("css"),
+        "text/javascript" | "application/javascript" => return Cow::Borrowed("js"),
+        "image/jpeg" => return Cow::Borrowed("jpg"),
+        "image/svg+xml" => return Cow::Borrowed("svg"),
+        "application/pdf" => return Cow::Borrowed("pdf"),
+        "application/json" => return Cow::Borrowed("json"),
+        "application/zip" => return Cow::Borrowed("zip"),
+        _ => {}
+    }
+    // `+json` suffixed types (application/ld+json, application/vnd.api+json…)
+    // route to the json viewer naturally.
+    if media_type.ends_with("+json") {
+        return Cow::Borrowed("json");
+    }
+    if media_type.ends_with("+xml") {
+        return Cow::Borrowed("xml");
+    }
+    // Last-resort fallback: trust the subtype iff it looks safe.
+    let after_slash = media_type.rsplit_once('/').map(|p| p.1).unwrap_or("");
+    if !after_slash.is_empty()
+        && after_slash
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+    {
+        Cow::Owned(after_slash.to_string())
+    } else {
+        Cow::Borrowed("bin")
+    }
+}
+
+/// Write attachment bytes to a temp file using the natural file extension
+/// for the media type. Unlike [`write_image_as_html`], this writes the raw
+/// bytes (no wrapper) so `open` routes to the system default handler for
+/// the format — Preview / Adobe Reader for PDFs, etc.
+///
+/// On Unix the file is created with `0o600` (owner read/write only) so
+/// other local accounts can't peek at potentially sensitive content
+/// stashed under the shared temp dir.
+pub fn write_attachment_to_temp_file(
+    dir: &Path,
+    filename: &str,
+    media_type: &str,
+    bytes: &[u8],
+) -> std::io::Result<PathBuf> {
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("attachment");
+    let safe_stem = sanitize_stem(stem);
+    let ext = extension_for_media_type(media_type);
+    // Unique nanosecond suffix so re-opening the same attachment twice
+    // doesn't overwrite a staged file that the system viewer may still
+    // be holding open.
+    let unique: u128 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = dir.join(format!("{safe_stem}-{unique}.{ext}"));
+    write_owner_only(&path, bytes)?;
+    Ok(path)
+}
+
+/// Write `bytes` to `path`, creating the file with restrictive permissions
+/// on Unix (`0o600`). On Windows ACLs handle this differently — a regular
+/// `fs::write` is fine.
+fn write_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        f.write_all(bytes)?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, bytes)
+    }
+}
+
+/// Create the staging directory with restrictive permissions on Unix
+/// (`0o700`) so other accounts can't list or read the staged files. If
+/// the path already exists we verify it's a real directory (not a file
+/// or symlink that could redirect writes elsewhere) and re-tighten the
+/// permissions on Unix in case a previous run created it with a wider
+/// umask.
+fn create_staging_dir(dir: &Path) -> std::io::Result<()> {
+    if dir.exists() {
+        // `symlink_metadata` doesn't follow symlinks — it tells us
+        // whether the *path entry* is a directory, so a malicious link
+        // to /etc can't satisfy the check.
+        let meta = std::fs::symlink_metadata(dir)?;
+        if !meta.file_type().is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "staging path {} exists and is not a directory",
+                    dir.display()
+                ),
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = meta.permissions().mode() & 0o777;
+            if mode != 0o700 {
+                std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+            }
+        }
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(dir)
+    }
+}
+
+/// Remove staged attachments older than `max_age` from `dir`. Used to keep
+/// the temp staging directory from growing unboundedly across sessions —
+/// PDFs in particular can be 10+ MB each. Errors during cleanup are
+/// swallowed: a stale file that we couldn't delete this run will be tried
+/// again on the next open.
+pub fn cleanup_stale_attachments(dir: &Path, max_age: std::time::Duration) {
+    cleanup_stale_attachments_at(dir, max_age, std::time::SystemTime::now());
+}
+
+/// Testable variant of [`cleanup_stale_attachments`] — `now` is injected
+/// so the test doesn't need to manipulate file mtimes.
+fn cleanup_stale_attachments_at(
+    dir: &Path,
+    max_age: std::time::Duration,
+    now: std::time::SystemTime,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        let Ok(age) = now.duration_since(modified) else {
+            continue;
+        };
+        if age >= max_age {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Open an attachment with the system's default handler for its media
+/// type (e.g. PDF → Preview on macOS, the user's PDF reader on Linux /
+/// Windows). Bytes are staged to a temp file under the OS temp dir with
+/// owner-only permissions; stale stages older than 24 h are reaped on
+/// each open so the directory doesn't grow without bound.
+#[tauri::command]
+pub async fn open_attachment_with_default_app(
+    bytes: Vec<u8>,
+    filename: String,
+    media_type: String,
+) -> Result<(), String> {
+    let dir = std::env::temp_dir().join("claudette-attachments");
+    tokio::task::spawn_blocking(move || -> Result<PathBuf, String> {
+        create_staging_dir(&dir).map_err(|e| format!("mkdir temp dir: {e}"))?;
+        // Reap files older than a day — keeps the directory bounded
+        // without yanking the rug out from under an app the user may
+        // still have open. Cleanup errors are non-fatal.
+        cleanup_stale_attachments(&dir, std::time::Duration::from_secs(24 * 60 * 60));
+        write_attachment_to_temp_file(&dir, &filename, &media_type, &bytes)
+            .map_err(|e| format!("write attachment: {e}"))
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+    .and_then(|path| {
+        crate::commands::shell::opener::open(&path.to_string_lossy())
+            .map_err(|e| format!("open failed: {e}"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +527,157 @@ mod tests {
     #[test]
     fn html_escape_handles_special_chars() {
         assert_eq!(html_escape(r#"a<b>&"c"#), "a&lt;b&gt;&amp;&quot;c");
+    }
+
+    #[test]
+    fn extension_for_media_type_picks_pdf_for_pdf_type() {
+        assert_eq!(extension_for_media_type("application/pdf"), "pdf");
+    }
+
+    #[test]
+    fn extension_for_media_type_uses_real_extensions_not_subtypes() {
+        // text/plain → txt (not "plain"); subtypes that aren't valid file
+        // extensions get a sensible mapping so the OS routes to the right
+        // viewer/editor.
+        assert_eq!(extension_for_media_type("text/plain"), "txt");
+        assert_eq!(extension_for_media_type("application/json"), "json");
+        assert_eq!(extension_for_media_type("application/ld+json"), "json");
+        assert_eq!(extension_for_media_type("text/html"), "html");
+    }
+
+    #[test]
+    fn extension_for_media_type_strips_xml_suffix() {
+        assert_eq!(extension_for_media_type("image/svg+xml"), "svg");
+    }
+
+    #[test]
+    fn extension_for_media_type_falls_back_to_bin_for_opaque_types() {
+        assert_eq!(
+            extension_for_media_type("application/x-something weird"),
+            "bin"
+        );
+    }
+
+    #[test]
+    fn write_attachment_to_temp_file_uses_natural_extension() {
+        let dir = tempdir().unwrap();
+        let path = write_attachment_to_temp_file(
+            dir.path(),
+            "claude-system-card.pdf",
+            "application/pdf",
+            b"%PDF-1.4 fake",
+        )
+        .unwrap();
+        assert_eq!(path.extension().unwrap(), "pdf");
+        assert_eq!(std::fs::read(&path).unwrap(), b"%PDF-1.4 fake");
+    }
+
+    #[test]
+    fn write_attachment_to_temp_file_sanitizes_filename() {
+        let dir = tempdir().unwrap();
+        let path = write_attachment_to_temp_file(
+            dir.path(),
+            "hello world.pdf",
+            "application/pdf",
+            b"%PDF",
+        )
+        .unwrap();
+        let stem = path.file_stem().unwrap().to_str().unwrap();
+        assert!(!stem.contains(' '));
+        assert!(stem.starts_with("hello_world"));
+    }
+
+    #[test]
+    fn write_attachment_to_temp_file_uses_unique_suffix() {
+        let dir = tempdir().unwrap();
+        let p1 =
+            write_attachment_to_temp_file(dir.path(), "doc.pdf", "application/pdf", b"a").unwrap();
+        std::thread::sleep(std::time::Duration::from_nanos(1));
+        let p2 =
+            write_attachment_to_temp_file(dir.path(), "doc.pdf", "application/pdf", b"b").unwrap();
+        assert_ne!(p1, p2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_attachment_to_temp_file_uses_owner_only_perms() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempdir().unwrap();
+        let path =
+            write_attachment_to_temp_file(dir.path(), "secret.pdf", "application/pdf", b"%PDF")
+                .unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        // Only the owner should be able to read the staged file — these
+        // can contain user data that other local accounts shouldn't see.
+        assert_eq!(mode, 0o600, "expected 0o600, got {mode:o}");
+    }
+
+    #[test]
+    fn cleanup_stale_attachments_removes_old_files() {
+        use std::time::Duration;
+        let dir = tempdir().unwrap();
+        let old_path = dir.path().join("old.pdf");
+        let fresh_path = dir.path().join("fresh.pdf");
+        std::fs::write(&old_path, b"old").unwrap();
+        // Sleep so the fresh file has a strictly newer mtime than the old
+        // one (file system mtime resolution is ~1 ms on most platforms).
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(&fresh_path, b"fresh").unwrap();
+
+        // Pretend "now" is far in the future, just past the fresh file's
+        // mtime — the old file lands beyond the cleanup threshold while
+        // the fresh one is still inside it.
+        let fresh_mtime = std::fs::metadata(&fresh_path).unwrap().modified().unwrap();
+        let now = fresh_mtime + Duration::from_millis(5);
+        cleanup_stale_attachments_at(dir.path(), Duration::from_millis(15), now);
+
+        assert!(!old_path.exists(), "old file should be removed");
+        assert!(fresh_path.exists(), "fresh file should be kept");
+    }
+
+    #[test]
+    fn cleanup_stale_attachments_is_noop_when_dir_missing() {
+        // Must not panic / error when the staging directory hasn't been
+        // created yet (first ever open after install).
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        cleanup_stale_attachments_at(
+            &missing,
+            std::time::Duration::from_secs(0),
+            std::time::SystemTime::now(),
+        );
+    }
+
+    #[test]
+    fn create_staging_dir_creates_when_missing() {
+        let parent = tempdir().unwrap();
+        let target = parent.path().join("claudette-staging");
+        assert!(!target.exists());
+        create_staging_dir(&target).unwrap();
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    fn create_staging_dir_rejects_a_regular_file_at_the_path() {
+        let parent = tempdir().unwrap();
+        let target = parent.path().join("not-a-dir");
+        std::fs::write(&target, b"oops").unwrap();
+        let err = create_staging_dir(&target).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_staging_dir_tightens_permissions_on_existing_dir() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let parent = tempdir().unwrap();
+        let target = parent.path().join("loose-dir");
+        // Pre-create with a wider mode (e.g. a previous run with a
+        // permissive umask).
+        std::fs::create_dir(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_staging_dir(&target).unwrap();
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "expected 0o700, got {mode:o}");
     }
 }
