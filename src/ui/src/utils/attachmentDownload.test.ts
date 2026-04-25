@@ -21,6 +21,7 @@ import {
   extensionFor,
   downloadAttachment,
   openAttachmentInBrowser,
+  openAttachmentWithDefaultApp,
   copyAttachmentToClipboard,
   shareAttachment,
   isShareSupported,
@@ -124,6 +125,27 @@ describe("openAttachmentInBrowser", () => {
   });
 });
 
+describe("openAttachmentWithDefaultApp", () => {
+  // The HTML-wrapper path renders bytes inside <img>, which produces a
+  // broken page for PDFs (and anything else that isn't an image). This
+  // helper stages the bytes to a real file and lets the OS route to the
+  // appropriate viewer (Preview, Adobe, etc).
+  it("invokes open_attachment_with_default_app with decoded bytes", async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    const pdf: DownloadableAttachment = {
+      filename: "doc.pdf",
+      media_type: "application/pdf",
+      data_base64: "JVBERi0=", // %PDF-
+    };
+    await openAttachmentWithDefaultApp(pdf, { invoke });
+    expect(invoke).toHaveBeenCalledWith("open_attachment_with_default_app", {
+      bytes: [37, 80, 68, 70, 45],
+      filename: "doc.pdf",
+      mediaType: "application/pdf",
+    });
+  });
+});
+
 describe("copyAttachmentToClipboard", () => {
   it("writes a ClipboardItem via navigator.clipboard.write", async () => {
     const write = vi.fn().mockResolvedValue(undefined);
@@ -149,6 +171,25 @@ describe("copyAttachmentToClipboard", () => {
         clipboard: { write } as unknown as Clipboard,
       }),
     ).rejects.toThrow("denied");
+  });
+
+  // WebKit silently drops image/svg+xml ClipboardItems, so a copied SVG
+  // would never reach the system clipboard. Production routes SVGs
+  // through Tauri's writeText, which bypasses the WKWebView allowlist.
+  it("writes SVG attachments via the injected writeText (Tauri clipboard)", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const svgFixture: DownloadableAttachment = {
+      filename: "drawing.svg",
+      data_base64: "PHN2Zy8+", // base64 of '<svg/>'
+      media_type: "image/svg+xml",
+    };
+    await copyAttachmentToClipboard(svgFixture, {
+      clipboard: { write } as unknown as Clipboard,
+      writeText,
+    });
+    expect(writeText).toHaveBeenCalledWith("<svg/>");
+    expect(write).not.toHaveBeenCalled();
   });
 });
 
