@@ -385,6 +385,32 @@ pub async fn revert_file(
     Ok(())
 }
 
+/// Discard worktree changes for a single file from the Changes sidebar.
+///
+/// - `is_untracked = false`: runs `git restore -- <file>`, which restores the
+///   worktree copy from the index. Any staged changes are preserved.
+/// - `is_untracked = true`: deletes the file from disk via `fs::remove_file`.
+///
+/// This is distinct from [`revert_file`], which restores all the way back to
+/// the merge base and so also discards staged changes.
+pub async fn discard_file(
+    worktree_path: &str,
+    file_path: &str,
+    is_untracked: bool,
+) -> Result<(), DiffError> {
+    validate_file_path(file_path)?;
+
+    if is_untracked {
+        let full_path = Path::new(worktree_path).join(file_path);
+        tokio::fs::remove_file(&full_path)
+            .await
+            .map_err(|e| DiffError::CommandFailed(e.to_string()))?;
+    } else {
+        run_git(worktree_path, &["restore", "--", file_path]).await?;
+    }
+    Ok(())
+}
+
 /// Parse unified diff output into structured data.
 pub fn parse_unified_diff(raw: &str, path: &str) -> FileDiff {
     if raw.contains("Binary files") && raw.contains("differ") {
@@ -1069,6 +1095,118 @@ mod integration_tests {
         .unwrap();
 
         assert!(!tmp.path().join("new_file.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_discard_unstaged_modified_restores_from_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        git_cmd(dir, &["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("file.txt"), "original\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        // Unstaged modification
+        std::fs::write(dir.join("file.txt"), "modified\n").unwrap();
+
+        discard_file(dir.to_str().unwrap(), "file.txt", false)
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(dir.join("file.txt")).unwrap();
+        assert_eq!(content, "original\n");
+    }
+
+    #[tokio::test]
+    async fn test_discard_unstaged_modified_preserves_staged_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        git_cmd(dir, &["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("file.txt"), "v1\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        // Stage v2, then add an unstaged v3 layer on top
+        std::fs::write(dir.join("file.txt"), "v2\n").unwrap();
+        git_cmd(dir, &["add", "file.txt"]);
+        std::fs::write(dir.join("file.txt"), "v3\n").unwrap();
+
+        discard_file(dir.to_str().unwrap(), "file.txt", false)
+            .await
+            .unwrap();
+
+        // Worktree restored to staged copy (v2), staged changes still present
+        let content = std::fs::read_to_string(dir.join("file.txt")).unwrap();
+        assert_eq!(content, "v2\n");
+
+        // Confirm v2 is still staged
+        let staged_diff = git_cmd(dir, &["diff", "--cached", "--", "file.txt"]);
+        assert!(staged_diff.contains("+v2"));
+    }
+
+    #[tokio::test]
+    async fn test_discard_unstaged_deleted_restores_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        git_cmd(dir, &["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("keep.txt"), "keep\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        std::fs::remove_file(dir.join("keep.txt")).unwrap();
+
+        discard_file(dir.to_str().unwrap(), "keep.txt", false)
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(dir.join("keep.txt")).unwrap();
+        assert_eq!(content, "keep\n");
+    }
+
+    #[tokio::test]
+    async fn test_discard_untracked_file_removes_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        std::fs::write(dir.join("base.txt"), "base\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        std::fs::write(dir.join("new.txt"), "untracked\n").unwrap();
+        assert!(dir.join("new.txt").exists());
+
+        discard_file(dir.to_str().unwrap(), "new.txt", true)
+            .await
+            .unwrap();
+
+        assert!(!dir.join("new.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_discard_rejects_path_traversal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        git_cmd(dir, &["init", "-b", "main"]);
+
+        let err = discard_file(dir.to_str().unwrap(), "../etc/passwd", true)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DiffError::CommandFailed(_)));
     }
 
     #[tokio::test]

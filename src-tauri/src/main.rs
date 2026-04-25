@@ -492,6 +492,7 @@ fn main() {
             commands::diff::load_diff_files,
             commands::diff::load_file_diff,
             commands::diff::revert_file,
+            commands::diff::discard_file,
             // Terminal
             commands::terminal::create_terminal_tab,
             commands::terminal::delete_terminal_tab,

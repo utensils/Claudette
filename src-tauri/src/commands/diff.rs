@@ -100,3 +100,14 @@ pub async fn revert_file(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn discard_file(
+    worktree_path: String,
+    file_path: String,
+    is_untracked: bool,
+) -> Result<(), String> {
+    diff::discard_file(&worktree_path, &file_path, is_untracked)
+        .await
+        .map_err(|e| e.to_string())
+}

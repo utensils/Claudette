@@ -118,6 +118,40 @@
   background: var(--selected-bg);
 }
 
+/* Hover-revealed action (e.g. discard) for unstaged/untracked rows. Hidden
+ * by default to keep the row uncluttered; appears on hover/focus or when
+ * the row is selected so keyboard users can reach it. */
+.rowAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast),
+    color var(--transition-fast),
+    background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.file:hover .rowAction,
+.fileSelected .rowAction,
+.rowAction:focus-visible {
+  opacity: 1;
+}
+
+.rowAction:hover {
+  background: var(--hover-bg);
+  color: var(--diff-removed-text);
+}
+
 .status {
   font-weight: 700;
   width: 14px;

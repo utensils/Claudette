@@ -1,15 +1,26 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { isAgentBusy } from "../../utils/agentStatus";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Undo2, Trash2 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { useTaskTracker } from "../../hooks/useTaskTracker";
-import { loadDiffFiles, sendRemoteCommand } from "../../services/tauri";
+import { discardFile, loadDiffFiles, sendRemoteCommand } from "../../services/tauri";
 import type { DiffFilesResult } from "../../services/tauri";
 import type { DiffFile, DiffLayer } from "../../types/diff";
+import {
+  AttachmentContextMenu,
+  type AttachmentContextMenuItem,
+} from "../chat/AttachmentContextMenu";
 import { TaskList } from "./TaskList";
 import { ScmPanel } from "./ScmPanel";
 import { PrStatusBanner } from "./PrStatusBanner";
+import { DiscardChangesConfirm } from "./DiscardChangesConfirm";
 import styles from "./RightSidebar.module.css";
+
+type DiscardableLayer = "unstaged" | "untracked";
+
+function isDiscardableLayer(layer: DiffLayer | undefined): layer is DiscardableLayer {
+  return layer === "unstaged" || layer === "untracked";
+}
 
 export const RightSidebar = memo(function RightSidebar() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
@@ -30,9 +41,21 @@ export const RightSidebar = memo(function RightSidebar() {
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
   const isRunning = isAgentBusy(ws?.agent_status);
   const remoteConnectionId = ws?.remote_connection_id ?? null;
+  const worktreePath = ws?.worktree_path ?? null;
   const prevIsRunning = useRef<boolean | undefined>(undefined);
 
   const { totalCount: taskCount } = useTaskTracker(selectedWorkspaceId);
+
+  // Discard-changes UI state. Local-only — discard isn't bridged through the
+  // remote server (matches revert_file), so the action is hidden when the
+  // workspace is connected to a remote.
+  const [discardTarget, setDiscardTarget] = useState<
+    { file: DiffFile; layer: DiscardableLayer } | null
+  >(null);
+  const [contextMenu, setContextMenu] = useState<
+    { x: number; y: number; file: DiffFile; layer: DiscardableLayer } | null
+  >(null);
+  const discardEnabled = !remoteConnectionId && worktreePath != null;
 
   // Load diff files for either local or remote workspace
   const loadDiff = useCallback(
@@ -148,11 +171,27 @@ export const RightSidebar = memo(function RightSidebar() {
   const renderFileRow = (file: DiffFile, layer?: DiffLayer) => {
     const isSelected = diffSelectedFile === file.path
       && (diffSelectedLayer ?? "flat") === (layer ?? "flat");
+    const canDiscard = discardEnabled && isDiscardableLayer(layer);
+
+    const handleContextMenu = (e: React.MouseEvent) => {
+      if (!canDiscard) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, file, layer });
+    };
+
+    const handleDiscardClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!canDiscard) return;
+      setDiscardTarget({ file, layer });
+    };
+
     return (
     <div
       key={`${layer ?? "flat"}-${file.path}`}
       className={`${styles.file} ${isSelected ? styles.fileSelected : ""}`}
       onClick={() => setDiffSelectedFile(file.path, layer)}
+      onContextMenu={handleContextMenu}
     >
       <span
         className={styles.status}
@@ -171,9 +210,50 @@ export const RightSidebar = memo(function RightSidebar() {
           )}
         </span>
       )}
+      {canDiscard && (
+        <button
+          type="button"
+          className={styles.rowAction}
+          onClick={handleDiscardClick}
+          title={
+            layer === "untracked"
+              ? `Delete ${file.path}`
+              : `Discard changes to ${file.path}`
+          }
+          aria-label={
+            layer === "untracked"
+              ? `Delete ${file.path}`
+              : `Discard changes to ${file.path}`
+          }
+        >
+          {layer === "untracked" ? (
+            <Trash2 size={12} />
+          ) : (
+            <Undo2 size={12} />
+          )}
+        </button>
+      )}
     </div>
     );
   };
+
+  const performDiscard = useCallback(
+    async (filePath: string, layer: DiscardableLayer) => {
+      if (!worktreePath || !selectedWorkspaceId) return;
+      await discardFile(worktreePath, filePath, layer === "untracked");
+
+      // Clear selection if the discarded file was selected so the diff
+      // viewer doesn't keep displaying a stale entry.
+      const state = useAppStore.getState();
+      if (state.diffSelectedFile === filePath) {
+        state.setDiffSelectedFile(null);
+      }
+
+      const result = await loadDiff(selectedWorkspaceId);
+      applyDiffResult(result);
+    },
+    [worktreePath, selectedWorkspaceId, loadDiff, applyDiffResult]
+  );
 
   // Determine if we have grouped data to show
   const hasGrouped = diffStagedFiles &&
@@ -283,9 +363,43 @@ export const RightSidebar = memo(function RightSidebar() {
       )}
 
       {activeTab === "scm" && <ScmPanel />}
+
+      {contextMenu && (
+        <AttachmentContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={buildDiscardMenuItems(contextMenu.layer, () => {
+            setDiscardTarget({ file: contextMenu.file, layer: contextMenu.layer });
+          })}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {discardTarget && (
+        <DiscardChangesConfirm
+          filePath={discardTarget.file.path}
+          layer={discardTarget.layer}
+          onConfirm={() => performDiscard(discardTarget.file.path, discardTarget.layer)}
+          onClose={() => setDiscardTarget(null)}
+        />
+      )}
     </div>
   );
 });
+
+function buildDiscardMenuItems(
+  layer: DiscardableLayer,
+  onDiscard: () => void,
+): AttachmentContextMenuItem[] {
+  const isUntracked = layer === "untracked";
+  return [
+    {
+      label: isUntracked ? "Delete file…" : "Discard changes…",
+      icon: isUntracked ? <Trash2 size={14} /> : <Undo2 size={14} />,
+      onSelect: onDiscard,
+    },
+  ];
+}
 
 function FileGroup({
   label,
