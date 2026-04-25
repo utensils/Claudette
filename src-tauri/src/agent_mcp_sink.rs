@@ -93,8 +93,16 @@ async fn send_attachment(
     media_type: String,
     caption: Option<String>,
 ) -> BridgeResponse {
+    // Require absolute paths. The grandchild's CWD isn't user-controlled, so
+    // a relative path would resolve unpredictably and could surface a file
+    // the agent didn't mean to send.
+    let path = std::path::Path::new(&file_path);
+    if !path.is_absolute() {
+        return BridgeResponse::err(format!("file_path must be absolute, got {file_path:?}"));
+    }
+
     // Strip path components — the policy and DB only see the basename.
-    let filename = std::path::Path::new(&file_path)
+    let filename = path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("")
@@ -116,6 +124,9 @@ async fn send_attachment(
         Ok(b) => b,
         Err(e) => return BridgeResponse::err(format!("read {file_path}: {e}")),
     };
+    // Encode for the event payload before moving `bytes` into the row so we
+    // don't carry two full copies in memory at once for big PDFs.
+    let data_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
 
     // Resolve the anchor message_id from AppState.
     let anchor_msg_id = {
@@ -139,7 +150,7 @@ async fn send_attachment(
         message_id: message_id.clone(),
         filename: filename.clone(),
         media_type: media_type.clone(),
-        data: bytes.clone(),
+        data: bytes,
         width: None,
         height: None,
         size_bytes: size_bytes as i64,
@@ -164,7 +175,7 @@ async fn send_attachment(
             width: None,
             height: None,
             tool_use_id: None,
-            data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+            data_base64,
             caption,
         },
     };

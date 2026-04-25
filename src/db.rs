@@ -1189,7 +1189,7 @@ impl Database {
     ) -> Result<Vec<Attachment>, rusqlite::Error> {
         let sql = format!(
             "SELECT {ATTACHMENT_COLUMNS} FROM attachments
-             WHERE tool_use_id = ?1 ORDER BY created_at"
+             WHERE tool_use_id = ?1 AND origin = 'agent' ORDER BY created_at"
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![tool_use_id], row_to_attachment)?;

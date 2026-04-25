@@ -1570,14 +1570,16 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   // Assistant message after the FK anchor in chronological order. This
   // re-route happens here so the storage shape can stay simple.
   const attachmentsByMessage = useMemo(() => {
+    // Single reverse pass: each User message maps to the most recent
+    // Assistant message that follows it. O(n) instead of O(n²).
     const userToNextAssistant = new Map<string, string>();
-    for (let i = 0; i < messages.length - 1; i++) {
-      if (messages[i].role !== "User") continue;
-      for (let j = i + 1; j < messages.length; j++) {
-        if (messages[j].role === "Assistant") {
-          userToNextAssistant.set(messages[i].id, messages[j].id);
-          break;
-        }
+    let nextAssistantId: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "Assistant") {
+        nextAssistantId = m.id;
+      } else if (m.role === "User" && nextAssistantId) {
+        userToNextAssistant.set(m.id, nextAssistantId);
       }
     }
     const map = new Map<string, ChatAttachment[]>();
