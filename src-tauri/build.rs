@@ -1,5 +1,10 @@
+// All Swift-bridge plumbing is macOS-only; gating the imports keeps
+// non-macOS builds free of unused-import warnings under `-Dwarnings`.
+#[cfg(target_os = "macos")]
 use std::env;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 fn main() {

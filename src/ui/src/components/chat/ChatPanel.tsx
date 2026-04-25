@@ -2305,10 +2305,18 @@ function ChatInputArea({
   // textarea's onKeyDown also handles Esc when it has focus; clicking
   // the mic moves focus to the button, where Esc would otherwise just
   // defocus it instead of stopping the recording.
+  //
+  // While recording, Esc is treated as exclusively "cancel recording" —
+  // we capture it ahead of bubbling handlers and stop propagation so
+  // it doesn't also close an unrelated popover/modal that happens to
+  // be open. Without this, the same keypress could cancel recording
+  // *and* dismiss the surrounding UI, which feels jumpy.
   useEffect(() => {
     if (voice.state !== "recording") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
       voice.cancel();
     };
     window.addEventListener("keydown", onKey, true);

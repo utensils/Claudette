@@ -157,6 +157,7 @@ export function useVoiceInput(
     nativeRequestIdRef.current += 1;
     setError(null);
     setInterimTranscript("");
+    setActiveProvider(null);
     finalTranscriptRef.current = "";
     cancelledRef.current = false;
 
