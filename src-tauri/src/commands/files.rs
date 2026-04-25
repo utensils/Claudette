@@ -251,26 +251,31 @@ pub async fn open_attachment_in_browser(
 /// subtype (`text/plain` → `txt`, `image/jpeg` → `jpg`, `+json` types → `json`)
 /// get an explicit mapping. Everything else falls back to the subtype with
 /// any `+xml` / `+json` suffix stripped.
-fn extension_for_media_type(media_type: &str) -> &'static str {
+///
+/// Returns a `Cow<'static, str>` so the explicit-map cases (the common
+/// path) cost nothing, while the catch-all case yields an owned `String`
+/// without leaking memory across sessions.
+fn extension_for_media_type(media_type: &str) -> std::borrow::Cow<'static, str> {
+    use std::borrow::Cow;
     match media_type {
-        "text/plain" => return "txt",
-        "text/html" => return "html",
-        "text/css" => return "css",
-        "text/javascript" | "application/javascript" => return "js",
-        "image/jpeg" => return "jpg",
-        "image/svg+xml" => return "svg",
-        "application/pdf" => return "pdf",
-        "application/json" => return "json",
-        "application/zip" => return "zip",
+        "text/plain" => return Cow::Borrowed("txt"),
+        "text/html" => return Cow::Borrowed("html"),
+        "text/css" => return Cow::Borrowed("css"),
+        "text/javascript" | "application/javascript" => return Cow::Borrowed("js"),
+        "image/jpeg" => return Cow::Borrowed("jpg"),
+        "image/svg+xml" => return Cow::Borrowed("svg"),
+        "application/pdf" => return Cow::Borrowed("pdf"),
+        "application/json" => return Cow::Borrowed("json"),
+        "application/zip" => return Cow::Borrowed("zip"),
         _ => {}
     }
     // `+json` suffixed types (application/ld+json, application/vnd.api+json…)
     // route to the json viewer naturally.
     if media_type.ends_with("+json") {
-        return "json";
+        return Cow::Borrowed("json");
     }
     if media_type.ends_with("+xml") {
-        return "xml";
+        return Cow::Borrowed("xml");
     }
     // Last-resort fallback: trust the subtype iff it looks safe.
     let after_slash = media_type.rsplit_once('/').map(|p| p.1).unwrap_or("");
@@ -279,33 +284,10 @@ fn extension_for_media_type(media_type: &str) -> &'static str {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
     {
-        // SAFETY: we matched the explicit cases above; for the catch-all we
-        // need a 'static lifetime, so leak the small string into a static
-        // pool. In practice this branch only fires for types we haven't
-        // mapped yet — adding them above is the long-term fix.
-        leak_static_str(after_slash)
+        Cow::Owned(after_slash.to_string())
     } else {
-        "bin"
+        Cow::Borrowed("bin")
     }
-}
-
-/// Cache `&'static str`s for media subtypes so [`extension_for_media_type`]
-/// can return them by reference. The set of distinct media types Claudette
-/// sees in a session is bounded by the user's attachments; leaking is
-/// fine. Lazy-initialized so non-test runs pay nothing if every type hits
-/// the explicit map.
-fn leak_static_str(s: &str) -> &'static str {
-    use std::sync::{Mutex, OnceLock};
-    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, &'static str>>> =
-        OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
-    let mut guard = cache.lock().expect("extension cache mutex poisoned");
-    if let Some(&existing) = guard.get(s) {
-        return existing;
-    }
-    let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
-    guard.insert(s.to_string(), leaked);
-    leaked
 }
 
 /// Write attachment bytes to a temp file using the natural file extension
@@ -328,8 +310,9 @@ pub fn write_attachment_to_temp_file(
         .unwrap_or("attachment");
     let safe_stem = sanitize_stem(stem);
     let ext = extension_for_media_type(media_type);
-    // Unique suffix so re-opening the same file twice doesn't clobber a
-    // wrapper still open in the system viewer.
+    // Unique nanosecond suffix so re-opening the same attachment twice
+    // doesn't overwrite a staged file that the system viewer may still
+    // be holding open.
     let unique: u128 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -363,9 +346,34 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// Create the staging directory with restrictive permissions on Unix
-/// (`0o700`) so other accounts can't list or read the staged files.
+/// (`0o700`) so other accounts can't list or read the staged files. If
+/// the path already exists we verify it's a real directory (not a file
+/// or symlink that could redirect writes elsewhere) and re-tighten the
+/// permissions on Unix in case a previous run created it with a wider
+/// umask.
 fn create_staging_dir(dir: &Path) -> std::io::Result<()> {
     if dir.exists() {
+        // `symlink_metadata` doesn't follow symlinks — it tells us
+        // whether the *path entry* is a directory, so a malicious link
+        // to /etc can't satisfy the check.
+        let meta = std::fs::symlink_metadata(dir)?;
+        if !meta.file_type().is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "staging path {} exists and is not a directory",
+                    dir.display()
+                ),
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = meta.permissions().mode() & 0o777;
+            if mode != 0o700 {
+                std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+            }
+        }
         return Ok(());
     }
     #[cfg(unix)]
@@ -638,5 +646,38 @@ mod tests {
             std::time::Duration::from_secs(0),
             std::time::SystemTime::now(),
         );
+    }
+
+    #[test]
+    fn create_staging_dir_creates_when_missing() {
+        let parent = tempdir().unwrap();
+        let target = parent.path().join("claudette-staging");
+        assert!(!target.exists());
+        create_staging_dir(&target).unwrap();
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    fn create_staging_dir_rejects_a_regular_file_at_the_path() {
+        let parent = tempdir().unwrap();
+        let target = parent.path().join("not-a-dir");
+        std::fs::write(&target, b"oops").unwrap();
+        let err = create_staging_dir(&target).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_staging_dir_tightens_permissions_on_existing_dir() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let parent = tempdir().unwrap();
+        let target = parent.path().join("loose-dir");
+        // Pre-create with a wider mode (e.g. a previous run with a
+        // permissive umask).
+        std::fs::create_dir(&target).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_staging_dir(&target).unwrap();
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "expected 0o700, got {mode:o}");
     }
 }

@@ -168,9 +168,31 @@ function PdfThumbnail({ dataBase64, attachmentId, filename, className, onClick, 
     return () => { cancelled = true; };
   }, [dataBase64, attachmentId]);
 
+  // Both the loading-state pill and the rendered first-page thumbnail
+  // need to be keyboard-actionable when an onClick is wired — without
+  // role/tabIndex/Enter+Space handling, non-mouse users can't open the
+  // PDF.
+  const interactiveProps = onClick
+    ? {
+        role: "button" as const,
+        tabIndex: 0,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        },
+        "aria-label": `Open ${filename}`,
+      }
+    : {};
   if (!src) {
     return (
-      <div className={styles.messagePdf} onClick={onClick} onContextMenu={onContextMenu}>
+      <div
+        className={styles.messagePdf}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        {...interactiveProps}
+      >
         <FileText size={16} />
         <span>{filename}</span>
       </div>
@@ -184,6 +206,7 @@ function PdfThumbnail({ dataBase64, attachmentId, filename, className, onClick, 
       onClick={onClick}
       onContextMenu={onContextMenu}
       style={onClick ? { cursor: "zoom-in" } : undefined}
+      {...interactiveProps}
     />
   );
 }

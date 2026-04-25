@@ -137,17 +137,15 @@ export async function copyAttachmentToClipboard(
   const clipboard =
     deps.clipboard ??
     (typeof navigator === "undefined" ? undefined : navigator.clipboard);
-  if (!clipboard) {
-    throw new Error("Clipboard API not available");
-  }
   const bytes = base64ToBytes(attachment.data_base64);
   if (attachment.media_type === "image/svg+xml") {
     // WKWebView silently drops `image/svg+xml` ClipboardItems, so writing
     // an SVG via navigator.clipboard.write succeeds but the system
     // clipboard receives nothing. Since SVG is XML, route through the
     // Tauri clipboard plugin's writeText, which bypasses the webview's
-    // ClipboardItem allowlist entirely. Falls back to the W3C path for
-    // non-Tauri environments (e.g. unit tests with a stubbed clipboard).
+    // ClipboardItem allowlist entirely. Falls back to the W3C path only
+    // when neither a writeText injection nor a window context is
+    // available (i.e. tests with a stubbed clipboard).
     const text = new TextDecoder("utf-8").decode(bytes);
     if (deps.writeText) {
       await deps.writeText(text);
@@ -158,9 +156,17 @@ export async function copyAttachmentToClipboard(
       await mod.writeText(text);
       return;
     }
+    if (!clipboard) {
+      throw new Error("Clipboard API not available");
+    }
     const blob = new Blob([text], { type: "text/plain" });
     await clipboard.write([new ClipboardItem({ "text/plain": blob })]);
     return;
+  }
+  // Non-SVG path uses the W3C ClipboardItem API directly — this is the
+  // only branch that requires `navigator.clipboard.write`.
+  if (!clipboard) {
+    throw new Error("Clipboard API not available");
   }
   const blob = new Blob([bytes], { type: attachment.media_type });
   await clipboard.write([
