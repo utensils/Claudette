@@ -674,6 +674,10 @@ export function setAppSetting(key: string, value: string): Promise<void> {
   return invoke("set_app_setting", { key, value });
 }
 
+export function getHostEnvFlags(): Promise<{ disable1mContext: boolean }> {
+  return invoke("get_host_env_flags");
+}
+
 // -- Updater --
 
 export type UpdateChannel = "stable" | "nightly";

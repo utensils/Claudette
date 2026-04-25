@@ -18,6 +18,7 @@ interface ComposerToolbarProps {
 
 export function ComposerToolbar({ workspaceId, disabled }: ComposerToolbarProps) {
   const selectedModel = useAppStore((s) => s.selectedModel[workspaceId] ?? "opus");
+  const disable1mContext = useAppStore((s) => s.disable1mContext);
   const thinkingEnabled = useAppStore((s) => s.thinkingEnabled[workspaceId] ?? false);
   const planMode = useAppStore((s) => s.planMode[workspaceId] ?? false);
   const modelSelectorOpen = useAppStore((s) => s.modelSelectorOpen);
@@ -107,6 +108,14 @@ export function ComposerToolbar({ workspaceId, disabled }: ComposerToolbarProps)
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [disabled, toggleThinking]);
+
+  useEffect(() => {
+    if (!loaded || !disable1mContext) return;
+    const entry = MODELS.find((m) => m.id === selectedModel);
+    if (entry && entry.contextWindowTokens >= 1_000_000) {
+      void applySelectedModel(workspaceId, "sonnet");
+    }
+  }, [loaded, disable1mContext, selectedModel, workspaceId]);
 
   const currentModel = MODELS.find((m) => m.id === selectedModel);
   const modelLabel = currentModel?.label ?? selectedModel;
