@@ -321,7 +321,11 @@
   color: inherit;
   padding: 0;
   font-size: inherit;
-  display: inline;
+  /* Block layout so the selection rectangle clips to the code element rather
+     than the padded <pre> — fixes the stair-stepped selection (#396). */
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 /* Inline code — accent tint */

@@ -106,6 +106,22 @@ export const REMARK_PLUGINS: PluggableList = [remarkGfm];
 // Schemes that should open in the system browser rather than navigate the webview.
 export const EXTERNAL_SCHEMES = /^https?:|^mailto:/i;
 
+/**
+ * Trim a single trailing newline from the last text-node child of a code element.
+ * rehype-highlight preserves the source `\n` before the closing fence; that
+ * phantom newline paints an extra selection line below the visible code.
+ */
+export function trimTrailingCodeNewline(children: React.ReactNode): React.ReactNode {
+  const arr = React.Children.toArray(children);
+  if (arr.length === 0) return children;
+  const last = arr[arr.length - 1];
+  if (typeof last !== "string") return arr;
+  const trimmed = last.replace(/\n+$/, "");
+  if (trimmed === last) return arr;
+  if (trimmed === "") return arr.slice(0, -1);
+  return [...arr.slice(0, -1), trimmed];
+}
+
 // Override <a> to open external links in the system browser instead of navigating the webview.
 export const MARKDOWN_COMPONENTS: Components = {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -126,4 +142,14 @@ export const MARKDOWN_COMPONENTS: Components = {
       },
       children,
     ),
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  code: ({ node, className, children, ...props }) => {
+    const isFenced =
+      typeof className === "string" && /\b(?:hljs|language-)/.test(className);
+    return createElement(
+      "code",
+      { ...props, className },
+      isFenced ? trimTrailingCodeNewline(children) : children,
+    );
+  },
 };
