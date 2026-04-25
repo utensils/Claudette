@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MODELS } from "./modelRegistry";
+import { MODELS, is1mContextModel } from "./modelRegistry";
 
 describe("modelRegistry", () => {
   it("every model has a positive integer contextWindowTokens", () => {
@@ -27,5 +27,27 @@ describe("modelRegistry", () => {
     for (const m of standard) {
       expect(m.contextWindowTokens, m.id).toBe(200_000);
     }
+  });
+
+  describe("is1mContextModel", () => {
+    it("returns true for 1M-context models", () => {
+      const oneM = MODELS.filter((m) => m.contextWindowTokens >= 1_000_000);
+      expect(oneM.length).toBeGreaterThan(0);
+      for (const m of oneM) {
+        expect(is1mContextModel(m.id), m.id).toBe(true);
+      }
+    });
+
+    it("returns false for standard-context models", () => {
+      const standard = MODELS.filter((m) => m.contextWindowTokens < 1_000_000);
+      expect(standard.length).toBeGreaterThan(0);
+      for (const m of standard) {
+        expect(is1mContextModel(m.id), m.id).toBe(false);
+      }
+    });
+
+    it("returns false for unknown model IDs", () => {
+      expect(is1mContextModel("unknown-model")).toBe(false);
+    });
   });
 });

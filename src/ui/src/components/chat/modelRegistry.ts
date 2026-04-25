@@ -16,6 +16,11 @@ export type Model = {
   readonly contextWindowTokens: number;
 };
 
+export function is1mContextModel(modelId: string): boolean {
+  const entry = MODELS.find((m) => m.id === modelId);
+  return entry ? entry.contextWindowTokens >= 1_000_000 : false;
+}
+
 export const MODELS: readonly Model[] = [
   { id: "opus", label: "Opus 4.7 1M", group: "Claude Code", extraUsage: true, contextWindowTokens: 1_000_000 },
   { id: "claude-opus-4-7", label: "Opus 4.7", group: "Claude Code", extraUsage: false, contextWindowTokens: 200_000 },
