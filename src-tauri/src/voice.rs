@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -200,6 +200,18 @@ impl CandleBackend {
     }
 }
 
+trait CandleBackendChecker: Send + Sync {
+    fn ready_backend(&self) -> Result<CandleBackend, String>;
+}
+
+struct DefaultCandleBackendChecker;
+
+impl CandleBackendChecker for DefaultCandleBackendChecker {
+    fn ready_backend(&self) -> Result<CandleBackend, String> {
+        ensure_candle_backend_ready()
+    }
+}
+
 #[async_trait]
 pub trait VoiceProvider: Send + Sync {
     fn id(&self) -> &'static str;
@@ -221,6 +233,7 @@ pub struct VoiceProviderRegistry {
     active_recording: Mutex<Option<RecordingSession>>,
     recorder: Arc<dyn AudioRecorder>,
     transcriber: Arc<dyn VoiceTranscriber>,
+    backend_checker: Arc<dyn CandleBackendChecker>,
     transcription_timeout: Duration,
 }
 
@@ -252,11 +265,44 @@ impl VoiceProviderRegistry {
         transcriber: Arc<dyn VoiceTranscriber>,
         transcription_timeout: Duration,
     ) -> Self {
+        Self::with_runtime_backend_and_timeout(
+            model_root,
+            recorder,
+            transcriber,
+            Arc::new(DefaultCandleBackendChecker),
+            transcription_timeout,
+        )
+    }
+
+    #[cfg(test)]
+    fn with_runtime_and_backend(
+        model_root: PathBuf,
+        recorder: Arc<dyn AudioRecorder>,
+        transcriber: Arc<dyn VoiceTranscriber>,
+        backend_checker: Arc<dyn CandleBackendChecker>,
+    ) -> Self {
+        Self::with_runtime_backend_and_timeout(
+            model_root,
+            recorder,
+            transcriber,
+            backend_checker,
+            DISTIL_TRANSCRIPTION_TIMEOUT,
+        )
+    }
+
+    fn with_runtime_backend_and_timeout(
+        model_root: PathBuf,
+        recorder: Arc<dyn AudioRecorder>,
+        transcriber: Arc<dyn VoiceTranscriber>,
+        backend_checker: Arc<dyn CandleBackendChecker>,
+        transcription_timeout: Duration,
+    ) -> Self {
         Self {
             model_root,
             active_recording: Mutex::new(None),
             recorder,
             transcriber,
+            backend_checker,
             transcription_timeout,
         }
     }
@@ -388,7 +434,7 @@ impl VoiceProviderRegistry {
             if !distil_model_ready(&self.distil_cache_path()) {
                 return Err("Download the Distil-Whisper model before recording".to_string());
             }
-            ensure_candle_backend_ready()?;
+            self.ensure_candle_backend_ready()?;
         }
 
         let mut active = self.active_recording.lock();
@@ -463,6 +509,16 @@ impl VoiceProviderRegistry {
             .flatten()
             .map(|v| v != "false")
             .unwrap_or(true)
+    }
+
+    fn ensure_candle_backend_ready(&self) -> Result<CandleBackend, String> {
+        self.backend_checker.ready_backend()
+    }
+
+    fn candle_accelerator_label(&self) -> String {
+        self.ensure_candle_backend_ready()
+            .map(|backend| backend.accelerator_label().to_string())
+            .unwrap_or_else(|err| format!("Unavailable: {err}"))
     }
 
     pub(crate) fn resolve_provider_id(
@@ -590,7 +646,7 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             download_required: true,
             model_size_label: Some("About 1.5 GB plus tokenizer/config files".to_string()),
             cache_path: Some(cache_path.display().to_string()),
-            accelerator_label: Some(candle_accelerator_label()),
+            accelerator_label: Some(registry.candle_accelerator_label()),
         }
     }
 
@@ -602,7 +658,7 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             .ok()
             .flatten();
         let installed = distil_model_ready(&cache_path);
-        let backend_status = ensure_candle_backend_ready();
+        let backend_status = registry.ensure_candle_backend_ready();
         let (status, status_label, setup_required, error) = if !enabled {
             (
                 VoiceProviderStatus::Unavailable,
@@ -756,13 +812,103 @@ fn select_candle_device() -> Result<(Device, CandleBackend), String> {
 }
 
 fn ensure_candle_backend_ready() -> Result<CandleBackend, String> {
-    select_candle_device().map(|(_, backend)| backend)
+    static BACKEND_READY: OnceLock<Result<CandleBackend, String>> = OnceLock::new();
+
+    BACKEND_READY
+        .get_or_init(check_candle_backend_ready)
+        .clone()
 }
 
-fn candle_accelerator_label() -> String {
-    ensure_candle_backend_ready()
-        .map(|backend| backend.accelerator_label().to_string())
-        .unwrap_or_else(|err| format!("Unavailable: {err}"))
+fn check_candle_backend_ready() -> Result<CandleBackend, String> {
+    let (device, backend) = select_candle_device()?;
+    verify_candle_whisper_backend_for(&device, backend)?;
+    Ok(backend)
+}
+
+fn verify_candle_whisper_backend_for(
+    device: &Device,
+    backend: CandleBackend,
+) -> Result<(), String> {
+    verify_candle_whisper_backend(device)
+        .map_err(|err| format!("Candle {} Whisper backend failed {err}", backend.label()))
+}
+
+fn verify_candle_whisper_backend(device: &Device) -> Result<(), String> {
+    probe_candle_whisper_op("conv1d", || {
+        let input = Tensor::new(
+            &[[
+                [0.1_f32, 0.2, -0.1, 0.0, 0.3, -0.3, 0.4, 0.5],
+                [0.5_f32, -0.4, 0.3, -0.2, 0.1, 0.0, -0.1, 0.2],
+            ]],
+            device,
+        )?;
+        let kernel = Tensor::new(
+            &[
+                [[0.2_f32, 0.1, -0.1], [0.0_f32, 0.3, 0.2]],
+                [[-0.2_f32, 0.4, 0.1], [0.1_f32, -0.3, 0.2]],
+            ],
+            device,
+        )?;
+        let output = input.conv1d(&kernel, 1, 1, 1, 1)?;
+        let _ = output.to_vec3::<f32>()?;
+        Ok(())
+    })?;
+    probe_candle_whisper_op("gelu", || {
+        let output = Tensor::new(&[-1.0_f32, 0.0, 1.0, 2.0], device)?.gelu()?;
+        let _ = output.to_vec1::<f32>()?;
+        Ok(())
+    })?;
+    probe_candle_whisper_op("layer_norm", || {
+        let xs = Tensor::new(&[[1.0_f32, 2.0], [3.0, 4.0]], device)?;
+        let alpha = Tensor::new(&[1.0_f32, 1.0], device)?;
+        let beta = Tensor::new(&[0.0_f32, 0.0], device)?;
+        let output = candle_nn::ops::layer_norm(&xs, &alpha, &beta, 1e-5)?;
+        let _ = output.to_vec2::<f32>()?;
+        Ok(())
+    })?;
+    probe_candle_whisper_op("softmax", || {
+        let logits = Tensor::new(&[[1.0_f32, 2.0, 3.0]], device)?;
+        let output = softmax(&logits, D::Minus1)?;
+        let _ = output.to_vec2::<f32>()?;
+        Ok(())
+    })?;
+    probe_candle_whisper_op("matmul", || {
+        let lhs = Tensor::new(&[[1.0_f32, 2.0, 3.0], [4.0, 5.0, 6.0]], device)?;
+        let rhs = Tensor::new(&[[1.0_f32, 2.0], [3.0, 4.0], [5.0, 6.0]], device)?;
+        let output = lhs.matmul(&rhs)?;
+        let _ = output.to_vec2::<f32>()?;
+        Ok(())
+    })?;
+    probe_candle_whisper_op("broadcast_add", || {
+        let matrix = Tensor::new(&[[1.0_f32, 2.0, 3.0], [4.0, 5.0, 6.0]], device)?;
+        let bias = Tensor::new(&[0.5_f32, -0.5, 1.0], device)?;
+        let output = matrix.broadcast_add(&bias)?;
+        let _ = output.to_vec2::<f32>()?;
+        Ok(())
+    })?;
+    probe_candle_whisper_op("index_select", || {
+        let source = Tensor::new(&[[1.0_f32, 2.0], [3.0, 4.0], [5.0, 6.0]], device)?;
+        let indexes = Tensor::new(&[2_u32, 0], device)?;
+        let output = source.index_select(&indexes, 0)?;
+        let _ = output.to_vec2::<f32>()?;
+        Ok(())
+    })?;
+    probe_candle_whisper_op("scalar_readback", || {
+        let value = Tensor::new(&[42.0_f32], device)?.i(0)?.to_scalar::<f32>()?;
+        if (value - 42.0).abs() > f32::EPSILON {
+            return Err(candle_core::Error::Msg(format!(
+                "expected 42.0, got {value}"
+            )));
+        }
+        Ok(())
+    })
+}
+
+fn probe_candle_whisper_op(
+    op: &'static str,
+    run: impl FnOnce() -> candle_core::Result<()>,
+) -> Result<(), String> {
+    run().map_err(|e| format!("{op}: {e}"))
 }
 
 fn validate_captured_audio(audio: &CapturedAudio) -> Result<(), String> {
@@ -1244,19 +1390,23 @@ fn transcribe_distil_whisper(cache_path: &Path, captured: CapturedAudio) -> Resu
     .map_err(|e| format!("Failed to parse Whisper config: {e}"))?;
     let tokenizer = Tokenizer::from_file(&tokenizer_path)
         .map_err(|e| format!("Failed to load tokenizer: {e}"))?;
-    let (device, _backend) = select_candle_device()?;
+    let backend = ensure_candle_backend_ready()?;
+    let (device, _) = select_candle_device()?;
+    let backend_label = backend.label();
     let mel_filters = build_mel_filters(config.num_mel_bins);
     let mel = audio::pcm_to_mel(&config, &captured.samples, &mel_filters);
     let mel_len = mel.len() / config.num_mel_bins;
     let mel = Tensor::from_vec(mel, (1, config.num_mel_bins, mel_len), &device)
-        .map_err(|e| format!("Failed to build Whisper mel tensor: {e}"))?;
+        .map_err(|e| format!("Failed to build Whisper mel tensor on {backend_label}: {e}"))?;
     let var_builder =
         unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], whisper::DTYPE, &device) }
-            .map_err(|e| format!("Failed to load Whisper weights: {e}"))?;
+            .map_err(|e| format!("Failed to load Whisper weights on {backend_label}: {e}"))?;
     let model = whisper::model::Whisper::load(&var_builder, config)
-        .map_err(|e| format!("Failed to initialize Whisper model: {e}"))?;
+        .map_err(|e| format!("Failed to initialize Whisper model on {backend_label}: {e}"))?;
     let mut decoder = WhisperDecoder::new(WhisperModel::Normal(model), tokenizer, &device)?;
-    decoder.run(&mel)
+    decoder
+        .run(&mel)
+        .map_err(|e| format!("Whisper transcription failed on {backend_label}: {e}"))
 }
 
 fn build_mel_filters(num_mel_bins: usize) -> Vec<f32> {
@@ -1412,6 +1562,92 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    fn run_minimal_whisper_forward(device: &Device) -> Result<(), String> {
+        let config = Config {
+            num_mel_bins: 4,
+            max_source_positions: 4,
+            d_model: 8,
+            encoder_attention_heads: 2,
+            encoder_layers: 1,
+            vocab_size: 16,
+            max_target_positions: 4,
+            decoder_attention_heads: 2,
+            decoder_layers: 1,
+            suppress_tokens: Vec::new(),
+        };
+        let vb = VarBuilder::zeros(whisper::DTYPE, device);
+        let mut model = whisper::model::Whisper::load(&vb, config.clone())
+            .map_err(|e| format!("load minimal whisper: {e}"))?;
+        let mel = Tensor::zeros(
+            (1, config.num_mel_bins, config.max_source_positions * 2),
+            whisper::DTYPE,
+            device,
+        )
+        .map_err(|e| format!("build minimal mel: {e}"))?;
+        let audio_features = model
+            .encoder
+            .forward(&mel, true)
+            .map_err(|e| format!("minimal encoder forward: {e}"))?;
+        let tokens =
+            Tensor::new(&[[1_u32]], device).map_err(|e| format!("build minimal tokens: {e}"))?;
+        let decoded = model
+            .decoder
+            .forward(&tokens, &audio_features, true)
+            .map_err(|e| format!("minimal decoder forward: {e}"))?;
+        let logits = model
+            .decoder
+            .final_linear(&decoded)
+            .map_err(|e| format!("minimal decoder logits: {e}"))?;
+        let _ = logits
+            .to_vec3::<f32>()
+            .map_err(|e| format!("read minimal logits: {e}"))?;
+        Ok(())
+    }
+
+    fn read_wav_fixture(path: &Path) -> Result<CapturedAudio, String> {
+        let mut reader =
+            hound::WavReader::open(path).map_err(|e| format!("Failed to open WAV fixture: {e}"))?;
+        let spec = reader.spec();
+        if spec.channels == 0 {
+            return Err("WAV fixture has no audio channels".to_string());
+        }
+
+        let samples = match (spec.sample_format, spec.bits_per_sample) {
+            (hound::SampleFormat::Float, 32) => {
+                let samples = reader
+                    .samples::<f32>()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| format!("Failed to read f32 WAV samples: {e}"))?;
+                normalize_interleaved_f32(&samples, spec.channels)
+            }
+            (hound::SampleFormat::Int, 16) => {
+                let samples = reader
+                    .samples::<i16>()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| format!("Failed to read i16 WAV samples: {e}"))?;
+                normalize_interleaved_i16(&samples, spec.channels)
+            }
+            (hound::SampleFormat::Int, 24 | 32) => {
+                let samples = reader
+                    .samples::<i32>()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| format!("Failed to read i32 WAV samples: {e}"))?;
+                normalize_interleaved_i32(&samples, spec.channels)
+            }
+            (sample_format, bits) => {
+                return Err(format!(
+                    "Unsupported WAV fixture format: {sample_format:?} {bits}-bit"
+                ));
+            }
+        };
+
+        Ok(CapturedAudio {
+            samples: resample_to_target_rate(&samples, spec.sample_rate),
+            sample_rate: TARGET_SAMPLE_RATE,
+        })
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn candle_metal_feature_is_enabled_on_macos() {
         assert!(candle_core::utils::metal_is_available());
@@ -1426,6 +1662,71 @@ mod tests {
         let beta = Tensor::new(&[0.0_f32, 0.0], &device).expect("beta tensor");
 
         candle_nn::ops::layer_norm(&xs, &alpha, &beta, 1e-5).expect("metal layer norm should run");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn candle_metal_whisper_ops_probe_runs_on_macos() {
+        let device = Device::new_metal(0).expect("metal device");
+
+        verify_candle_whisper_backend(&device).expect("metal whisper op probe should run");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn minimal_whisper_forward_runs_on_selected_metal_backend() {
+        let device = Device::new_metal(0).expect("metal device");
+
+        run_minimal_whisper_forward(&device).expect("minimal whisper forward should run");
+    }
+
+    #[test]
+    fn distil_provider_reports_engine_unavailable_when_backend_probe_fails() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_distil_model(&model_dir.path().join(DISTIL_CACHE_DIR));
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::with_runtime_and_backend(
+            model_dir.path().to_path_buf(),
+            Arc::new(FakeRecorder::new(vec![0.1])),
+            Arc::new(FakeTranscriber::ok("ignored")),
+            Arc::new(FakeBackendChecker::err(
+                "Candle Metal Whisper backend failed layer_norm: test failure",
+            )),
+        );
+
+        let provider = registry
+            .list_providers(&db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == DISTIL_ID)
+            .expect("distil provider");
+
+        assert_eq!(provider.status, VoiceProviderStatus::EngineUnavailable);
+        assert!(!provider.setup_required);
+        assert!(
+            provider
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("failed layer_norm"))
+        );
+    }
+
+    #[test]
+    #[ignore = "requires local Distil-Whisper cache and CLAUDETTE_VOICE_SAMPLE_WAV"]
+    fn ignored_real_model_probe_transcribes_fixture_wav() {
+        let cache_path = std::env::var_os("CLAUDETTE_VOICE_MODEL_CACHE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from("/Users/jamesbrink/.claudette/models/voice/distil-whisper-large-v3")
+            });
+        let sample_path = std::env::var_os("CLAUDETTE_VOICE_SAMPLE_WAV")
+            .map(PathBuf::from)
+            .expect("set CLAUDETTE_VOICE_SAMPLE_WAV to a short speech WAV");
+        let audio = read_wav_fixture(&sample_path).expect("read speech wav");
+
+        let transcript = transcribe_distil_whisper(&cache_path, audio).expect("transcribe fixture");
+
+        assert!(!transcript.trim().is_empty());
     }
 
     struct FakeRecorder {
@@ -1509,6 +1810,24 @@ mod tests {
             self.calls.fetch_add(1, Ordering::Relaxed);
             std::thread::sleep(self.sleep_for);
             self.result.lock().clone()
+        }
+    }
+
+    struct FakeBackendChecker {
+        result: Result<CandleBackend, String>,
+    }
+
+    impl FakeBackendChecker {
+        fn err(message: &str) -> Self {
+            Self {
+                result: Err(message.to_string()),
+            }
+        }
+    }
+
+    impl CandleBackendChecker for FakeBackendChecker {
+        fn ready_backend(&self) -> Result<CandleBackend, String> {
+            self.result.clone()
         }
     }
 
