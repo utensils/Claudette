@@ -454,6 +454,7 @@ fn main() {
             commands::files::read_workspace_file,
             commands::files::save_attachment_bytes,
             commands::files::open_attachment_in_browser,
+            commands::files::open_attachment_with_default_app,
             // Chat
             commands::chat::load_chat_history,
             commands::chat::load_attachments_for_workspace,

@@ -65,6 +65,7 @@ import { AttachmentLightbox } from "./AttachmentLightbox";
 import {
   downloadAttachment,
   openAttachmentInBrowser,
+  openAttachmentWithDefaultApp,
   copyAttachmentToClipboard,
   shareAttachment,
   isShareSupported,
@@ -133,11 +134,14 @@ function formatDurationMs(ms: number): string {
  * (fetches the body from the backend on demand). Shows a loading pill with
  * the filename while the thumbnail generates.
  */
-function PdfThumbnail({ dataBase64, attachmentId, filename, className, onContextMenu }: {
+function PdfThumbnail({ dataBase64, attachmentId, filename, className, onClick, onContextMenu }: {
   dataBase64?: string;
   attachmentId?: string;
   filename: string;
   className?: string;
+  /** Left-click handler. Used to open the PDF with the system's default
+   *  PDF viewer rather than the lightbox (which only renders images). */
+  onClick?: () => void;
   /** Right-click handler. Wired so PDF thumbnails get the same Claudette
    *  context menu (Download / Copy / Open) as image attachments rather than
    *  WebKit's default image menu. See issue #430. */
@@ -166,13 +170,22 @@ function PdfThumbnail({ dataBase64, attachmentId, filename, className, onContext
 
   if (!src) {
     return (
-      <div className={styles.messagePdf} onContextMenu={onContextMenu}>
+      <div className={styles.messagePdf} onClick={onClick} onContextMenu={onContextMenu}>
         <FileText size={16} />
         <span>{filename}</span>
       </div>
     );
   }
-  return <img src={src} alt={filename} className={className} onContextMenu={onContextMenu} />;
+  return (
+    <img
+      src={src}
+      alt={filename}
+      className={className}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      style={onClick ? { cursor: "zoom-in" } : undefined}
+    />
+  );
 }
 
 /** Semantic colors for tool names — makes tool activity scannable at a glance. */
@@ -229,16 +242,38 @@ export function ChatPanel() {
     x: number;
     y: number;
     attachment: DownloadableAttachment;
+    /** Persisted PDFs hydrate without data_base64 (it's stripped to keep
+     *  the initial IPC small). When the menu fires for one, hold the row
+     *  id so each action can lazy-load the bytes via loadAttachmentData
+     *  before downloading / copying. */
+    attachmentId?: string;
   } | null>(null);
 
   const openAttachmentMenu = useCallback(
-    (e: React.MouseEvent, attachment: DownloadableAttachment) => {
+    (e: React.MouseEvent, attachment: DownloadableAttachment, attachmentId?: string) => {
       e.preventDefault();
       setAttachmentMenu({
         x: e.clientX,
         y: e.clientY,
         attachment,
+        attachmentId,
       });
+    },
+    [],
+  );
+
+  /** Resolves an attachment's data_base64, fetching from the backend on
+   *  demand if it was stripped during hydration. Returns a fresh object
+   *  so callers can pass it straight into download / copy helpers. */
+  const ensureAttachmentBytes = useCallback(
+    async (
+      attachment: DownloadableAttachment,
+      attachmentId?: string,
+    ): Promise<DownloadableAttachment> => {
+      if (attachment.data_base64 || !attachmentId) return attachment;
+      const { loadAttachmentData } = await import("../../services/tauri");
+      const data_base64 = await loadAttachmentData(attachmentId);
+      return { ...attachment, data_base64 };
     },
     [],
   );
@@ -1100,9 +1135,18 @@ export function ChatPanel() {
         onAttachmentClick={openLightbox}
       />
       {attachmentMenu && (() => {
-        const labels = buildAttachmentMenuLabels(
-          attachmentMenu.attachment.media_type,
-        );
+        const mt = attachmentMenu.attachment.media_type;
+        const labels = buildAttachmentMenuLabels(mt);
+        // The browser-wrapper path renders bytes inside <img>, which is
+        // broken for PDFs (and would be broken for any non-image type we
+        // add later). Drop "Open in New Window" for non-images — left-
+        // click already opens the PDF in the system default viewer.
+        const isImage = mt.startsWith("image/");
+        const withBytes = () =>
+          ensureAttachmentBytes(
+            attachmentMenu.attachment,
+            attachmentMenu.attachmentId,
+          );
         return (
           <AttachmentContextMenu
             x={attachmentMenu.x}
@@ -1112,35 +1156,41 @@ export function ChatPanel() {
               {
                 label: labels.download,
                 onSelect: () => {
-                  downloadAttachment(attachmentMenu.attachment).catch((err) =>
-                    console.error("Download failed:", err),
-                  );
+                  withBytes()
+                    .then(downloadAttachment)
+                    .catch((err) => console.error("Download failed:", err));
                 },
               },
               {
                 label: labels.copy,
                 onSelect: () => {
-                  copyAttachmentToClipboard(attachmentMenu.attachment).catch(
-                    (err) => console.error("Copy failed:", err),
-                  );
+                  withBytes()
+                    .then(copyAttachmentToClipboard)
+                    .catch((err) => console.error("Copy failed:", err));
                 },
               },
-              {
-                label: labels.open,
-                onSelect: () => {
-                  openAttachmentInBrowser(attachmentMenu.attachment).catch(
-                    (err) => console.error("Open in browser failed:", err),
-                  );
-                },
-              },
+              ...(isImage
+                ? [
+                    {
+                      label: labels.open,
+                      onSelect: () => {
+                        withBytes()
+                          .then(openAttachmentInBrowser)
+                          .catch((err) =>
+                            console.error("Open in browser failed:", err),
+                          );
+                      },
+                    },
+                  ]
+                : []),
               ...(shareSupported
                 ? [
                     {
                       label: "Share…",
                       onSelect: () => {
-                        shareAttachment(attachmentMenu.attachment).catch((err) =>
-                          console.error("Share failed:", err),
-                        );
+                        withBytes()
+                          .then(shareAttachment)
+                          .catch((err) => console.error("Share failed:", err));
                       },
                     },
                   ]
@@ -1543,10 +1593,13 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
    *  button (e.g. for remote workspaces where the command cannot run). */
   onForkTurn?: (checkpointId: string) => void;
   /** Right-click handler on message-image attachments. Lifted to ChatPanel so
-   *  the context menu renders at the top of the component tree. */
+   *  the context menu renders at the top of the component tree. The third
+   *  argument is the persisted attachment id, used to lazy-load bytes for
+   *  PDFs (whose data_base64 is stripped on hydration). */
   onAttachmentContextMenu?: (
     e: React.MouseEvent,
     attachment: DownloadableAttachment,
+    attachmentId?: string,
   ) => void;
   /** Left-click handler on message-image attachments — opens the lightbox. */
   onAttachmentClick?: (
@@ -1859,12 +1912,36 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                         attachmentId={att.id}
                         filename={att.filename}
                         className={styles.messageImage}
+                        onClick={() => {
+                          (async () => {
+                            // Persisted attachments strip data_base64 on first
+                            // load to avoid IPC bloat — fetch on demand.
+                            let b64 = att.data_base64;
+                            if (!b64) {
+                              const { loadAttachmentData } = await import(
+                                "../../services/tauri"
+                              );
+                              b64 = await loadAttachmentData(att.id);
+                            }
+                            await openAttachmentWithDefaultApp({
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: b64,
+                            });
+                          })().catch((err) =>
+                            console.error("Failed to open PDF:", err),
+                          );
+                        }}
                         onContextMenu={(e) =>
-                          onAttachmentContextMenu?.(e, {
-                            filename: att.filename,
-                            media_type: att.media_type,
-                            data_base64: att.data_base64,
-                          })
+                          onAttachmentContextMenu?.(
+                            e,
+                            {
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: att.data_base64,
+                            },
+                            att.id,
+                          )
                         }
                       />
                     ) : att.media_type === "text/plain" ? (
@@ -1872,11 +1949,15 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                         key={att.id}
                         className={styles.messagePdf}
                         onContextMenu={(e) =>
-                          onAttachmentContextMenu?.(e, {
-                            filename: att.filename,
-                            media_type: att.media_type,
-                            data_base64: att.data_base64,
-                          })
+                          onAttachmentContextMenu?.(
+                            e,
+                            {
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: att.data_base64,
+                            },
+                            att.id,
+                          )
                         }
                       >
                         <FileText size={14} />
@@ -1901,11 +1982,15 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                           })
                         }
                         onContextMenu={(e) =>
-                          onAttachmentContextMenu?.(e, {
-                            filename: att.filename,
-                            media_type: att.media_type,
-                            data_base64: att.data_base64,
-                          })
+                          onAttachmentContextMenu?.(
+                            e,
+                            {
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: att.data_base64,
+                            },
+                            att.id,
+                          )
                         }
                       />
                     ),

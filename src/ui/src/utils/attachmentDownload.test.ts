@@ -21,6 +21,7 @@ import {
   extensionFor,
   downloadAttachment,
   openAttachmentInBrowser,
+  openAttachmentWithDefaultApp,
   copyAttachmentToClipboard,
   shareAttachment,
   isShareSupported,
@@ -120,6 +121,27 @@ describe("openAttachmentInBrowser", () => {
       bytes: [104, 101, 108, 108, 111],
       filename: "screenshot.png",
       mediaType: "image/png",
+    });
+  });
+});
+
+describe("openAttachmentWithDefaultApp", () => {
+  // The HTML-wrapper path renders bytes inside <img>, which produces a
+  // broken page for PDFs (and anything else that isn't an image). This
+  // helper stages the bytes to a real file and lets the OS route to the
+  // appropriate viewer (Preview, Adobe, etc).
+  it("invokes open_attachment_with_default_app with decoded bytes", async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    const pdf: DownloadableAttachment = {
+      filename: "doc.pdf",
+      media_type: "application/pdf",
+      data_base64: "JVBERi0=", // %PDF-
+    };
+    await openAttachmentWithDefaultApp(pdf, { invoke });
+    expect(invoke).toHaveBeenCalledWith("open_attachment_with_default_app", {
+      bytes: [37, 80, 68, 70, 45],
+      filename: "doc.pdf",
+      mediaType: "application/pdf",
     });
   });
 });

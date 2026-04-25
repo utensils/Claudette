@@ -91,6 +91,27 @@ export async function openAttachmentInBrowser(
 }
 
 /**
+ * Stage the attachment to a temp file with its natural extension and open
+ * it with the system default handler (e.g. PDFs → Preview on macOS,
+ * whichever PDF reader is registered on Linux/Windows). The HTML-wrapper
+ * path used by `openAttachmentInBrowser` only renders inside `<img>`, so
+ * it produces a broken page for PDFs — this command is the right path
+ * for non-image previewing.
+ */
+export async function openAttachmentWithDefaultApp(
+  attachment: DownloadableAttachment,
+  deps: { invoke?: typeof invoke } = {},
+): Promise<void> {
+  const invokeFn = deps.invoke ?? invoke;
+  const bytes = base64ToBytes(attachment.data_base64);
+  await invokeFn("open_attachment_with_default_app", {
+    bytes: Array.from(bytes),
+    filename: attachment.filename,
+    mediaType: attachment.media_type,
+  });
+}
+
+/**
  * Copy the attachment image to the system clipboard using the native
  * `navigator.clipboard.write()` API. Zero IPC, zero base64→number[]
  * serialization, zero Rust round-trip — the webview writes directly to

@@ -243,6 +243,72 @@ pub async fn open_attachment_in_browser(
     })
 }
 
+/// Pick a sensible file extension for a media type. Used when staging an
+/// attachment to a temp file so the OS routes the open-with handler to the
+/// right app (e.g. `.pdf` → Preview / Adobe / etc).
+fn extension_for_media_type(media_type: &str) -> &str {
+    let after_slash = media_type.rsplit_once('/').map(|p| p.1).unwrap_or("");
+    let bare = after_slash
+        .split_once('+')
+        .map(|p| p.0)
+        .unwrap_or(after_slash);
+    if !bare.is_empty() && bare.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.') {
+        bare
+    } else {
+        "bin"
+    }
+}
+
+/// Write attachment bytes to a temp file using the natural file extension
+/// for the media type. Unlike [`write_image_as_html`], this writes the raw
+/// bytes (no wrapper) so `open` routes to the system default handler for
+/// the format — Preview / Adobe Reader for PDFs, etc.
+pub fn write_attachment_to_temp_file(
+    dir: &Path,
+    filename: &str,
+    media_type: &str,
+    bytes: &[u8],
+) -> std::io::Result<PathBuf> {
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("attachment");
+    let safe_stem = sanitize_stem(stem);
+    let ext = extension_for_media_type(media_type);
+    // Unique suffix so re-opening the same file twice doesn't clobber a
+    // wrapper still open in the system viewer.
+    let unique: u128 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = dir.join(format!("{safe_stem}-{unique}.{ext}"));
+    std::fs::write(&path, bytes)?;
+    Ok(path)
+}
+
+/// Open an attachment with the system's default handler for its media
+/// type (e.g. PDF → Preview on macOS, the user's PDF reader on Linux /
+/// Windows). Bytes are staged to a temp file under the OS temp dir.
+#[tauri::command]
+pub async fn open_attachment_with_default_app(
+    bytes: Vec<u8>,
+    filename: String,
+    media_type: String,
+) -> Result<(), String> {
+    let dir = std::env::temp_dir().join("claudette-attachments");
+    tokio::task::spawn_blocking(move || -> Result<PathBuf, String> {
+        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir temp dir: {e}"))?;
+        write_attachment_to_temp_file(&dir, &filename, &media_type, &bytes)
+            .map_err(|e| format!("write attachment: {e}"))
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+    .and_then(|path| {
+        crate::commands::shell::opener::open(&path.to_string_lossy())
+            .map_err(|e| format!("open failed: {e}"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +381,67 @@ mod tests {
     #[test]
     fn html_escape_handles_special_chars() {
         assert_eq!(html_escape(r#"a<b>&"c"#), "a&lt;b&gt;&amp;&quot;c");
+    }
+
+    #[test]
+    fn extension_for_media_type_picks_pdf_for_pdf_type() {
+        assert_eq!(extension_for_media_type("application/pdf"), "pdf");
+    }
+
+    #[test]
+    fn extension_for_media_type_strips_xml_json_suffixes() {
+        assert_eq!(extension_for_media_type("image/svg+xml"), "svg");
+        assert_eq!(
+            extension_for_media_type("application/ld+json"),
+            "ld"
+        );
+    }
+
+    #[test]
+    fn extension_for_media_type_falls_back_to_bin_for_opaque_types() {
+        assert_eq!(
+            extension_for_media_type("application/x-something weird"),
+            "bin"
+        );
+    }
+
+    #[test]
+    fn write_attachment_to_temp_file_uses_natural_extension() {
+        let dir = tempdir().unwrap();
+        let path = write_attachment_to_temp_file(
+            dir.path(),
+            "claude-system-card.pdf",
+            "application/pdf",
+            b"%PDF-1.4 fake",
+        )
+        .unwrap();
+        assert_eq!(path.extension().unwrap(), "pdf");
+        assert_eq!(std::fs::read(&path).unwrap(), b"%PDF-1.4 fake");
+    }
+
+    #[test]
+    fn write_attachment_to_temp_file_sanitizes_filename() {
+        let dir = tempdir().unwrap();
+        let path = write_attachment_to_temp_file(
+            dir.path(),
+            "hello world.pdf",
+            "application/pdf",
+            b"%PDF",
+        )
+        .unwrap();
+        let stem = path.file_stem().unwrap().to_str().unwrap();
+        assert!(!stem.contains(' '));
+        assert!(stem.starts_with("hello_world"));
+    }
+
+    #[test]
+    fn write_attachment_to_temp_file_uses_unique_suffix() {
+        let dir = tempdir().unwrap();
+        let p1 =
+            write_attachment_to_temp_file(dir.path(), "doc.pdf", "application/pdf", b"a").unwrap();
+        std::thread::sleep(std::time::Duration::from_nanos(1));
+        let p2 =
+            write_attachment_to_temp_file(dir.path(), "doc.pdf", "application/pdf", b"b").unwrap();
+        assert_ne!(p1, p2);
     }
 }
