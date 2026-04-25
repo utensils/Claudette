@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { VoiceProviderInfo } from "../types/voice";
-import { chooseVoiceProvider, insertTranscriptAtSelection } from "./voice";
+import {
+  chooseVoiceProvider,
+  describeSpeechRecognitionError,
+  insertTranscriptAtSelection,
+} from "./voice";
 
 function provider(
   overrides: Partial<VoiceProviderInfo> & Pick<VoiceProviderInfo, "id">,
@@ -120,5 +124,27 @@ describe("insertTranscriptAtSelection", () => {
       text: "hello",
       cursor: 5,
     });
+  });
+});
+
+describe("describeSpeechRecognitionError", () => {
+  it("turns macOS permission check failures into actionable guidance", () => {
+    expect(
+      describeSpeechRecognitionError({
+        error: "not-allowed",
+        message: "Speech recognition service permission check has failed",
+      }),
+    ).toBe(
+      "System dictation needs Microphone and Speech Recognition permission. Enable both for Claudette in System Settings, then restart the app.",
+    );
+  });
+
+  it("preserves unknown platform details", () => {
+    expect(
+      describeSpeechRecognitionError({
+        error: "aborted",
+        message: "Recognition aborted by service",
+      }),
+    ).toBe("System dictation failed: Recognition aborted by service");
   });
 });

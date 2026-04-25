@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listVoiceProviders } from "../services/voice";
 import type { VoiceProviderInfo } from "../types/voice";
-import { chooseVoiceProvider } from "../utils/voice";
+import { chooseVoiceProvider, describeSpeechRecognitionError } from "../utils/voice";
 
 type VoiceState =
   | "idle"
@@ -178,7 +178,7 @@ export function useVoiceInput(
     };
     recognition.onerror = (event) => {
       if (cancelledRef.current) return;
-      setError(event.message || event.error || "Voice input failed.");
+      setError(describeSpeechRecognitionError(event));
       setState("error");
     };
     recognition.onend = () => {

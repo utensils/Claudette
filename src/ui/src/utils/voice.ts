@@ -1,5 +1,10 @@
 import type { VoiceProviderInfo } from "../types/voice";
 
+export interface SpeechRecognitionErrorLike {
+  error?: string;
+  message?: string;
+}
+
 export function chooseVoiceProvider(
   providers: VoiceProviderInfo[],
 ): VoiceProviderInfo | null {
@@ -35,4 +40,39 @@ export function insertTranscriptAtSelection(
     text: nextText,
     cursor: before.length + insertion.length,
   };
+}
+
+export function describeSpeechRecognitionError(
+  event: SpeechRecognitionErrorLike,
+): string {
+  const error = event.error?.trim() ?? "";
+  const message = event.message?.trim() ?? "";
+  const detail = message || error;
+  const normalized = `${error} ${message}`.toLowerCase();
+
+  if (
+    error === "not-allowed" ||
+    error === "service-not-allowed" ||
+    normalized.includes("permission")
+  ) {
+    return "System dictation needs Microphone and Speech Recognition permission. Enable both for Claudette in System Settings, then restart the app.";
+  }
+
+  if (error === "audio-capture") {
+    return "System dictation could not access a microphone. Check your input device and microphone permission.";
+  }
+
+  if (error === "network") {
+    return "System dictation could not reach the platform speech recognition service. Try again, or use an offline provider when available.";
+  }
+
+  if (error === "no-speech") {
+    return "No speech was detected. Try again closer to the microphone.";
+  }
+
+  if (error === "language-not-supported") {
+    return "System dictation does not support the current input language.";
+  }
+
+  return detail ? `System dictation failed: ${detail}` : "System dictation failed.";
 }

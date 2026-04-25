@@ -285,7 +285,7 @@ impl VoiceProvider for PlatformVoiceProvider {
             id: self.id().to_string(),
             name: "System dictation".to_string(),
             description:
-                "Uses the webview or operating system speech recognition surface when available."
+                "Uses the webview or operating system speech recognition surface when available. Requires microphone and speech recognition permission."
                     .to_string(),
             kind: VoiceProviderKind::Platform,
             privacy_label: "Uses platform services; offline behavior varies by OS".to_string(),
@@ -307,7 +307,7 @@ impl VoiceProvider for PlatformVoiceProvider {
                 VoiceProviderStatus::Unavailable
             },
             status_label: if enabled {
-                "Ready when the webview supports speech recognition".to_string()
+                "Ready when webview speech recognition and OS permissions are available".to_string()
             } else {
                 "Disabled".to_string()
             },
