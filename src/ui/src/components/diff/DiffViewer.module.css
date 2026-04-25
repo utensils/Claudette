@@ -61,7 +61,8 @@
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
-  min-width: max-content;
+  width: max-content;
+  min-width: 100%;
 }
 
 .hunkHeader {
@@ -146,6 +147,7 @@
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
+  min-width: 100%;
 }
 
 .sbsRow {
