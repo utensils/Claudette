@@ -150,6 +150,25 @@ describe("copyAttachmentToClipboard", () => {
       }),
     ).rejects.toThrow("denied");
   });
+
+  // WebKit silently drops image/svg+xml ClipboardItems, so a copied SVG
+  // would never reach the system clipboard. Production routes SVGs
+  // through Tauri's writeText, which bypasses the WKWebView allowlist.
+  it("writes SVG attachments via the injected writeText (Tauri clipboard)", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const svgFixture: DownloadableAttachment = {
+      filename: "drawing.svg",
+      data_base64: "PHN2Zy8+", // base64 of '<svg/>'
+      media_type: "image/svg+xml",
+    };
+    await copyAttachmentToClipboard(svgFixture, {
+      clipboard: { write } as unknown as Clipboard,
+      writeText,
+    });
+    expect(writeText).toHaveBeenCalledWith("<svg/>");
+    expect(write).not.toHaveBeenCalled();
+  });
 });
 
 describe("isShareSupported", () => {
