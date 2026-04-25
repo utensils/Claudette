@@ -33,7 +33,7 @@ pub struct BuiltinPlugin {
 /// agent-tool surface grows.
 pub const BUILTIN_PLUGINS: &[BuiltinPlugin] = &[BuiltinPlugin {
     name: "send_to_user",
-    title: "Inline Attachments",
+    title: "Agent Attachments",
     description: "Lets the agent deliver images, screenshots, PDFs, and small text files \
                   inline in chat. The agent reaches for this whenever you ask it to send, \
                   share, or show you a file — including artifacts produced by other tools \
