@@ -31,6 +31,7 @@ import {
 import { applySelectedModel } from "./applySelectedModel";
 import { MODELS } from "./modelRegistry";
 import { roleClassKey, shouldRenderAsMarkdown } from "./messageRendering";
+import { StreamingContext } from "./StreamingContext";
 import { findLatestPlanFilePath } from "./planFilePath";
 import type { PermissionLevel } from "../../stores/useAppStore";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -1307,13 +1308,15 @@ const StreamingMessage = memo(function StreamingMessage({
       aria-busy={isStreaming}
     >
       <div className={styles.content}>
-        <Markdown
-          remarkPlugins={REMARK_PLUGINS}
-          rehypePlugins={REHYPE_PLUGINS}
-          components={MARKDOWN_COMPONENTS}
-        >
-          {preprocessContent(displayed)}
-        </Markdown>
+        <StreamingContext.Provider value={isStreaming || pendingText.length > 0}>
+          <Markdown
+            remarkPlugins={REMARK_PLUGINS}
+            rehypePlugins={REHYPE_PLUGINS}
+            components={MARKDOWN_COMPONENTS}
+          >
+            {preprocessContent(displayed)}
+          </Markdown>
+        </StreamingContext.Provider>
         {showCaret && <span className={caretStyles.caret} aria-hidden="true" />}
       </div>
     </div>

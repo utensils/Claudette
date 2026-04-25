@@ -1,13 +1,14 @@
-import React, { createElement } from "react";
+import React, { createElement, useContext, useEffect, useState } from "react";
 import type { PluggableList } from "unified";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import rehypeHighlight from "rehype-highlight";
 import { AnsiUp } from "ansi_up";
 import { openUrl } from "../services/tauri";
 import { CodeBlock } from "../components/chat/CodeBlock";
+import { StreamingContext } from "../components/chat/StreamingContext";
+import { getCachedHighlight, highlightCode } from "./highlight";
 
 // Shared AnsiUp instance for converting ANSI escape sequences to HTML.
 const ansiUp = new AnsiUp();
@@ -15,7 +16,7 @@ ansiUp.use_classes = false;
 
 /** Convert ANSI escape codes in text to HTML span tags. */
 export function ansiToHtml(text: string): string {
-  if (!text.includes("\x1b") && !text.includes("\u001b")) return text;
+  if (!text.includes("\x1b") && !text.includes("")) return text;
   return ansiUp.ansi_to_html(text);
 }
 
@@ -96,31 +97,72 @@ export const SANITIZE_SCHEMA = {
   },
 };
 
-// Shared plugin lists (stable references avoid re-creating on every render)
+// Shared plugin lists (stable references avoid re-creating on every render).
+// Highlighting is no longer part of the plugin pipeline — it runs in a Web
+// Worker off the main thread, dispatched from the `code` component override
+// below once the surrounding subtree is no longer streaming.
 export const REHYPE_PLUGINS: PluggableList = [
   rehypeRaw,
   [rehypeSanitize, SANITIZE_SCHEMA],
-  rehypeHighlight,
 ];
 export const REMARK_PLUGINS: PluggableList = [remarkGfm];
 
 // Schemes that should open in the system browser rather than navigate the webview.
 export const EXTERNAL_SCHEMES = /^https?:|^mailto:/i;
 
+function extractText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(extractText).join("");
+  return "";
+}
+
+interface HighlightedCodeProps {
+  className?: string;
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}
+
 /**
- * Trim all trailing newlines from the last text-node child of a code element.
- * rehype-highlight preserves the source `\n` before the closing fence; those
- * phantom newlines paint extra selection lines below the visible code.
+ * Markdown `<code>` override. Inline code (no `language-*` class) renders as
+ * a plain `<code>`. Fenced blocks dispatch to the Shiki worker on mount and
+ * swap to highlighted HTML once it returns. While the enclosing subtree is
+ * streaming (StreamingContext === true) the dispatch is suppressed; the block
+ * stays plain and is highlighted once the message finalizes.
  */
-export function trimTrailingCodeNewline(children: React.ReactNode): React.ReactNode {
-  const arr = React.Children.toArray(children);
-  if (arr.length === 0) return children;
-  const last = arr[arr.length - 1];
-  if (typeof last !== "string") return children;
-  const trimmed = last.replace(/\n+$/, "");
-  if (trimmed === last) return children;
-  if (trimmed === "") return arr.slice(0, -1);
-  return [...arr.slice(0, -1), trimmed];
+export function HighlightedCode({
+  className,
+  children,
+  ...props
+}: HighlightedCodeProps): React.ReactElement {
+  const lang = typeof className === "string"
+    ? className.match(/language-([\w-]+)/)?.[1] ?? null
+    : null;
+  const isStreaming = useContext(StreamingContext);
+  const code = lang ? extractText(children) : "";
+  const [html, setHtml] = useState<string | null>(() =>
+    lang ? getCachedHighlight(code, lang) : null,
+  );
+
+  useEffect(() => {
+    if (!lang || isStreaming || html != null) return;
+    let cancelled = false;
+    void highlightCode(code, lang).then((result) => {
+      if (!cancelled) setHtml(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, lang, isStreaming, html]);
+
+  if (lang && html != null) {
+    return createElement("code", {
+      ...props,
+      className,
+      dangerouslySetInnerHTML: { __html: html },
+    });
+  }
+  return createElement("code", { ...props, className }, children);
 }
 
 // Override <a> to open external links in the system browser instead of navigating the webview.
@@ -147,13 +189,5 @@ export const MARKDOWN_COMPONENTS: Components = {
   pre: ({ node, children, ...props }) =>
     createElement(CodeBlock, props, children),
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  code: ({ node, className, children, ...props }) => {
-    const isFenced =
-      typeof className === "string" && /\b(?:hljs|language-)/.test(className);
-    return createElement(
-      "code",
-      { ...props, className },
-      isFenced ? trimTrailingCodeNewline(children) : children,
-    );
-  },
+  code: ({ node, ...props }) => createElement(HighlightedCode, props),
 };
