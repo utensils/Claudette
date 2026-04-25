@@ -29,6 +29,29 @@ fn endpoint_for(channel: &str) -> &'static str {
     }
 }
 
+/// Classifies an updater error: `Ok(None)` means "treat as no update available
+/// rather than a hard failure", `Err(...)` is a real transport/parse failure
+/// that should bubble up to the UI.
+///
+/// `Error::ReleaseNotFound` covers two situations:
+///   1. HTTP 404 on `latest.json` — the manifest does not exist (or is hidden
+///      behind a draft release, as happens during an in-progress nightly build).
+///   2. Any other non-success HTTP status (e.g. 5xx) where the response was
+///      received but parsed nothing — the upstream plugin maps these to the
+///      same variant.
+///
+/// Both are benign from the user's standpoint: their currently-installed build
+/// is still working; the catalog is just temporarily uninformative. Surfacing a
+/// red error banner for either is more alarming than the situation warrants.
+/// True transport failures (DNS, TLS, connect) reach us as `Reqwest`/`Network`
+/// variants and continue to error.
+fn classify_check_error(err: tauri_plugin_updater::Error) -> Result<Option<()>, String> {
+    match err {
+        tauri_plugin_updater::Error::ReleaseNotFound => Ok(None),
+        other => Err(other.to_string()),
+    }
+}
+
 /// Check the configured channel's release feed for an update.
 ///
 /// On success, the resulting [`tauri_plugin_updater::Update`] is stashed in
@@ -45,15 +68,30 @@ pub async fn check_for_updates_with_channel(
         .parse()
         .map_err(|e: url::ParseError| e.to_string())?;
 
-    let update = app
+    let result = app
         .updater_builder()
         .endpoints(vec![endpoint])
         .map_err(|e| e.to_string())?
         .build()
         .map_err(|e| e.to_string())?
         .check()
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
+
+    let update = match result {
+        Ok(u) => u,
+        Err(e) => match classify_check_error(e) {
+            Ok(None) => {
+                eprintln!(
+                    "[updater] Release manifest unavailable for channel {channel:?}; \
+                     treating as no update (likely an in-progress nightly build)"
+                );
+                None
+            }
+            Err(msg) => return Err(msg),
+            // `Ok(Some(_))` is unreachable: the helper never returns it.
+            Ok(Some(())) => unreachable!(),
+        },
+    };
 
     let mut slot = state.pending_update.lock().await;
     match update {
@@ -116,4 +154,34 @@ pub async fn install_pending_update(
     // `AppHandle::restart` returns `!` (it ends the process), so it satisfies
     // the `Result<(), String>` signature without an explicit `Ok(())`.
     app.restart();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_not_found_is_treated_as_no_update() {
+        let result = classify_check_error(tauri_plugin_updater::Error::ReleaseNotFound);
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[test]
+    fn other_errors_bubble_up_as_strings() {
+        // Pick any non-ReleaseNotFound variant the upstream enum exposes.
+        let err = tauri_plugin_updater::Error::EmptyEndpoints;
+        let expected = err.to_string();
+        match classify_check_error(err) {
+            Err(msg) => assert_eq!(msg, expected),
+            Ok(_) => panic!("EmptyEndpoints should not be downgraded"),
+        }
+    }
+
+    #[test]
+    fn endpoint_for_known_channels() {
+        assert_eq!(endpoint_for("stable"), STABLE_URL);
+        assert_eq!(endpoint_for("nightly"), NIGHTLY_URL);
+        // Unknown channels fall back to stable (and log a warning).
+        assert_eq!(endpoint_for("garbage"), STABLE_URL);
+    }
 }
