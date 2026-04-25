@@ -3019,7 +3019,6 @@ function ChatInputArea({
               <button
                 type="button"
                 className={styles.voiceErrorBtn}
-                role="status"
                 onClick={() => voice.cancel()}
                 title={`${voice.error}\n\nClick to dismiss`}
               >
@@ -3042,9 +3041,7 @@ function ChatInputArea({
                 ? "Stop voice input"
                 : voice.state === "transcribing"
                   ? "Cancel transcription"
-                : voice.platformSupported
-                  ? "Voice input"
-                  : "Voice providers"
+                  : "Voice input"
             }
             aria-label={
               voice.state === "recording"

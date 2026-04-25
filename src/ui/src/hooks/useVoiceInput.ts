@@ -78,7 +78,7 @@ export interface VoiceInputController {
   interimTranscript: string;
   error: string | null;
   activeProvider: VoiceProviderInfo | null;
-  platformSupported: boolean;
+  webSpeechSupported: boolean;
   start: () => Promise<void>;
   stop: () => void;
   cancel: () => void;
@@ -107,7 +107,12 @@ export function useVoiceInput(
     return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
   }, [platformSpeechDisabled]);
 
-  const platformSupported = Boolean(Recognition) && !platformSpeechDisabled;
+  // Whether the in-webview Web Speech API is usable. Forced false on
+  // macOS because we route through the native Apple Speech / Candle
+  // providers there. Consumers should NOT use this as a proxy for
+  // "voice input is available" — native providers cover macOS even
+  // when this is false.
+  const webSpeechSupported = Boolean(Recognition) && !platformSpeechDisabled;
 
   useEffect(() => {
     if (state !== "recording") return;
@@ -141,6 +146,8 @@ export function useVoiceInput(
     }
     finalTranscriptRef.current = "";
     setInterimTranscript("");
+    setError(null);
+    setActiveProvider(null);
     setState("idle");
   }, []);
 
@@ -315,7 +322,7 @@ export function useVoiceInput(
     interimTranscript,
     error,
     activeProvider,
-    platformSupported,
+    webSpeechSupported,
     start,
     stop,
     cancel,

@@ -935,7 +935,7 @@ fn distil_model_ready(cache_path: &Path) -> bool {
     DISTIL_MODEL_FILES.iter().all(|(filename, min_size)| {
         let path = cache_path.join(filename);
         if let Some(min_size) = min_size {
-            path.metadata().is_ok_and(|m| m.len() > *min_size)
+            path.metadata().is_ok_and(|m| m.len() >= *min_size)
         } else {
             path.is_file()
         }
