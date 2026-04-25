@@ -313,15 +313,22 @@
   line-height: 1.55;
   margin: 12px 0;
   cursor: text;
-  user-select: text;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .content pre code {
   background: none !important;
   color: inherit;
-  padding: 0;
+  padding: 0 !important;
   font-size: inherit;
-  display: inline;
+  -webkit-user-select: text;
+  user-select: text;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 /* Inline code — accent tint */
