@@ -1,5 +1,7 @@
 import type { VoiceProviderInfo } from "../types/voice";
 
+export const PLATFORM_VOICE_PROVIDER_ID = "voice-platform-system";
+
 export interface SpeechRecognitionErrorLike {
   error?: string;
   message?: string;
@@ -9,6 +11,14 @@ export function chooseVoiceProvider(
   providers: VoiceProviderInfo[],
 ): VoiceProviderInfo | null {
   const selected = providers.find((provider) => provider.selected);
+  if (
+    selected &&
+    (selected.id !== PLATFORM_VOICE_PROVIDER_ID ||
+      (selected.enabled && selected.status === "ready"))
+  ) {
+    return selected;
+  }
+
   const readyLocal = providers.find(
     (provider) =>
       provider.kind === "local-model" &&
@@ -17,11 +27,11 @@ export function chooseVoiceProvider(
   );
   const platform = providers.find(
     (provider) =>
-      provider.id === "voice-platform-system" &&
+      provider.id === PLATFORM_VOICE_PROVIDER_ID &&
       provider.enabled &&
       provider.status === "ready",
   );
-  return selected ?? readyLocal ?? platform ?? null;
+  return readyLocal ?? platform ?? null;
 }
 
 export function insertTranscriptAtSelection(

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listVoiceProviders } from "../services/voice";
 import type { VoiceProviderInfo } from "../types/voice";
-import { chooseVoiceProvider, describeSpeechRecognitionError } from "../utils/voice";
+import {
+  PLATFORM_VOICE_PROVIDER_ID,
+  chooseVoiceProvider,
+  describeSpeechRecognitionError,
+} from "../utils/voice";
 
 type VoiceState =
   | "idle"
@@ -57,6 +61,11 @@ interface SpeechRecognitionWindow extends Window {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 }
 
+function isMacPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Mac/.test(navigator.platform) || /Mac OS X/.test(navigator.userAgent);
+}
+
 export interface VoiceInputController {
   state: VoiceState;
   elapsedSeconds: number;
@@ -81,14 +90,16 @@ export function useVoiceInput(
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const finalTranscriptRef = useRef("");
   const cancelledRef = useRef(false);
+  const platformSpeechDisabled = useMemo(() => isMacPlatform(), []);
 
   const Recognition = useMemo(() => {
+    if (platformSpeechDisabled) return undefined;
     if (typeof window === "undefined") return undefined;
     const speechWindow = window as SpeechRecognitionWindow;
     return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
-  }, []);
+  }, [platformSpeechDisabled]);
 
-  const platformSupported = Boolean(Recognition);
+  const platformSupported = Boolean(Recognition) && !platformSpeechDisabled;
 
   useEffect(() => {
     if (state !== "recording") return;
@@ -134,7 +145,7 @@ export function useVoiceInput(
       return;
     }
 
-    if (provider.id !== "voice-platform-system") {
+    if (provider.id !== PLATFORM_VOICE_PROVIDER_ID) {
       const providerMessage = provider.error ?? provider.statusLabel;
       if (provider.status === "engine-unavailable" || provider.status === "error") {
         setError(providerMessage);
@@ -148,6 +159,18 @@ export function useVoiceInput(
         return;
       }
       setError(providerMessage || "This local provider is not available.");
+      setState("error");
+      return;
+    }
+
+    if (!provider.enabled || provider.status !== "ready") {
+      setError(provider.error ?? provider.statusLabel);
+      setState("error");
+      return;
+    }
+
+    if (platformSpeechDisabled) {
+      setError("System dictation is disabled on macOS because it can crash the app before permission errors are recoverable.");
       setState("error");
       return;
     }

@@ -102,6 +102,20 @@ describe("chooseVoiceProvider", () => {
       ]),
     ).toBeNull();
   });
+
+  it("does not choose a selected unavailable platform provider", () => {
+    expect(
+      chooseVoiceProvider([
+        provider({
+          id: "voice-platform-system",
+          selected: true,
+          status: "unavailable",
+          statusLabel: "Unavailable",
+          error: "System dictation is disabled on macOS.",
+        }),
+      ]),
+    ).toBeNull();
+  });
 });
 
 describe("insertTranscriptAtSelection", () => {

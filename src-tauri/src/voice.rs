@@ -274,6 +274,18 @@ impl VoiceProviderRegistry {
 
 struct PlatformVoiceProvider;
 
+#[cfg(target_os = "macos")]
+fn platform_voice_unavailable_reason() -> Option<&'static str> {
+    Some(
+        "System dictation is disabled on macOS because WKWebView speech recognition can terminate the app before permission errors are recoverable.",
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn platform_voice_unavailable_reason() -> Option<&'static str> {
+    None
+}
+
 #[async_trait]
 impl VoiceProvider for PlatformVoiceProvider {
     fn id(&self) -> &'static str {
@@ -299,23 +311,26 @@ impl VoiceProvider for PlatformVoiceProvider {
 
     fn status(&self, registry: &VoiceProviderRegistry, db: &Database) -> VoiceProviderInfo {
         let enabled = registry.enabled(db, self.id());
+        let unavailable_reason = platform_voice_unavailable_reason();
         VoiceProviderInfo {
             metadata: self.metadata(registry),
-            status: if enabled {
+            status: if enabled && unavailable_reason.is_none() {
                 VoiceProviderStatus::Ready
             } else {
                 VoiceProviderStatus::Unavailable
             },
-            status_label: if enabled {
-                "Ready when webview speech recognition and OS permissions are available".to_string()
-            } else {
+            status_label: if !enabled {
                 "Disabled".to_string()
+            } else if let Some(reason) = unavailable_reason {
+                reason.to_string()
+            } else {
+                "Ready when webview speech recognition and OS permissions are available".to_string()
             },
             enabled,
             selected: registry.selected_provider(db).as_deref() == Some(self.id()),
             setup_required: false,
             can_remove_model: false,
-            error: None,
+            error: unavailable_reason.map(str::to_string),
         }
     }
 
@@ -647,6 +662,29 @@ mod tests {
         assert_eq!(provider.status, VoiceProviderStatus::Unavailable);
         assert!(!provider.enabled);
         assert!(!provider.setup_required);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn platform_provider_is_unavailable_on_macos() {
+        let (_dir, db_path) = test_db_path();
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(PathBuf::from("/tmp/models"));
+
+        let provider = registry
+            .list_providers(&db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == PLATFORM_ID)
+            .expect("platform provider");
+
+        assert_eq!(provider.status, VoiceProviderStatus::Unavailable);
+        assert!(provider.enabled);
+        assert!(
+            provider
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("disabled on macOS"))
+        );
     }
 
     #[test]
