@@ -13,8 +13,6 @@
 //! `has_direnv` / `has_mise` / `has_nix` cfg flags emitted by
 //! `build.rs`, so CI without those tools silently skips them.
 
-#![cfg(test)]
-
 use mlua::Lua;
 use std::path::Path;
 

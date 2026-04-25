@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useAppStore } from "../../../stores/useAppStore";
 import {
   listBuiltinClaudettePlugins,
   listClaudettePlugins,
@@ -8,11 +10,19 @@ import {
   setClaudettePluginSetting,
   type BuiltinPluginInfo,
 } from "../../../services/claudettePlugins";
+import {
+  listVoiceProviders,
+  prepareVoiceProvider,
+  removeVoiceProviderModel,
+  setSelectedVoiceProvider,
+  setVoiceProviderEnabled,
+} from "../../../services/voice";
 import type {
   ClaudettePluginInfo,
   ClaudettePluginKind,
   PluginSettingField,
 } from "../../../types/claudettePlugins";
+import type { VoiceDownloadProgress, VoiceProviderInfo } from "../../../types/voice";
 import styles from "../Settings.module.css";
 
 const KIND_LABELS: Record<ClaudettePluginKind, string> = {
@@ -21,6 +31,12 @@ const KIND_LABELS: Record<ClaudettePluginKind, string> = {
 };
 
 const KIND_ORDER: ClaudettePluginKind[] = ["scm", "env-provider"];
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 /**
  * Plugins settings section — shows Claudette's own Lua plugins (SCM
@@ -35,6 +51,9 @@ const KIND_ORDER: ClaudettePluginKind[] = ["scm", "env-provider"];
 export function PluginsSettings() {
   const [plugins, setPlugins] = useState<ClaudettePluginInfo[] | null>(null);
   const [builtins, setBuiltins] = useState<BuiltinPluginInfo[] | null>(null);
+  const [voiceProviders, setVoiceProviders] = useState<VoiceProviderInfo[] | null>(null);
+  const [preparingVoiceProvider, setPreparingVoiceProvider] = useState<string | null>(null);
+  const [voiceProgress, setVoiceProgress] = useState<Record<string, VoiceDownloadProgress>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reseedMessage, setReseedMessage] = useState<string | null>(null);
@@ -44,12 +63,14 @@ export function PluginsSettings() {
     setLoading(true);
     setError(null);
     try {
-      const [luaResult, builtinResult] = await Promise.all([
+      const [luaResult, builtinResult, voiceResult] = await Promise.all([
         listClaudettePlugins(),
         listBuiltinClaudettePlugins(),
+        listVoiceProviders(),
       ]);
       setPlugins(luaResult);
       setBuiltins(builtinResult);
+      setVoiceProviders(voiceResult);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -69,9 +90,96 @@ export function PluginsSettings() {
     [refresh],
   );
 
+  const handleSelectVoiceProvider = useCallback(
+    async (providerId: string) => {
+      try {
+        await setSelectedVoiceProvider(providerId);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refresh],
+  );
+
+  const handleToggleVoiceProvider = useCallback(
+    async (providerId: string, nextEnabled: boolean) => {
+      try {
+        await setVoiceProviderEnabled(providerId, nextEnabled);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refresh],
+  );
+
+  const handlePrepareVoiceProvider = useCallback(
+    async (providerId: string) => {
+      setPreparingVoiceProvider(providerId);
+      try {
+        await prepareVoiceProvider(providerId);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+        await refresh();
+      } finally {
+        setPreparingVoiceProvider(null);
+      }
+    },
+    [refresh],
+  );
+
+  const handleRemoveVoiceProviderModel = useCallback(
+    async (providerId: string) => {
+      try {
+        await removeVoiceProviderModel(providerId);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [refresh],
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Auto-expand the targeted voice provider when the user is redirected
+  // here from the chat mic button to grant permissions / install a model.
+  // Consumes the focus signal so it only fires on the redirect, not on
+  // every subsequent re-render.
+  const voiceProviderFocus = useAppStore((s) => s.voiceProviderFocus);
+  const focusVoiceProvider = useAppStore((s) => s.focusVoiceProvider);
+  useEffect(() => {
+    if (!voiceProviderFocus) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add(`voice:${voiceProviderFocus}`);
+      return next;
+    });
+    focusVoiceProvider(null);
+  }, [voiceProviderFocus, focusVoiceProvider]);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | null = null;
+    listen<VoiceDownloadProgress>("voice-download-progress", (event) => {
+      if (!mounted) return;
+      setVoiceProgress((prev) => ({
+        ...prev,
+        [event.payload.providerId]: event.payload,
+      }));
+    }).then((fn) => {
+      if (mounted) unlisten = fn;
+      else fn();
+    }).catch((e) => console.warn("Failed to listen for voice download progress:", e));
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
 
   const toggleExpanded = useCallback((name: string) => {
     setExpanded((prev) => {
@@ -180,6 +288,35 @@ export function PluginsSettings() {
         </div>
       )}
 
+      {voiceProviders && voiceProviders.length > 0 && (
+        <div className={styles.fieldGroup}>
+          <div className={styles.mcpGroupLabel}>Voice providers</div>
+          <div className={styles.mcpList}>
+            {voiceProviders.map((provider) => {
+              const key = `voice:${provider.id}`;
+              return (
+                <VoiceProviderRow
+                  key={provider.id}
+                  provider={provider}
+                  expanded={expanded.has(key)}
+                  preparing={preparingVoiceProvider === provider.id}
+                  progress={voiceProgress[provider.id]}
+                  onToggleExpand={() => toggleExpanded(key)}
+                  onSelect={() => handleSelectVoiceProvider(provider.id)}
+                  onToggleEnabled={(next) =>
+                    handleToggleVoiceProvider(provider.id, next)
+                  }
+                  onPrepare={() => handlePrepareVoiceProvider(provider.id)}
+                  onRemoveModel={() =>
+                    handleRemoveVoiceProviderModel(provider.id)
+                  }
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {grouped.length === 0 && (
         <div className={styles.settingDescription}>
           No plugins discovered. This shouldn't happen — bundled plugins
@@ -229,6 +366,177 @@ interface PluginRowProps {
   onToggleExpand: () => void;
   onToggleEnabled: (enabled: boolean) => void;
   onSettingChange: (key: string, value: unknown) => void;
+}
+
+interface VoiceProviderRowProps {
+  provider: VoiceProviderInfo;
+  expanded: boolean;
+  preparing: boolean;
+  progress: VoiceDownloadProgress | undefined;
+  onToggleExpand: () => void;
+  onSelect: () => void;
+  onToggleEnabled: (enabled: boolean) => void;
+  onPrepare: () => void;
+  onRemoveModel: () => void;
+}
+
+function VoiceProviderRow({
+  provider,
+  expanded,
+  preparing,
+  progress,
+  onToggleExpand,
+  onSelect,
+  onToggleEnabled,
+  onPrepare,
+  onRemoveModel,
+}: VoiceProviderRowProps) {
+  const dotColor = !provider.enabled
+    ? "var(--text-faint)"
+    : provider.status === "ready"
+      ? "var(--status-running)"
+      : provider.status === "error" || provider.status === "engine-unavailable"
+        ? "var(--status-stopped)"
+        : "var(--accent-primary)";
+  const badge = provider.selected ? `selected - ${provider.statusLabel}` : provider.statusLabel;
+  const canDownload =
+    provider.downloadRequired &&
+    provider.enabled &&
+    (provider.status === "needs-setup" || provider.status === "error");
+  const canPreparePlatform =
+    !provider.downloadRequired &&
+    provider.enabled &&
+    provider.setupRequired &&
+    (provider.status === "needs-setup" || provider.status === "error");
+  const modeLabel = provider.offline
+    ? "offline"
+    : provider.recordingMode === "native"
+      ? "native"
+      : "webview";
+
+  return (
+    <div>
+      <div className={styles.mcpRow}>
+        <div className={styles.mcpInfo}>
+          <span
+            className={styles.mcpStatusDot}
+            style={{ background: dotColor }}
+            title={provider.statusLabel}
+          />
+          <span
+            className={`${styles.mcpName} ${!provider.enabled ? styles.mcpNameDisabled : ""}`}
+          >
+            {provider.name}
+          </span>
+          <span className={styles.mcpBadge}>{badge}</span>
+          <span className={styles.settingDescription}>{modeLabel}</span>
+        </div>
+        <div className={styles.mcpActions}>
+          <button
+            type="button"
+            className={styles.envDetailsBtn}
+            onClick={onToggleExpand}
+            aria-expanded={expanded}
+          >
+            {expanded ? "Hide details" : "Details"}
+          </button>
+          {!provider.selected && provider.enabled && (
+            <button
+              type="button"
+              className={styles.envDetailsBtn}
+              onClick={onSelect}
+            >
+              Use
+            </button>
+          )}
+          <button
+            type="button"
+            className={`${styles.mcpToggle} ${provider.enabled ? styles.mcpToggleOn : ""}`}
+            onClick={() => onToggleEnabled(!provider.enabled)}
+            role="switch"
+            aria-checked={provider.enabled}
+            aria-label={`${provider.enabled ? "Disable" : "Enable"} ${provider.name}`}
+          >
+            <span className={styles.mcpToggleKnob} />
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <div className={styles.envErrorCard}>
+          <div className={styles.settingDescription}>
+            {provider.description}
+          </div>
+          <div className={styles.envErrorHint}>{provider.privacyLabel}</div>
+          {provider.modelSizeLabel && (
+            <div className={styles.envErrorHint}>
+              Model size: {provider.modelSizeLabel}
+            </div>
+          )}
+          {provider.cachePath && (
+            <div className={styles.envErrorHint}>
+              Cache path: <code>{provider.cachePath}</code>
+            </div>
+          )}
+          {provider.acceleratorLabel && (
+            <div className={styles.envErrorHint}>
+              Acceleration: {provider.acceleratorLabel}
+            </div>
+          )}
+          {provider.error && (
+            <div className={styles.envErrorHint}>
+              <strong style={{ color: "var(--status-stopped)" }}>
+                {provider.error}
+              </strong>
+            </div>
+          )}
+          {progress && (provider.status === "downloading" || preparing) && (
+            <div className={styles.envErrorHint}>
+              Downloading {progress.filename}:{" "}
+              {progress.percent === null
+                ? formatBytes(progress.overallDownloadedBytes)
+                : `${Math.round(progress.percent * 100)}%`}
+            </div>
+          )}
+          <div className={styles.buttonRow}>
+            {canDownload && (
+              <button
+                type="button"
+                className={styles.iconBtn}
+                onClick={onPrepare}
+                disabled={preparing}
+              >
+                {preparing ? "Downloading…" : "Download model"}
+              </button>
+            )}
+            {canPreparePlatform && (
+              <button
+                type="button"
+                className={styles.iconBtn}
+                onClick={onPrepare}
+                disabled={preparing}
+              >
+                {preparing ? "Preparing…" : "Set up permissions"}
+              </button>
+            )}
+            {provider.status === "downloading" && (
+              <button type="button" className={styles.iconBtn} disabled>
+                Downloading…
+              </button>
+            )}
+            {provider.canRemoveModel && (
+              <button
+                type="button"
+                className={styles.iconBtn}
+                onClick={onRemoveModel}
+              >
+                Remove model
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PluginRow({

@@ -6,12 +6,14 @@ mod commands;
 mod mdns;
 mod missing_cli;
 mod osc133;
+mod platform_speech;
 mod pty;
 mod remote;
 mod state;
 mod transport;
 mod tray;
 mod usage;
+mod voice;
 mod webview2_check;
 
 use std::path::PathBuf;
@@ -147,18 +149,18 @@ fn main() {
     // user setting overrides) from app_settings so the very first call
     // after startup reflects what the user configured previously. Any
     // failure here is non-fatal: the registry just runs with defaults.
-    if let Ok(db) = Database::open(&db_path) {
-        if let Ok(entries) = db.list_app_settings_with_prefix("plugin:") {
-            for (key, value) in entries {
-                let rest = &key["plugin:".len()..];
-                if let Some((plugin_name, tail)) = rest.split_once(':') {
-                    if tail == "enabled" && value == "false" {
-                        plugins.set_disabled(plugin_name, true);
-                    } else if let Some(setting_key) = tail.strip_prefix("setting:") {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&value) {
-                            plugins.set_setting(plugin_name, setting_key, Some(v));
-                        }
-                    }
+    if let Ok(db) = Database::open(&db_path)
+        && let Ok(entries) = db.list_app_settings_with_prefix("plugin:")
+    {
+        for (key, value) in entries {
+            let rest = &key["plugin:".len()..];
+            if let Some((plugin_name, tail)) = rest.split_once(':') {
+                if tail == "enabled" && value == "false" {
+                    plugins.set_disabled(plugin_name, true);
+                } else if let Some(setting_key) = tail.strip_prefix("setting:")
+                    && let Ok(v) = serde_json::from_str::<serde_json::Value>(&value)
+                {
+                    plugins.set_setting(plugin_name, setting_key, Some(v));
                 }
             }
         }
@@ -372,6 +374,15 @@ fn main() {
             // returns). On Windows this is a no-op.
             std::thread::spawn(claudette::env::prewarm_shell_path);
 
+            // Pre-warm voice subsystems so the user's first mic click
+            // hits warm CoreAudio + Speech.framework state instead of
+            // a multi-second cold-start delay. Touches enumeration /
+            // status APIs only — no permission prompts triggered.
+            {
+                let voice = app.state::<state::AppState>().voice.clone();
+                std::thread::spawn(move || voice.prewarm());
+            }
+
             // Set up the system tray icon (respects tray_enabled setting).
             if let Err(e) = tray::setup_tray(app.handle()) {
                 eprintln!("[tray] Failed to setup tray: {e}");
@@ -582,6 +593,15 @@ fn main() {
             // Built-in Claudette plugins (Rust-implemented agent surfaces)
             commands::plugins_runtime::list_builtin_claudette_plugins,
             commands::plugins_runtime::set_builtin_claudette_plugin_enabled,
+            // Voice providers
+            commands::voice::voice_list_providers,
+            commands::voice::voice_set_selected_provider,
+            commands::voice::voice_set_provider_enabled,
+            commands::voice::voice_prepare_provider,
+            commands::voice::voice_remove_provider_model,
+            commands::voice::voice_start_recording,
+            commands::voice::voice_stop_and_transcribe,
+            commands::voice::voice_cancel_recording,
             // Local server
             commands::remote::start_local_server,
             commands::remote::stop_local_server,

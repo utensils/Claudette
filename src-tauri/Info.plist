@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Claudette uses the microphone for voice input in chat prompts.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Claudette uses speech recognition to convert voice input into chat prompt text.</string>
+</dict>
+</plist>

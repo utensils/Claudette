@@ -709,7 +709,7 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
                             .as_ref()
                             .is_some_and(|pr| pr.state == claudette::scm::types::PrState::Merged)
                     {
-                        eprintln!("[scm] PR merged for workspace {} — auto-archiving", ws_id);
+                        eprintln!("[scm] PR merged for workspace {ws_id} — auto-archiving");
                         let pr_number = detail.pull_request.as_ref().map(|pr| pr.number);
                         auto_archive_workspace(&handle, &app_state, &ws_id, pr_number).await;
                     }
