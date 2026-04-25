@@ -313,17 +313,20 @@
   line-height: 1.55;
   margin: 12px 0;
   cursor: text;
-  user-select: text;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .content pre code {
   background: none !important;
   color: inherit;
-  padding: 0;
+  padding: 0 !important;
   font-size: inherit;
-  /* Block layout so the selection rectangle clips to the code element rather
-     than the padded <pre> — fixes the stair-stepped selection (#396). */
+  -webkit-user-select: text;
+  user-select: text;
   display: block;
+  width: fit-content;
+  max-width: 100%;
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }

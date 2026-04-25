@@ -107,17 +107,17 @@ export const REMARK_PLUGINS: PluggableList = [remarkGfm];
 export const EXTERNAL_SCHEMES = /^https?:|^mailto:/i;
 
 /**
- * Trim a single trailing newline from the last text-node child of a code element.
- * rehype-highlight preserves the source `\n` before the closing fence; that
- * phantom newline paints an extra selection line below the visible code.
+ * Trim trailing newlines from the last text-node child of a code element.
+ * rehype-highlight preserves the source `\n` before the closing fence; those
+ * phantom newlines paint extra selection lines below the visible code.
  */
 export function trimTrailingCodeNewline(children: React.ReactNode): React.ReactNode {
   const arr = React.Children.toArray(children);
   if (arr.length === 0) return children;
   const last = arr[arr.length - 1];
-  if (typeof last !== "string") return arr;
+  if (typeof last !== "string") return children;
   const trimmed = last.replace(/\n+$/, "");
-  if (trimmed === last) return arr;
+  if (trimmed === last) return children;
   if (trimmed === "") return arr.slice(0, -1);
   return [...arr.slice(0, -1), trimmed];
 }
