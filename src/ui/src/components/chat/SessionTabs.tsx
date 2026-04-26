@@ -63,9 +63,6 @@ export function SessionTabs({ workspaceId }: Props) {
   }, [workspaceId, setSessionsForWorkspace]);
 
   const activeSessions = sessions.filter((s) => s.status === "Active");
-  const runningCount = activeSessions.filter(
-    (s) => s.agent_status === "Running",
-  ).length;
 
   const handleCreate = async () => {
     try {
@@ -160,15 +157,6 @@ export function SessionTabs({ workspaceId }: Props) {
       >
         <Plus size={14} />
       </button>
-      {runningCount > 1 && (
-        <span
-          className={styles.parallelHint}
-          title={`${runningCount} sessions running in parallel`}
-          aria-hidden
-        >
-          <SessionStatusIcon status={{ kind: "running" }} size={10} />
-        </span>
-      )}
     </div>
   );
 }
