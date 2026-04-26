@@ -94,9 +94,11 @@ export function useKeyboardShortcuts() {
                   })
                 : stopAgent(sessionId);
               stopPromise.catch(console.error);
-              useAppStore.getState().updateWorkspace(selectedWorkspaceId, {
-                agent_status: "Stopped",
-              });
+              // Don't write workspace-level agent_status here: this stops only
+              // the active session. The backend's ProcessExited event will
+              // mark this session as Stopped, and useAgentStream re-derives
+              // the workspace aggregate from per-session statuses (any session
+              // still Running keeps the workspace as Running).
             }
           }
         }

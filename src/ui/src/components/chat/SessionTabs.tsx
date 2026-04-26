@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
@@ -99,6 +99,39 @@ export function SessionTabs({ workspaceId }: Props) {
     }
   };
 
+  // Refs keyed by session id so arrow-key navigation can move DOM focus
+  // to the newly-selected tab (the previously-focused element loses
+  // tabIndex=0 once selection moves, so we need to programmatically focus
+  // the new active tab).
+  const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const navigateTabs = useCallback(
+    (from: string, direction: "prev" | "next" | "first" | "last") => {
+      if (activeSessions.length === 0) return;
+      const idx = activeSessions.findIndex((s) => s.id === from);
+      if (idx < 0) return;
+      let targetIdx: number;
+      switch (direction) {
+        case "prev":
+          targetIdx = (idx - 1 + activeSessions.length) % activeSessions.length;
+          break;
+        case "next":
+          targetIdx = (idx + 1) % activeSessions.length;
+          break;
+        case "first":
+          targetIdx = 0;
+          break;
+        case "last":
+          targetIdx = activeSessions.length - 1;
+          break;
+      }
+      const target = activeSessions[targetIdx];
+      selectSession(workspaceId, target.id);
+      tabRefs.current.get(target.id)?.focus();
+    },
+    [activeSessions, selectSession, workspaceId],
+  );
+
   return (
     <div className={styles.tabBar} role="tablist">
       {activeSessions.map((session) => (
@@ -110,6 +143,11 @@ export function SessionTabs({ workspaceId }: Props) {
           onClose={() => handleArchive(session)}
           onRename={(name) => {
             updateChatSession(session.id, { name, name_edited: true });
+          }}
+          onNavigate={(direction) => navigateTabs(session.id, direction)}
+          tabRef={(el) => {
+            if (el) tabRefs.current.set(session.id, el);
+            else tabRefs.current.delete(session.id);
           }}
         />
       ))}
@@ -141,9 +179,19 @@ interface TabProps {
   onSelect: () => void;
   onClose: () => void;
   onRename: (name: string) => void;
+  onNavigate: (direction: "prev" | "next" | "first" | "last") => void;
+  tabRef: (el: HTMLDivElement | null) => void;
 }
 
-function SessionTab({ session, isActive, onSelect, onClose, onRename }: TabProps) {
+function SessionTab({
+  session,
+  isActive,
+  onSelect,
+  onClose,
+  onRename,
+  onNavigate,
+  tabRef,
+}: TabProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.name);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -183,6 +231,7 @@ function SessionTab({ session, isActive, onSelect, onClose, onRename }: TabProps
 
   return (
     <div
+      ref={tabRef}
       role="tab"
       aria-selected={isActive}
       tabIndex={isActive ? 0 : -1}
@@ -202,6 +251,18 @@ function SessionTab({ session, isActive, onSelect, onClose, onRename }: TabProps
         } else if (e.key === "F2") {
           e.preventDefault();
           startEditing();
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          onNavigate("prev");
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          onNavigate("next");
+        } else if (e.key === "Home") {
+          e.preventDefault();
+          onNavigate("first");
+        } else if (e.key === "End") {
+          e.preventDefault();
+          onNavigate("last");
         }
       }}
     >

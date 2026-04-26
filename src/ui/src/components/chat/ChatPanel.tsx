@@ -1025,7 +1025,10 @@ export function ChatPanel() {
       } else {
         await stopAgent(sessionId);
       }
-      updateWorkspace(selectedWorkspaceId, { agent_status: "Stopped" });
+      // Don't write workspace-level agent_status here: stop is per-session
+      // and other sessions in the workspace may still be running. The
+      // backend ProcessExited event flips this session to Stopped, and
+      // useAgentStream re-derives the workspace aggregate from sessions.
     } catch (e) {
       console.error("stopAgent failed:", e);
     }

@@ -313,7 +313,11 @@ export function buildCommands(ctx: CommandContext): Command[] {
       icon: Square,
       keywords: ["kill", "cancel", "abort"],
       execute: () => {
-        ctx.stopAgent(sessId).then(() => ctx.updateWorkspace(wsId, { agent_status: "Stopped" }));
+        // Stop is per-session — the backend ProcessExited event flips this
+        // session's status to Stopped and useAgentStream re-derives the
+        // workspace aggregate. Don't force the workspace to Stopped here:
+        // other sessions in the workspace may still be running.
+        ctx.stopAgent(sessId).catch(console.error);
         ctx.close();
       },
     });
