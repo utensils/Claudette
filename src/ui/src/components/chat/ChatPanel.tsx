@@ -2778,7 +2778,7 @@ function ChatInputArea({
     }).catch((err) => {
       console.error(
         "[drag-drop] Tauri native listener failed, falling back to HTML5:",
-        err instanceof Error ? err.message : err,
+        err,
       );
       tauriDragListenerActive.current = false;
       setDragActive(false);
@@ -2817,13 +2817,16 @@ function ChatInputArea({
 
     const handleDrop = (e: DragEvent) => {
       if (tauriDragListenerActive.current) return;
+      if (!e.dataTransfer?.types.includes("Files")) return;
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);
-      const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
+      const files = e.dataTransfer.files;
+      if (files.length === 0) return;
       for (const file of Array.from(files)) {
-        addAttachmentRef.current(file, file.name);
+        void addAttachmentRef.current(file, file.name).catch((error) => {
+          console.error("[drag-drop] Failed to add dropped attachment:", error);
+        });
       }
     };
 
