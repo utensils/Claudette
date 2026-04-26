@@ -79,11 +79,13 @@
   transition: opacity var(--transition-fast);
 }
 
-.pill:hover .unpin {
+.pill:hover .unpin,
+.pill:focus-within .unpin {
   opacity: 0.55;
 }
 
-.unpin:hover {
+.unpin:hover,
+.unpin:focus-visible {
   opacity: 1 !important;
 }
 
