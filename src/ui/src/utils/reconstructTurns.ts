@@ -129,6 +129,36 @@ export function reconstructCompletedTurns(
         0,
       ) || undefined;
 
+    const anyAnchor = td.activities.some(
+      (a) => a.anchor_ordinal != null,
+    );
+    let segmentGroups: CompletedTurn["segmentGroups"] = undefined;
+    if (anyAnchor) {
+      const byOrdinal = new Map<number, TurnToolActivityData[]>();
+      for (const a of td.activities) {
+        const ord = a.anchor_ordinal ?? 0;
+        const bucket = byOrdinal.get(ord);
+        if (bucket) bucket.push(a);
+        else byOrdinal.set(ord, [a]);
+      }
+      segmentGroups = [...byOrdinal.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([ordinal, acts]) => {
+          const anchorMsg = turnAssistantMessages[ordinal];
+          return {
+            afterMessageId: anchorMsg?.id ?? td.message_id,
+            segments: deriveSegmentsFromActivities(acts) ?? [
+              {
+                kind: "tool-group" as const,
+                id: `seg-grp-${acts[0].tool_use_id}`,
+                toolUseIds: acts.map((a) => a.tool_use_id),
+              },
+            ],
+            activityToolUseIds: acts.map((a) => a.tool_use_id),
+          };
+        });
+    }
+
     return {
       id: td.checkpoint_id,
       activities: td.activities.map((a) => ({
@@ -140,6 +170,7 @@ export function reconstructCompletedTurns(
         summary: a.summary,
       })),
       segments: deriveSegmentsFromActivities(td.activities),
+      segmentGroups,
       messageCount: td.message_count,
       collapsed: true,
       afterMessageIndex,

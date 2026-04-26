@@ -1862,8 +1862,8 @@ impl Database {
         let tx = self.conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO turn_tool_activities (id, checkpoint_id, tool_use_id, tool_name, input_json, result_text, summary, sort_order, group_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO turn_tool_activities (id, checkpoint_id, tool_use_id, tool_name, input_json, result_text, summary, sort_order, group_id, anchor_ordinal)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
             for a in activities {
                 stmt.execute(params![
@@ -1876,6 +1876,7 @@ impl Database {
                     a.summary,
                     a.sort_order,
                     a.group_id,
+                    a.anchor_ordinal,
                 ])?;
             }
         }
@@ -1909,8 +1910,8 @@ impl Database {
         )?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO turn_tool_activities (id, checkpoint_id, tool_use_id, tool_name, input_json, result_text, summary, sort_order, group_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO turn_tool_activities (id, checkpoint_id, tool_use_id, tool_name, input_json, result_text, summary, sort_order, group_id, anchor_ordinal)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
             for a in activities {
                 stmt.execute(params![
@@ -1923,6 +1924,7 @@ impl Database {
                     a.summary,
                     a.sort_order,
                     a.group_id,
+                    a.anchor_ordinal,
                 ])?;
             }
         }
@@ -1943,7 +1945,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT ta.id, ta.checkpoint_id, ta.tool_use_id, ta.tool_name,
                     ta.input_json, ta.result_text, ta.summary, ta.sort_order,
-                    ta.group_id
+                    ta.group_id, ta.anchor_ordinal
              FROM turn_tool_activities ta
              JOIN conversation_checkpoints cp ON ta.checkpoint_id = cp.id
              WHERE cp.workspace_id = ?1
@@ -1961,6 +1963,7 @@ impl Database {
                     summary: row.get(6)?,
                     sort_order: row.get(7)?,
                     group_id: row.get(8)?,
+                    anchor_ordinal: row.get(9)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -3855,6 +3858,7 @@ mod tests {
             summary: format!("{tool} test.rs"),
             sort_order: order,
             group_id: None,
+            anchor_ordinal: None,
         }
     }
 
@@ -3917,6 +3921,7 @@ mod tests {
             summary: "".into(),
             sort_order: order,
             group_id: group,
+            anchor_ordinal: None,
         };
 
         db.insert_turn_tool_activities(&[

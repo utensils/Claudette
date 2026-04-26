@@ -41,6 +41,12 @@ pub struct TurnToolActivity {
     /// — the reader treats those as a single group covering the whole turn.
     #[serde(default)]
     pub group_id: Option<i32>,
+    /// 0-based index of the committed segment group within the turn. The Nth
+    /// group anchors to the Nth assistant message in the turn's message span.
+    /// Used to reconstruct inline segment rendering on reload. `None` on
+    /// legacy rows — falls back to aggregated TurnSummary rendering.
+    #[serde(default)]
+    pub anchor_ordinal: Option<i32>,
 }
 
 /// Grouped checkpoint + activities for loading completed turns.

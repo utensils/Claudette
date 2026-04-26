@@ -164,4 +164,9 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("20260424170614_turn_tool_activity_group_id.sql"),
         legacy_version: None,
     },
+    Migration {
+        id: "20260425180000_turn_tool_activity_anchor_ordinal",
+        sql: include_str!("20260425180000_turn_tool_activity_anchor_ordinal.sql"),
+        legacy_version: None,
+    },
 ];

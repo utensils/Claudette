@@ -29,6 +29,7 @@ export function useAgentStream() {
   );
   const appendToolSegment = useAppStore((s) => s.appendToolSegment);
   const markSegmentBreak = useAppStore((s) => s.markSegmentBreak);
+  const commitSegments = useAppStore((s) => s.commitSegments);
   const updateWorkspace = useAppStore((s) => s.updateWorkspace);
   const updateChatSession = useAppStore((s) => s.updateChatSession);
   const setAgentQuestion = useAppStore((s) => s.setAgentQuestion);
@@ -300,7 +301,7 @@ export function useAgentStream() {
                       summary: "",
                     });
                     appendToolSegment(
-                      wsId,
+                      sessionId,
                       inner.content_block.id,
                       isSubagentTool(inner.content_block.name),
                     );
@@ -399,6 +400,7 @@ export function useAgentStream() {
               // block doesn't vanish between streamingContent clearing and the
               // completed message unhiding. It's cleared atomically with
               // pendingTypewriter at drain-complete via finishTypewriterDrain.
+              commitSegments(sessionId, messageId);
             }
             setStreamingContent(sessionId, "");
             break;
@@ -448,7 +450,14 @@ export function useAgentStream() {
                 const text =
                   typeof block.content === "string"
                     ? block.content
-                    : JSON.stringify(block.content);
+                    : Array.isArray(block.content)
+                      ? block.content
+                          .filter(
+                            (b: { type: string }) => b.type === "text",
+                          )
+                          .map((b: { text: string }) => b.text)
+                          .join("\n")
+                      : String(block.content ?? "");
                 updateToolActivity(sessionId, block.tool_use_id, {
                   resultText: text,
                 });
@@ -478,6 +487,7 @@ export function useAgentStream() {
     appendToolActivityInput,
     appendToolSegment,
     markSegmentBreak,
+    commitSegments,
     updateWorkspace,
     setAgentQuestion,
     setPlanApproval,
@@ -614,17 +624,44 @@ export function useAgentStream() {
       const savePromise = currentActivities.length > 0
         ? (() => {
             const messageCount = turnMessageCountRef.current[sessionId] || 0;
-            // Build toolUseId → group_id (segment index) so each persisted
-            // activity can be grouped back together on reload.
-            const liveSegments =
+            // Build toolUseId → group_id (segment index) AND anchor_ordinal
+            // (which committed group, i.e. which assistant message the tool
+            // landed under). Read both committed groups and trailing live
+            // segments so a checkpoint-created event that fires after
+            // commitSegments has already run still maps every activity.
+            const committed =
+              useAppStore.getState().committedSegmentGroups[sessionId] ?? [];
+            const trailing =
               useAppStore.getState().turnSegments[sessionId] ?? [];
             const groupByToolUseId = new Map<string, number>();
-            liveSegments.forEach((seg, idx) => {
-              if (seg.kind === "tool-group") {
-                for (const id of seg.toolUseIds) groupByToolUseId.set(id, idx);
-              } else {
-                groupByToolUseId.set(seg.toolUseId, idx);
+            const anchorByToolUseId = new Map<string, number>();
+            let groupIdx = 0;
+            committed.forEach((g, ordinal) => {
+              for (const seg of g.segments) {
+                if (seg.kind === "tool-group") {
+                  for (const id of seg.toolUseIds) {
+                    groupByToolUseId.set(id, groupIdx);
+                    anchorByToolUseId.set(id, ordinal);
+                  }
+                } else {
+                  groupByToolUseId.set(seg.toolUseId, groupIdx);
+                  anchorByToolUseId.set(seg.toolUseId, ordinal);
+                }
+                groupIdx++;
               }
+            });
+            const trailingOrdinal = committed.length;
+            trailing.forEach((seg) => {
+              if (seg.kind === "tool-group") {
+                for (const id of seg.toolUseIds) {
+                  groupByToolUseId.set(id, groupIdx);
+                  anchorByToolUseId.set(id, trailingOrdinal);
+                }
+              } else {
+                groupByToolUseId.set(seg.toolUseId, groupIdx);
+                anchorByToolUseId.set(seg.toolUseId, trailingOrdinal);
+              }
+              groupIdx++;
             });
             const activities = currentActivities.map((a, i) => ({
               id: crypto.randomUUID(),
@@ -636,6 +673,7 @@ export function useAgentStream() {
               summary: a.summary,
               sort_order: i,
               group_id: groupByToolUseId.get(a.toolUseId) ?? null,
+              anchor_ordinal: anchorByToolUseId.get(a.toolUseId) ?? null,
             }));
             return saveTurnToolActivities(checkpoint.id, messageCount, activities);
           })()

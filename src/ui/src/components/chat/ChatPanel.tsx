@@ -250,6 +250,11 @@ const EMPTY_COMPLETED_TURNS: CompletedTurn[] = [];
 const EMPTY_ACTIVITIES: ToolActivity[] = [];
 const EMPTY_TURN_SEGMENTS: TurnSegment[] = [];
 const EMPTY_ATTACHMENTS: ChatAttachment[] = [];
+const EMPTY_COMMITTED: Array<{
+  afterMessageId: string;
+  segments: TurnSegment[];
+  activities: ToolActivity[];
+}> = [];
 
 export function ChatPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
@@ -372,9 +377,21 @@ export function ChatPanel() {
   const showThinkingBlocks = useAppStore(
     (s) => activeSessionId ? s.showThinkingBlocks[activeSessionId] === true : false
   );
-  // Subscribe only to count — avoids re-render on tool activity content changes
   const activitiesCount = useAppStore(
-    (s) => (activeSessionId ? (s.toolActivities[activeSessionId] || []).length : 0)
+    (s) => {
+      if (!activeSessionId) return 0;
+      const all = s.toolActivities[activeSessionId] ?? [];
+      const committed = s.committedSegmentGroups[activeSessionId] ?? [];
+      if (committed.length === 0) return all.length;
+      // Don't double-count tools that are already shown inline via committed
+      // segment groups — only the trailing (uncommitted) tools are "in
+      // progress" from the running indicator's perspective.
+      const ids = new Set<string>();
+      for (const g of committed) {
+        for (const a of g.activities) ids.add(a.toolUseId);
+      }
+      return all.filter((a) => !ids.has(a.toolUseId)).length;
+    }
   );
   const completedTurnsCount = useAppStore(
     (s) => (activeSessionId ? (s.completedTurns[activeSessionId] || []).length : 0)
@@ -1483,24 +1500,85 @@ function ToolGroupBox({
   );
 }
 
-/** A subagent segment: a standalone card for a `Task` or `Agent` tool call.
- *  Currently renders the same input/summary that a tool-group row would;
- *  the distinct card is the mount point for future per-subagent streaming. */
-function SubagentCard({ activity }: { activity: ToolActivity }) {
+function SubagentCard({
+  activity,
+  searchQuery,
+}: {
+  activity: ToolActivity;
+  searchQuery?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const summary =
     activity.summary ||
     extractToolSummary(activity.toolName, activity.inputJson);
+
+  const parsed = useMemo(() => {
+    try {
+      const obj = JSON.parse(activity.inputJson);
+      return {
+        description: obj.description as string | undefined,
+        prompt: obj.prompt as string | undefined,
+      };
+    } catch {
+      return { description: undefined, prompt: undefined };
+    }
+  }, [activity.inputJson]);
+
+  const headerText = parsed.description || summary;
+  const hasBody = !!(parsed.prompt || activity.resultText);
+  const isInteractive = hasBody;
+
   return (
     <div className={styles.subagentCard}>
-      <div className={styles.subagentHeader}>
+      <div
+        className={styles.subagentHeader}
+        role={isInteractive ? "button" : undefined}
+        tabIndex={isInteractive ? 0 : undefined}
+        aria-expanded={isInteractive ? expanded : undefined}
+        // Hover/cursor:pointer styling lives in CSS; suppress it when there's
+        // nothing to expand so the card doesn't imply clickability.
+        style={isInteractive ? undefined : { cursor: "default" }}
+        onClick={() => isInteractive && setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (isInteractive && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+      >
+        {hasBody && (
+          <span className={styles.toolChevron}>
+            {expanded ? "⌄" : "›"}
+          </span>
+        )}
         <span
           className={styles.subagentLabel}
           style={{ color: toolColor(activity.toolName) }}
         >
           {activity.toolName}
         </span>
-        {summary && <span className={styles.subagentSummary}>{summary}</span>}
+        {headerText && (
+          <span className={styles.subagentSummary}>{headerText}</span>
+        )}
+        {!activity.resultText && (
+          <LoaderCircle size={12} className={styles.subagentSpinner} />
+        )}
       </div>
+      {expanded && (
+        <div className={styles.subagentBody}>
+          {parsed.prompt && (
+            <div className={styles.subagentPrompt}>{parsed.prompt}</div>
+          )}
+          {activity.resultText && (
+            <div className={styles.subagentResult}>
+              <HighlightedMessageMarkdown
+                content={activity.resultText}
+                query={searchQuery ?? ""}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1603,6 +1681,110 @@ function synthesiseLiveSegments(activities: ToolActivity[]): TurnSegment[] {
   }
   flush();
   return segments;
+}
+
+function InlineToolGroup({
+  activities,
+  isRunning,
+  searchQuery,
+}: {
+  activities: ToolActivity[];
+  isRunning?: boolean;
+  searchQuery?: string;
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+  // Force-expand when the active search query matches inside any of this
+  // group's activity summaries — otherwise marks would be silently hidden
+  // behind the collapsed header and the user would see a non-zero counter
+  // with no visible highlight.
+  const queryHasMatch =
+    !!searchQuery &&
+    activities.some(
+      (a) =>
+        a.summary &&
+        a.summary.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  const isExpanded = !collapsed || queryHasMatch;
+  return (
+    <div className={styles.toolActivities}>
+      <div className={styles.turnSummary}>
+        <div
+          className={styles.turnHeader}
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          onClick={() => setCollapsed(!collapsed)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setCollapsed(!collapsed);
+            }
+          }}
+        >
+          <span className={styles.toolChevron}>
+            {isExpanded ? "⌄" : "›"}
+          </span>
+          <span className={styles.turnLabel}>
+            {activities.length} tool call{activities.length !== 1 ? "s" : ""}
+            {isRunning && <span className={styles.inProgressNote}> in progress</span>}
+          </span>
+        </div>
+        {isExpanded && (
+          <div className={styles.turnActivities}>
+            {activities.map((act) => (
+              <ToolActivityRow
+                key={act.toolUseId}
+                act={act}
+                searchQuery={searchQuery}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InlineSegments({
+  segments,
+  activities,
+  isRunning,
+  searchQuery,
+}: {
+  segments: TurnSegment[];
+  activities: ToolActivity[];
+  isRunning?: boolean;
+  searchQuery?: string;
+}) {
+  const byId = useMemo(() => {
+    const m = new Map<string, ToolActivity>();
+    for (const a of activities) m.set(a.toolUseId, a);
+    return m;
+  }, [activities]);
+
+  return (
+    <div className={styles.inlineSegments}>
+      {segments.map((seg) => {
+        if (seg.kind === "subagent") {
+          const act = byId.get(seg.toolUseId);
+          if (!act) return null;
+          return <SubagentCard key={seg.id} activity={act} />;
+        }
+        const acts = seg.toolUseIds
+          .map((id) => byId.get(id))
+          .filter((a): a is ToolActivity => !!a);
+        if (acts.length === 0) return null;
+        return (
+          <InlineToolGroup
+            key={seg.id}
+            activities={acts}
+            isRunning={isRunning}
+            searchQuery={searchQuery}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 function TurnSummary({
@@ -1894,6 +2076,18 @@ type RollbackModalData = {
   hasFileChanges: boolean;
 };
 
+function CommittedSegmentsCard({
+  segments,
+  activities,
+}: {
+  segments: TurnSegment[];
+  activities: ToolActivity[];
+}) {
+  return (
+    <InlineSegments segments={segments} activities={activities} />
+  );
+}
+
 const MessagesWithTurns = memo(function MessagesWithTurns({
   messages,
   workspaceId,
@@ -1954,6 +2148,9 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   const chatAttachments = useAppStore(
     (s) => s.chatAttachments[sessionId] ?? EMPTY_ATTACHMENTS
   );
+  const committedGroups = useAppStore(
+    (s) => s.committedSegmentGroups[sessionId] ?? EMPTY_COMMITTED,
+  );
 
   // Pre-build a Map keyed by message_id for O(1) lookup in the render loop.
   //
@@ -1987,6 +2184,101 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     }
     return map;
   }, [chatAttachments, messages]);
+
+  const committedByMessageId = useMemo(() => {
+    const map = new Map<
+      string,
+      { segments: TurnSegment[]; activities: ToolActivity[] }
+    >();
+    for (const g of committedGroups) {
+      const existing = map.get(g.afterMessageId);
+      if (existing) {
+        existing.segments.push(...g.segments);
+        existing.activities.push(...g.activities);
+      } else {
+        map.set(g.afterMessageId, {
+          segments: [...g.segments],
+          activities: [...g.activities],
+        });
+      }
+    }
+    return map;
+  }, [committedGroups]);
+
+  const renderCommittedSegments = (messageId: string) => {
+    const group = committedByMessageId.get(messageId);
+    if (!group || group.activities.length === 0) return null;
+    return (
+      <CommittedSegmentsCard
+        key={`committed-${messageId}`}
+        segments={group.segments}
+        activities={group.activities}
+      />
+    );
+  };
+
+  const completedInlineByMessageId = useMemo(() => {
+    const map = new Map<
+      string,
+      Array<{
+        segments: TurnSegment[];
+        activities: ToolActivity[];
+        turnId: string;
+        isLastGroup: boolean;
+        turn: CompletedTurn;
+        globalIdx: number;
+      }>
+    >();
+    completedTurns.forEach((turn, globalIdx) => {
+      if (!turn.segmentGroups) return;
+      const actByToolUseId = new Map(
+        turn.activities.map((a) => [a.toolUseId, a]),
+      );
+      turn.segmentGroups.forEach((g, idx) => {
+        const acts = g.activityToolUseIds
+          .map((id) => actByToolUseId.get(id))
+          .filter((a): a is ToolActivity => !!a);
+        const entry = {
+          segments: g.segments,
+          activities: acts,
+          turnId: turn.id,
+          isLastGroup: idx === turn.segmentGroups!.length - 1,
+          turn,
+          globalIdx,
+        };
+        const list = map.get(g.afterMessageId) ?? [];
+        list.push(entry);
+        map.set(g.afterMessageId, list);
+      });
+    });
+    return map;
+  }, [completedTurns]);
+
+  const renderCompletedInlineSegments = (messageId: string) => {
+    const entries = completedInlineByMessageId.get(messageId);
+    if (!entries || entries.length === 0) return null;
+    return entries.map((data) => (
+      <React.Fragment key={`completed-inline-${data.turnId}-${messageId}`}>
+        <InlineSegments
+          segments={data.segments}
+          activities={data.activities}
+        />
+        {data.isLastGroup && (
+          <TurnFooter
+            durationMs={data.turn.durationMs}
+            inputTokens={data.turn.inputTokens}
+            outputTokens={data.turn.outputTokens}
+            assistantText={assistantTextByTurnId.get(data.turnId) ?? ""}
+            onFork={
+              onForkTurn ? () => onForkTurn(data.turn.id) : undefined
+            }
+            onRollback={buildOnRollback(data.turnId)}
+            className={styles.messageTurnFooter}
+          />
+        )}
+      </React.Fragment>
+    ));
+  };
 
   // Build an index: afterMessageIndex → array of (turn, globalIndex) pairs.
   // Only recomputed when completedTurns changes, not on every streaming update.
@@ -2170,7 +2462,9 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   const renderTurns = (position: number) => {
     const entries = turnsByPosition[position];
     if (!entries) return null;
-    return entries.map(({ turn, globalIdx }) => (
+    return entries
+      .filter(({ turn }) => !turn.segmentGroups?.length)
+      .map(({ turn, globalIdx }) => (
       <TurnSummary
         key={turn.id}
         turn={turn}
@@ -2351,6 +2645,8 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             </div>
           </div>
           )}
+          {renderCommittedSegments(msg.id)}
+          {renderCompletedInlineSegments(msg.id)}
           {renderPlainTurnFooter(idx + 1)}
         </React.Fragment>
         );
@@ -2359,6 +2655,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
       {completedTurns
         .map((turn, globalIdx) => ({ turn, globalIdx }))
         .filter(({ turn }) => turn.afterMessageIndex >= messages.length)
+        .filter(({ turn }) => !turn.segmentGroups?.length)
         .map(({ turn, globalIdx }) => (
           <TurnSummary
             key={turn.id}
@@ -2389,36 +2686,31 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
   isRunning: boolean;
   searchQuery: string;
 }) {
-  const activities = useAppStore(
+  const allActivities = useAppStore(
     (s) => s.toolActivities[sessionId] ?? EMPTY_ACTIVITIES
   );
   const liveSegments = useAppStore(
     (s) => s.turnSegments[sessionId] ?? EMPTY_TURN_SEGMENTS,
   );
-  const [collapsed, setCollapsed] = useState(true);
+  const committedGroups = useAppStore(
+    (s) => s.committedSegmentGroups[sessionId] ?? EMPTY_COMMITTED,
+  );
 
-  // Auto-collapse when a new turn starts (activities goes from 0 to non-zero)
-  const prevLengthRef = useRef(0);
-  useEffect(() => {
-    if (isRunning && activities.length > 0 && prevLengthRef.current === 0) {
-      setCollapsed(true);
+  const committedIds = useMemo(() => {
+    if (committedGroups.length === 0) return null;
+    const ids = new Set<string>();
+    for (const g of committedGroups) {
+      for (const a of g.activities) ids.add(a.toolUseId);
     }
-    prevLengthRef.current = activities.length;
-  }, [isRunning, activities.length]);
+    return ids;
+  }, [committedGroups]);
+
+  const activities = useMemo(() => {
+    if (!committedIds) return allActivities;
+    return allActivities.filter((a) => !committedIds.has(a.toolUseId));
+  }, [allActivities, committedIds]);
 
   if (activities.length === 0) return null;
-
-  // Force-expand when the active search query matches inside any of this
-  // section's activity summaries — otherwise marks would be silently
-  // hidden behind the collapsed header and the user would see a non-zero
-  // counter with no visible highlight.
-  const queryHasMatch =
-    !!searchQuery &&
-    activities.some(
-      (a) =>
-        a.summary && a.summary.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-  const isExpanded = !collapsed || queryHasMatch;
 
   // Prefer segments the stream handler built live. Fall back to synthesis if
   // the store has no segments yet (race early in turn) OR if segments don't
@@ -2438,37 +2730,13 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
       : synthesiseLiveSegments(activities);
 
   return (
-    <div className={styles.toolActivities} aria-live="polite" aria-atomic="true">
-      <div className={styles.turnSummary}>
-        <div
-          className={styles.turnHeader}
-          role="button"
-          tabIndex={0}
-          onClick={() => setCollapsed(!collapsed)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setCollapsed(!collapsed);
-            }
-          }}
-        >
-          <span className={styles.toolChevron}>
-            {isExpanded ? "⌄" : "›"}
-          </span>
-          <span className={styles.turnLabel}>
-            {activities.length} tool call{activities.length !== 1 ? "s" : ""}
-            {isRunning && <span className={styles.inProgressNote}> in progress</span>}
-          </span>
-        </div>
-        {isExpanded && (
-          <TurnSegmentedBody
-            segments={segments}
-            activities={activities}
-            searchQuery={searchQuery}
-          />
-        )}
-      </div>
-    </div>
+    <InlineSegments
+      segments={segments}
+      activities={activities}
+      isRunning={isRunning}
+      searchQuery={searchQuery}
+    />
+
   );
 });
 
