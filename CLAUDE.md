@@ -179,13 +179,14 @@ A single sandboxed Lua runtime (`src/plugin_runtime/`) serves multiple plugin ki
 - **Never edit the SQL of a released migration.** The `id` is the tracked identity; rewriting or renaming applied migrations will desync databases in the field. Fix forward with a new migration.
 - **Merging branches:** each new migration is a distinct `.sql` file and a distinct `MIGRATIONS` entry, so parallel-branch migrations no longer collide on an integer version — both apply when merged. If two branches happen to choose the same timestamp (e.g. from `date -u +%Y%m%d%H%M%S` run at the same second), git will surface the clash as a merge conflict in `mod.rs`; bump one timestamp by a second and rename its file to resolve.
 - `PRAGMA user_version` is retained only to seed `schema_migrations` once on pre-redesign databases during the first run of the new runner. Do not read or write it in new code.
+- **"Already exists" leniency:** the runner treats `SQLITE_ERROR` failures whose message contains `"already exists"` or `"duplicate column name"` as benign — it logs `[migrations] <id> skipped: ...` to stderr, marks the migration applied, and continues. This makes hand-applied or out-of-order migrations on dev DBs survivable. It does **not** license writing migrations that depend on this: keep them strictly forward-only and additive, and prefer `IF NOT EXISTS` on new `CREATE TABLE` / `CREATE INDEX` statements.
 
 ## Project context
 
 - See GitHub Issue #5 for the full MVP PRD
 - See GitHub Issue #11 for the Workspace Management TDD
 - P0 features: workspace management, agent chat, diff viewer, integrated terminal, checkpoints, git/GitHub integration, scripts, repo settings
-- Target platforms: macOS (Apple Silicon + Intel), Linux (x86_64, Wayland + X11), and Windows (x86_64 + ARM64)
+- Target platforms: macOS (Apple Silicon + Intel), Linux (x86_64 + aarch64, Wayland + X11), and Windows (x86_64 + ARM64)
 
 ## Debugging (dev builds only)
 

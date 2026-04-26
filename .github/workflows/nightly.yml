@@ -122,6 +122,12 @@ jobs:
             rust-target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
             label: linux-x86_64
+          # GitHub-hosted aarch64 Linux runner (`ubuntu-22.04-arm`) is GA and
+          # native, so this is a real ARM64 build — no QEMU / cross toolchain.
+          - platform: ubuntu-22.04-arm
+            rust-target: aarch64-unknown-linux-gnu
+            bundles: appimage,deb
+            label: linux-aarch64
           # Windows ships bare `.exe` assets only (no MSI/NSIS bundle).
           # The tauri-action step is skipped on Windows and we drive
           # cargo directly against the native MSVC toolchain baked into
@@ -321,6 +327,42 @@ jobs:
             fi
             echo "Promotion attempt $attempt failed; retrying in 5s"
             sleep 5
+          done
+
+          # `tauri-action` generated `latest.json` while the release was
+          # tagged `nightly-staging`, so the asset URLs inside the manifest
+          # are hardcoded to `releases/download/nightly-staging/...`. Once
+          # the release is retagged to `nightly` above, those old URLs 404,
+          # breaking the in-app updater's download step (the manifest is
+          # reachable but `download_and_install` fails on the asset fetch).
+          # The Tauri signature covers the binary file contents — not the
+          # URL field — so rewriting the URLs here does not invalidate
+          # verification.
+          #
+          # Retry the fetch+rewrite+upload sequence a few times so a
+          # transient network or GitHub API failure does not leave the
+          # promoted release published with a stale manifest. Also verify
+          # the substitution actually took before uploading.
+          for attempt in 1 2 3; do
+            rm -f latest.json
+            if ! curl -fsSL -o latest.json \
+              "https://github.com/${GITHUB_REPOSITORY}/releases/download/nightly/latest.json"; then
+              echo "latest.json fetch attempt $attempt failed"
+            else
+              sed -i 's|releases/download/nightly-staging/|releases/download/nightly/|g' latest.json
+              if grep -q 'releases/download/nightly-staging/' latest.json; then
+                echo "::warning::latest.json still contains nightly-staging URLs after rewrite"
+              elif gh release upload nightly latest.json --clobber --repo "$GITHUB_REPOSITORY"; then
+                break
+              fi
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Failed to refresh latest.json for nightly after 3 attempts"
+              exit 1
+            fi
+            backoff=$((attempt * 5))
+            echo "latest.json refresh attempt $attempt failed; retrying in ${backoff}s"
+            sleep "$backoff"
           done
 
           # `gh release edit --tag` creates the new tag (`nightly`) at the
