@@ -1060,7 +1060,11 @@ export function ChatPanel() {
               )}
 
               {selectedWorkspaceId && hasThinking && showThinkingBlocks && (
-                <StreamingThinkingBlock workspaceId={selectedWorkspaceId} isStreaming={isRunning ?? false} />
+                <StreamingThinkingBlock
+                  workspaceId={selectedWorkspaceId}
+                  isStreaming={isRunning ?? false}
+                  searchQuery={searchQuery}
+                />
               )}
 
               {selectedWorkspaceId && (hasStreaming || hasPendingTypewriter) && (
@@ -1269,15 +1273,24 @@ export function ChatPanel() {
 const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
   workspaceId,
   isStreaming,
+  searchQuery,
 }: {
   workspaceId: string;
   isStreaming: boolean;
+  searchQuery: string;
 }) {
   const thinking = useAppStore(
     (s) => s.streamingThinking[workspaceId] || ""
   );
   if (!thinking) return null;
-  return <ThinkingBlock content={thinking} isStreaming={isStreaming} enableTypewriter />;
+  return (
+    <ThinkingBlock
+      content={thinking}
+      isStreaming={isStreaming}
+      enableTypewriter
+      searchQuery={searchQuery}
+    />
+  );
 });
 
 /**
@@ -1352,6 +1365,7 @@ function TurnSummary({
   assistantText,
   onFork,
   onRollback,
+  searchQuery,
 }: {
   turn: CompletedTurn;
   collapsed: boolean;
@@ -1366,6 +1380,9 @@ function TurnSummary({
   /** Called when the user clicks rollback. Undefined hides the button
    *  (e.g. turn is running, or no checkpoint exists for this turn). */
   onRollback?: () => void;
+  /** Active chat-search query. Force-expands this card when non-empty and
+   *  the query matches inside any of the contained activity summaries. */
+  searchQuery: string;
 }) {
   const hasElapsed = typeof turn.durationMs === "number" && turn.durationMs > 0;
   const hasTokens =
@@ -1374,6 +1391,18 @@ function TurnSummary({
   const hasFork = !!onFork;
   const hasRollback = !!onRollback;
   const showFooter = hasElapsed || hasTokens || hasCopy || hasFork || hasRollback;
+
+  // Force-expand if the query matches in any activity summary or the
+  // resolved tool-summary fallback. Without this, marks would land in
+  // detached DOM (the collapsed branch never renders), so the bar's
+  // counter would tick up but nothing visible would change.
+  const queryHasMatch =
+    !!searchQuery &&
+    turn.activities.some((a) => {
+      const text = a.summary || extractToolSummary(a.toolName, a.inputJson);
+      return text.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  const isExpanded = !collapsed || queryHasMatch;
 
   return (
     <div className={styles.turnSummaryWrapper}>
@@ -1391,7 +1420,7 @@ function TurnSummary({
       >
         <div className={styles.turnHeader}>
           <span className={styles.toolChevron}>
-            {collapsed ? "›" : "⌄"}
+            {isExpanded ? "⌄" : "›"}
           </span>
           <span className={styles.turnLabel}>
             {turn.activities.length} tool call
@@ -1400,7 +1429,7 @@ function TurnSummary({
               `, ${turn.messageCount} message${turn.messageCount !== 1 ? "s" : ""}`}
           </span>
         </div>
-        {!collapsed && (
+        {isExpanded && (
           <div className={styles.turnActivities}>
             {turn.activities.map((act: ToolActivity) => (
               <div key={act.toolUseId} className={styles.toolActivity}>
@@ -1410,7 +1439,10 @@ function TurnSummary({
                   </span>
                   {(act.summary || act.inputJson) && (
                     <span className={styles.toolSummary}>
-                      {act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                      <HighlightedPlainText
+                        text={act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                        query={searchQuery}
+                      />
                     </span>
                   )}
                 </div>
@@ -1904,6 +1936,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
         assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
         onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
         onRollback={buildOnRollback(turn.id)}
+        searchQuery={searchQuery}
       />
     ));
   };
@@ -1952,7 +1985,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
               <div className={styles.roleLabel}>You</div>
             )}
             {msg.role === "Assistant" && msg.thinking && showThinkingBlocks && (
-              <ThinkingBlock content={msg.thinking} isStreaming={false} />
+              <ThinkingBlock content={msg.thinking} isStreaming={false} searchQuery={searchQuery} />
             )}
             <div className={styles.content}>
               {attachmentsByMessage.has(msg.id) && (
@@ -2092,6 +2125,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
             onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
             onRollback={buildOnRollback(turn.id)}
+            searchQuery={searchQuery}
           />
         ))}
     </>
@@ -2127,6 +2161,18 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
 
   if (activities.length === 0) return null;
 
+  // Force-expand when the active search query matches inside any of this
+  // section's activity summaries — otherwise marks would be silently
+  // hidden behind the collapsed header and the user would see a non-zero
+  // counter with no visible highlight.
+  const queryHasMatch =
+    !!searchQuery &&
+    activities.some(
+      (a) =>
+        a.summary && a.summary.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  const isExpanded = !collapsed || queryHasMatch;
+
   return (
     <div className={styles.toolActivities} aria-live="polite" aria-atomic="true">
       <div className={styles.turnSummary}>
@@ -2143,14 +2189,14 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
           }}
         >
           <span className={styles.toolChevron}>
-            {collapsed ? "›" : "⌄"}
+            {isExpanded ? "⌄" : "›"}
           </span>
           <span className={styles.turnLabel}>
             {activities.length} tool call{activities.length !== 1 ? "s" : ""}
             {isRunning && <span className={styles.inProgressNote}> in progress</span>}
           </span>
         </div>
-        {!collapsed && (
+        {isExpanded && (
           <div className={styles.turnActivities}>
             {activities.map((act: ToolActivity) => (
               <div key={act.toolUseId} className={styles.toolActivity}>

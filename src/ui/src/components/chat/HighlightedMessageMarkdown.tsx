@@ -1,5 +1,6 @@
 import { memo, useLayoutEffect, useRef } from "react";
 import { MessageMarkdown } from "./MessageMarkdown";
+import { findAllRanges, nextSearchMatchId } from "../../utils/textSearch";
 
 /**
  * Wraps `<MessageMarkdown>` and overlays `<mark class="cc-search-match">`
@@ -51,19 +52,41 @@ export const HighlightedMessageMarkdown = memo(function HighlightedMessageMarkdo
   );
 });
 
-function applyHighlights(root: HTMLElement, query: string): void {
-  const lowerQuery = query.toLowerCase();
-  if (!lowerQuery) return;
-  const queryLength = lowerQuery.length;
+// Block-level tags that bound a "match container". Text nodes inside the
+// same block-tag ancestor get joined when searching, so a query can span
+// inline elements (e.g., across Shiki token spans inside <pre>, or across
+// <em>/<strong> inside a <p>) — but never across paragraph or list-item
+// boundaries, which would produce confusing matches with no visible
+// separator. Tag-name lookup is cheaper than getComputedStyle().
+const BLOCK_TAGS = new Set([
+  "P", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "PRE", "BLOCKQUOTE",
+  "TD", "TH", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "DD", "DT",
+]);
 
+function nearestBlockAncestor(el: Element | null, root: HTMLElement): Element {
+  let cur: Element | null = el;
+  while (cur && cur !== root) {
+    if (BLOCK_TAGS.has(cur.tagName)) return cur;
+    cur = cur.parentElement;
+  }
+  return root;
+}
+
+function applyHighlights(root: HTMLElement, query: string): void {
+  if (!query) return;
+
+  // Group all text nodes by their nearest block ancestor. Cross-token /
+  // cross-inline-element matches inside the same block then "just work"
+  // because we match against the block's joined text rather than each
+  // text node in isolation. This is what makes a search like "def " land
+  // when Shiki has tokenized "def" and " " into adjacent <span>s.
+  const groups = new Map<Element, Text[]>();
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
-      // Skip text inside <code> / <pre> — those are syntax-highlighted by
-      // Shiki and fragmenting the token spans would break colors.
+      // Skip text already wrapped in a previous mark (defensive — cleanup
+      // should have removed them, but the check makes re-runs idempotent).
       let p: Node | null = node.parentNode;
       while (p && p !== root) {
-        const tag = (p as HTMLElement).tagName;
-        if (tag === "CODE" || tag === "PRE") return NodeFilter.FILTER_REJECT;
         if ((p as HTMLElement).classList?.contains(SEARCH_MARK_CLASS)) {
           return NodeFilter.FILTER_REJECT;
         }
@@ -75,37 +98,78 @@ function applyHighlights(root: HTMLElement, query: string): void {
     },
   });
 
-  // Collect first to avoid mutating the tree mid-walk.
-  const targets: Text[] = [];
-  let current = walker.nextNode();
-  while (current) {
-    targets.push(current as Text);
-    current = walker.nextNode();
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    const container = nearestBlockAncestor(n.parentNode as Element, root);
+    let arr = groups.get(container);
+    if (!arr) {
+      arr = [];
+      groups.set(container, arr);
+    }
+    arr.push(n as Text);
   }
 
-  for (const textNode of targets) {
-    const text = textNode.nodeValue ?? "";
-    const lower = text.toLowerCase();
-    let from = 0;
-    let idx = lower.indexOf(lowerQuery, from);
-    if (idx === -1) continue;
+  for (const nodes of groups.values()) {
+    highlightTextNodeGroup(nodes, query);
+  }
+}
 
-    const fragment = document.createDocumentFragment();
-    while (idx !== -1) {
-      if (idx > from) {
-        fragment.appendChild(document.createTextNode(text.slice(from, idx)));
+function highlightTextNodeGroup(nodes: Text[], query: string): void {
+  if (nodes.length === 0) return;
+  // Build a single joined string spanning every text node in this block,
+  // then run the shared regex finder against it. Matches are returned in
+  // joined-string coordinates; we then walk back through the nodes and
+  // apply each match's portion to whichever node(s) it lands on.
+  const joined = nodes.map((t) => t.nodeValue ?? "").join("");
+  const ranges = findAllRanges(joined, query);
+  if (ranges.length === 0) return;
+
+  // Assign a stable id per logical range up-front so every <mark> we
+  // produce for that range can be tagged with the same `data-match-id`.
+  // ChatSearchBar uses these ids to collapse split matches into a single
+  // counter entry and to apply the active class to all of a match's
+  // pieces simultaneously.
+  const rangeIds = ranges.map(() => nextSearchMatchId());
+
+  let nodeStart = 0;
+  for (const node of nodes) {
+    const text = node.nodeValue ?? "";
+    const nodeEnd = nodeStart + text.length;
+
+    // Collect all match sub-ranges that fall inside this node, expressed
+    // as local (text-relative) offsets, paired with their range id.
+    const subRanges: Array<{ start: number; end: number; id: string }> = [];
+    for (let i = 0; i < ranges.length; i++) {
+      const r = ranges[i];
+      if (r.end <= nodeStart || r.start >= nodeEnd) continue;
+      subRanges.push({
+        start: Math.max(0, r.start - nodeStart),
+        end: Math.min(text.length, r.end - nodeStart),
+        id: rangeIds[i],
+      });
+    }
+
+    if (subRanges.length > 0) {
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      for (const sr of subRanges) {
+        if (sr.start > cursor) {
+          fragment.appendChild(document.createTextNode(text.slice(cursor, sr.start)));
+        }
+        const mark = document.createElement("mark");
+        mark.className = SEARCH_MARK_CLASS;
+        mark.dataset.matchId = sr.id;
+        mark.textContent = text.slice(sr.start, sr.end);
+        fragment.appendChild(mark);
+        cursor = sr.end;
       }
-      const mark = document.createElement("mark");
-      mark.className = SEARCH_MARK_CLASS;
-      mark.textContent = text.slice(idx, idx + queryLength);
-      fragment.appendChild(mark);
-      from = idx + queryLength;
-      idx = lower.indexOf(lowerQuery, from);
+      if (cursor < text.length) {
+        fragment.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+      node.parentNode?.replaceChild(fragment, node);
     }
-    if (from < text.length) {
-      fragment.appendChild(document.createTextNode(text.slice(from)));
-    }
-    textNode.parentNode?.replaceChild(fragment, textNode);
+
+    nodeStart = nodeEnd;
   }
 }
 

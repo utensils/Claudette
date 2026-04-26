@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findAllRanges, splitByRanges } from "./textSearch";
+import { findAllRanges, nextSearchMatchId, splitByRanges } from "./textSearch";
 
 describe("findAllRanges", () => {
   it("returns no matches for an empty needle", () => {
@@ -51,6 +51,29 @@ describe("findAllRanges", () => {
       { start: 5, end: 9 },
       { start: 10, end: 14 },
     ]);
+  });
+
+  it("treats regex metacharacters in the needle literally", () => {
+    // Regex metacharacters in the user's query must not change matching —
+    // searching "a.c" should not match "abc" (the dot is literal, not "any
+    // character"). These would all break a non-escaped RegExp constructor.
+    expect(findAllRanges("abc a.c", "a.c")).toEqual([{ start: 4, end: 7 }]);
+    expect(findAllRanges("(open)", "(")).toEqual([{ start: 0, end: 1 }]);
+    expect(findAllRanges("a+b a*b", "a*b")).toEqual([{ start: 4, end: 7 }]);
+  });
+
+  it("returns ranges in original-string coordinates after a length-changing case fold", () => {
+    // The old `toLowerCase()` + `indexOf` approach silently misaligned
+    // when a character in the haystack changed length on lowercase — e.g.
+    // "İ" (1 code unit) lowercases to "i" + COMBINING DOT ABOVE (2 units).
+    // Matches *after* the length-changing character then sliced the wrong
+    // span out of the original string. The regex-on-original approach
+    // returns indices that always line up with the source.
+    const haystack = "İab";
+    expect(haystack.toLowerCase()).toHaveLength(haystack.length + 1);
+    const ranges = findAllRanges(haystack, "ab");
+    expect(ranges).toHaveLength(1);
+    expect(haystack.slice(ranges[0].start, ranges[0].end)).toBe("ab");
   });
 });
 
@@ -105,6 +128,54 @@ describe("splitByRanges", () => {
     expect(matches).toEqual([
       { kind: "match", text: "ab", rangeIndex: 0 },
       { kind: "match", text: "ef", rangeIndex: 1 },
+    ]);
+  });
+});
+
+describe("nextSearchMatchId", () => {
+  it("returns a fresh string id on every call", () => {
+    const a = nextSearchMatchId();
+    const b = nextSearchMatchId();
+    const c = nextSearchMatchId();
+    expect(typeof a).toBe("string");
+    expect(a).not.toBe(b);
+    expect(b).not.toBe(c);
+    expect(a).not.toBe(c);
+  });
+});
+
+describe("end-to-end: splitByRanges over findAllRanges output", () => {
+  // The two helpers compose in the production highlight pipeline, so
+  // verify a couple of common chat-search shapes end-to-end.
+  it("splits prose containing multiple highlighted matches", () => {
+    const text = "the quick brown fox jumps over the lazy dog";
+    const ranges = findAllRanges(text, "the");
+    const segments = splitByRanges(text, ranges);
+    const stitched = segments.map((s) => s.text).join("");
+    expect(stitched).toBe(text);
+    expect(segments.filter((s) => s.kind === "match").map((s) => s.text)).toEqual([
+      "the",
+      "the",
+    ]);
+  });
+
+  it("splits a query that touches the start of the string", () => {
+    const text = "Hello world";
+    const ranges = findAllRanges(text, "hello");
+    const segments = splitByRanges(text, ranges);
+    expect(segments).toEqual([
+      { kind: "match", text: "Hello", rangeIndex: 0 },
+      { kind: "text", text: " world" },
+    ]);
+  });
+
+  it("splits a query that touches the end of the string", () => {
+    const text = "Hello world";
+    const ranges = findAllRanges(text, "world");
+    const segments = splitByRanges(text, ranges);
+    expect(segments).toEqual([
+      { kind: "text", text: "Hello " },
+      { kind: "match", text: "world", rangeIndex: 0 },
     ]);
   });
 });

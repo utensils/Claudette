@@ -1,11 +1,46 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
-import { useAppStore } from "../../stores/useAppStore";
+import { useAppStore, type ToolActivity } from "../../stores/useAppStore";
 import { focusChatPrompt } from "../../utils/focusTargets";
 import styles from "./ChatSearchBar.module.css";
 
 const SEARCH_MARK_SELECTOR = "mark.cc-search-match";
 const ACTIVE_CLASS = "cc-search-match-active";
+
+// Stable empty-array sentinel so the Zustand selector below returns the
+// same reference on every read when the workspace has no activities yet —
+// otherwise `?? []` would create a fresh array each render and trip the
+// selector's identity check, causing unnecessary effect re-runs.
+const EMPTY_ACTIVITIES: ToolActivity[] = [];
+
+/**
+ * Walk every search mark within `scope` in document order and return the
+ * unique `data-match-id` values, preserving first-seen order. Logical
+ * matches that the highlight wrappers split across multiple <mark>s share
+ * one id, so this function tells the bar both how many distinct matches
+ * exist and the order to cycle through them.
+ */
+function collectOrderedMatchIds(scope: HTMLElement): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  const marks = scope.querySelectorAll<HTMLElement>(SEARCH_MARK_SELECTOR);
+  for (const m of Array.from(marks)) {
+    const id = m.dataset.matchId;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ordered.push(id);
+  }
+  return ordered;
+}
+
+/**
+ * Minimal CSS attribute-value escape — the match ids we generate are
+ * stringified integers today, but escaping the `\` and `"` characters
+ * keeps `[data-match-id="…"]` selectors safe if the format ever changes.
+ */
+function cssEscape(value: string): string {
+  return value.replace(/[\\"]/g, "\\$&");
+}
 
 interface Props {
   workspaceId: string;
@@ -27,17 +62,21 @@ export function ChatSearchBar({ workspaceId, scopeRef }: Props) {
   const closeChatSearch = useAppStore((s) => s.closeChatSearch);
 
   // Trigger DOM-derived count + active-mark refresh after every commit that
-  // could change which marks are in the DOM. We listen to a few store-derived
-  // signals (messageCount, streamingLength, activitiesLength) to know when
-  // a re-tally is needed.
+  // could change which marks are in the DOM. `messageCount` /
+  // `streamingLength` are sufficient for chat messages and streaming text
+  // because new content always grows their length. Tool activities are
+  // different: `updateToolActivity` mutates an existing activity's summary
+  // in place, replacing the array but keeping the same length, so we
+  // subscribe to the array reference instead of `.length` to catch
+  // in-place summary edits.
   const messageCount = useAppStore(
     (s) => s.chatMessages[workspaceId]?.length ?? 0,
   );
   const streamingLength = useAppStore(
     (s) => s.streamingContent[workspaceId]?.length ?? 0,
   );
-  const activitiesLength = useAppStore(
-    (s) => s.toolActivities[workspaceId]?.length ?? 0,
+  const activities = useAppStore(
+    (s) => s.toolActivities[workspaceId] ?? EMPTY_ACTIVITIES,
   );
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -54,6 +93,11 @@ export function ChatSearchBar({ workspaceId, scopeRef }: Props) {
   }, [open]);
 
   // Tally matches and re-clamp the active index after every relevant render.
+  // Counts unique `data-match-id` values rather than raw <mark> elements so
+  // a single logical match split across multiple marks (e.g., "def " across
+  // two Shiki spans) is reported as one entry in the counter and traversed
+  // as a single step when cycling.
+  //
   // Uses `useEffect` rather than `useLayoutEffect` so the DOM-mutation pass
   // in HighlightedMessageMarkdown / HighlightedPlainText (which run as their
   // own layout effects further down the tree, but as siblings of this bar)
@@ -66,7 +110,8 @@ export function ChatSearchBar({ workspaceId, scopeRef }: Props) {
       setMatchCount(0);
       return;
     }
-    const count = scope.querySelectorAll(SEARCH_MARK_SELECTOR).length;
+    const ids = collectOrderedMatchIds(scope);
+    const count = ids.length;
     setMatchCount(count);
     if (count === 0) {
       if (matchIndex !== -1) setMatchIndex(workspaceId, -1);
@@ -80,30 +125,37 @@ export function ChatSearchBar({ workspaceId, scopeRef }: Props) {
     query,
     messageCount,
     streamingLength,
-    activitiesLength,
+    activities,
     matchIndex,
     setMatchIndex,
     workspaceId,
     scopeRef,
   ]);
 
-  // Apply the .active class to the Nth mark and scroll it into view.
+  // Apply the .active class to every mark belonging to the active logical
+  // match (multiple <mark>s may share the same data-match-id) and scroll
+  // the first one into view.
   useEffect(() => {
     if (!open) return;
     const scope = scopeRef.current;
     if (!scope) return;
-    const marks = scope.querySelectorAll<HTMLElement>(SEARCH_MARK_SELECTOR);
-    for (const m of Array.from(marks)) m.classList.remove(ACTIVE_CLASS);
-    if (matchIndex < 0 || matchIndex >= marks.length) return;
-    const active = marks[matchIndex];
-    active.classList.add(ACTIVE_CLASS);
+    const allMarks = scope.querySelectorAll<HTMLElement>(SEARCH_MARK_SELECTOR);
+    for (const m of Array.from(allMarks)) m.classList.remove(ACTIVE_CLASS);
+    const ids = collectOrderedMatchIds(scope);
+    if (matchIndex < 0 || matchIndex >= ids.length) return;
+    const activeId = ids[matchIndex];
+    const activeMarks = scope.querySelectorAll<HTMLElement>(
+      `${SEARCH_MARK_SELECTOR}[data-match-id="${cssEscape(activeId)}"]`,
+    );
+    if (activeMarks.length === 0) return;
+    for (const m of Array.from(activeMarks)) m.classList.add(ACTIVE_CLASS);
     // Skip the smooth scroll for users who've opted into reduced motion —
     // the cycle would otherwise force a noticeable animation despite their
     // OS-level preference.
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    active.scrollIntoView({
+    activeMarks[0].scrollIntoView({
       block: "center",
       behavior: prefersReducedMotion ? "auto" : "smooth",
     });
