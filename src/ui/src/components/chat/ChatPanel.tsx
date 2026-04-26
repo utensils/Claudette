@@ -1,6 +1,8 @@
 import React, { createContext, memo, useContext, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { isAgentBusy } from "../../utils/agentStatus";
-import { MessageMarkdown } from "./MessageMarkdown";
+import { HighlightedMessageMarkdown } from "./HighlightedMessageMarkdown";
+import { HighlightedPlainText } from "./HighlightedPlainText";
+import { ChatSearchBar } from "./ChatSearchBar";
 import { AlertCircle, FileText, GitBranch, LoaderCircle, Mic, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
@@ -265,6 +267,17 @@ export function ChatPanel() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Cmd/Ctrl+F search bar state. `searchQuery` flows down to message
+  // renderers as the highlight trigger; an empty string short-circuits the
+  // wrappers' DOM-walk pass entirely, so search-off has zero render cost.
+  const chatSearchOpen = useAppStore(
+    (s) => (selectedWorkspaceId ? s.chatSearch[selectedWorkspaceId]?.open ?? false : false),
+  );
+  const chatSearchQuery = useAppStore(
+    (s) => (selectedWorkspaceId ? s.chatSearch[selectedWorkspaceId]?.query ?? "" : ""),
+  );
+  const searchQuery = chatSearchOpen ? chatSearchQuery : "";
 
   const [attachmentMenu, setAttachmentMenu] = useState<{
     x: number;
@@ -1019,7 +1032,14 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <ScrollContext.Provider value={scrollContextValue}>
+      <div className={styles.messagesWrapper}>
+        {selectedWorkspaceId && (
+          <ChatSearchBar
+            workspaceId={selectedWorkspaceId}
+            scopeRef={messagesContainerRef}
+          />
+        )}
+        <ScrollContext.Provider value={scrollContextValue}>
         <div className={styles.messages} ref={messagesContainerRef}>
           {messages.length === 0 && !hasStreaming ? (
             <div className={styles.empty}>
@@ -1035,21 +1055,27 @@ export function ChatPanel() {
                   onForkTurn={isRemote ? undefined : handleFork}
                   onAttachmentContextMenu={openAttachmentMenu}
                   onAttachmentClick={openLightbox}
+                  searchQuery={searchQuery}
                 />
               )}
 
               {selectedWorkspaceId && hasThinking && showThinkingBlocks && (
-                <StreamingThinkingBlock workspaceId={selectedWorkspaceId} isStreaming={isRunning ?? false} />
+                <StreamingThinkingBlock
+                  workspaceId={selectedWorkspaceId}
+                  isStreaming={isRunning ?? false}
+                  searchQuery={searchQuery}
+                />
               )}
 
               {selectedWorkspaceId && (hasStreaming || hasPendingTypewriter) && (
-                <StreamingMessage workspaceId={selectedWorkspaceId} />
+                <StreamingMessage workspaceId={selectedWorkspaceId} searchQuery={searchQuery} />
               )}
 
               {selectedWorkspaceId && activitiesCount > 0 && (
                 <ToolActivitiesSection
                   workspaceId={selectedWorkspaceId}
                   isRunning={isRunning ?? false}
+                  searchQuery={searchQuery}
                 />
               )}
 
@@ -1142,6 +1168,7 @@ export function ChatPanel() {
           )}
         </div>
       </ScrollContext.Provider>
+      </div>
 
       <ScrollToBottomPill
         visible={!isAtBottom && messages.length > 0}
@@ -1246,15 +1273,24 @@ export function ChatPanel() {
 const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
   workspaceId,
   isStreaming,
+  searchQuery,
 }: {
   workspaceId: string;
   isStreaming: boolean;
+  searchQuery: string;
 }) {
   const thinking = useAppStore(
     (s) => s.streamingThinking[workspaceId] || ""
   );
   if (!thinking) return null;
-  return <ThinkingBlock content={thinking} isStreaming={isStreaming} enableTypewriter />;
+  return (
+    <ThinkingBlock
+      content={thinking}
+      isStreaming={isStreaming}
+      enableTypewriter
+      searchQuery={searchQuery}
+    />
+  );
 });
 
 /**
@@ -1266,8 +1302,10 @@ const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
  */
 const StreamingMessage = memo(function StreamingMessage({
   workspaceId,
+  searchQuery,
 }: {
   workspaceId: string;
+  searchQuery: string;
 }) {
   const streaming = useAppStore(
     (s) => s.streamingContent[workspaceId] || ""
@@ -1308,7 +1346,7 @@ const StreamingMessage = memo(function StreamingMessage({
     >
       <div className={styles.content}>
         <StreamingContext.Provider value={isStreaming || pendingText.length > 0}>
-          <MessageMarkdown content={displayed} />
+          <HighlightedMessageMarkdown content={displayed} query={searchQuery} />
         </StreamingContext.Provider>
         {showCaret && <span className={caretStyles.caret} aria-hidden="true" />}
       </div>
@@ -1327,6 +1365,7 @@ function TurnSummary({
   assistantText,
   onFork,
   onRollback,
+  searchQuery,
 }: {
   turn: CompletedTurn;
   collapsed: boolean;
@@ -1341,6 +1380,9 @@ function TurnSummary({
   /** Called when the user clicks rollback. Undefined hides the button
    *  (e.g. turn is running, or no checkpoint exists for this turn). */
   onRollback?: () => void;
+  /** Active chat-search query. Force-expands this card when non-empty and
+   *  the query matches inside any of the contained activity summaries. */
+  searchQuery: string;
 }) {
   const hasElapsed = typeof turn.durationMs === "number" && turn.durationMs > 0;
   const hasTokens =
@@ -1349,6 +1391,18 @@ function TurnSummary({
   const hasFork = !!onFork;
   const hasRollback = !!onRollback;
   const showFooter = hasElapsed || hasTokens || hasCopy || hasFork || hasRollback;
+
+  // Force-expand if the query matches in any activity summary or the
+  // resolved tool-summary fallback. Without this, marks would land in
+  // detached DOM (the collapsed branch never renders), so the bar's
+  // counter would tick up but nothing visible would change.
+  const queryHasMatch =
+    !!searchQuery &&
+    turn.activities.some((a) => {
+      const text = a.summary || extractToolSummary(a.toolName, a.inputJson);
+      return text.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  const isExpanded = !collapsed || queryHasMatch;
 
   return (
     <div className={styles.turnSummaryWrapper}>
@@ -1366,7 +1420,7 @@ function TurnSummary({
       >
         <div className={styles.turnHeader}>
           <span className={styles.toolChevron}>
-            {collapsed ? "›" : "⌄"}
+            {isExpanded ? "⌄" : "›"}
           </span>
           <span className={styles.turnLabel}>
             {turn.activities.length} tool call
@@ -1375,7 +1429,7 @@ function TurnSummary({
               `, ${turn.messageCount} message${turn.messageCount !== 1 ? "s" : ""}`}
           </span>
         </div>
-        {!collapsed && (
+        {isExpanded && (
           <div className={styles.turnActivities}>
             {turn.activities.map((act: ToolActivity) => (
               <div key={act.toolUseId} className={styles.toolActivity}>
@@ -1385,7 +1439,10 @@ function TurnSummary({
                   </span>
                   {(act.summary || act.inputJson) && (
                     <span className={styles.toolSummary}>
-                      {act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                      <HighlightedPlainText
+                        text={act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                        query={searchQuery}
+                      />
                     </span>
                   )}
                 </div>
@@ -1609,6 +1666,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   onForkTurn,
   onAttachmentContextMenu,
   onAttachmentClick,
+  searchQuery,
 }: {
   messages: ChatMessage[];
   workspaceId: string;
@@ -1630,6 +1688,9 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     e: React.MouseEvent,
     attachment: DownloadableAttachment,
   ) => void;
+  /** Active chat-search query (Cmd/Ctrl+F). Empty string when the bar is
+   *  closed; non-empty values trigger highlight wrappers on each message. */
+  searchQuery: string;
 }) {
   const completedTurns = useAppStore(
     (s) => s.completedTurns[workspaceId] ?? EMPTY_COMPLETED_TURNS
@@ -1875,6 +1936,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
         assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
         onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
         onRollback={buildOnRollback(turn.id)}
+        searchQuery={searchQuery}
       />
     ));
   };
@@ -1923,7 +1985,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
               <div className={styles.roleLabel}>You</div>
             )}
             {msg.role === "Assistant" && msg.thinking && showThinkingBlocks && (
-              <ThinkingBlock content={msg.thinking} isStreaming={false} />
+              <ThinkingBlock content={msg.thinking} isStreaming={false} searchQuery={searchQuery} />
             )}
             <div className={styles.content}>
               {attachmentsByMessage.has(msg.id) && (
@@ -2026,7 +2088,13 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                 // setup-script output, and other multi-line system notes
                 // preserve headings, lists, and code blocks instead of
                 // collapsing newlines into a single paragraph.
-                <MessageMarkdown content={msg.content} />
+                <HighlightedMessageMarkdown content={msg.content} query={searchQuery} />
+              ) : searchQuery ? (
+                // While the search bar is open, render user messages as plain
+                // highlighted text so matches inside them get marked. The
+                // ultrathink rainbow animation is suppressed in this mode —
+                // searchability wins over the easter egg.
+                <HighlightedPlainText text={msg.content} query={searchQuery} />
               ) : (
                 renderUltrathinkText(msg.content, {
                   animated: false,
@@ -2057,6 +2125,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
             onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
             onRollback={buildOnRollback(turn.id)}
+            searchQuery={searchQuery}
           />
         ))}
     </>
@@ -2070,9 +2139,11 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
 const ToolActivitiesSection = memo(function ToolActivitiesSection({
   workspaceId,
   isRunning,
+  searchQuery,
 }: {
   workspaceId: string;
   isRunning: boolean;
+  searchQuery: string;
 }) {
   const activities = useAppStore(
     (s) => s.toolActivities[workspaceId] ?? EMPTY_ACTIVITIES
@@ -2090,6 +2161,18 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
 
   if (activities.length === 0) return null;
 
+  // Force-expand when the active search query matches inside any of this
+  // section's activity summaries — otherwise marks would be silently
+  // hidden behind the collapsed header and the user would see a non-zero
+  // counter with no visible highlight.
+  const queryHasMatch =
+    !!searchQuery &&
+    activities.some(
+      (a) =>
+        a.summary && a.summary.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  const isExpanded = !collapsed || queryHasMatch;
+
   return (
     <div className={styles.toolActivities} aria-live="polite" aria-atomic="true">
       <div className={styles.turnSummary}>
@@ -2106,14 +2189,14 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
           }}
         >
           <span className={styles.toolChevron}>
-            {collapsed ? "›" : "⌄"}
+            {isExpanded ? "⌄" : "›"}
           </span>
           <span className={styles.turnLabel}>
             {activities.length} tool call{activities.length !== 1 ? "s" : ""}
             {isRunning && <span className={styles.inProgressNote}> in progress</span>}
           </span>
         </div>
-        {!collapsed && (
+        {isExpanded && (
           <div className={styles.turnActivities}>
             {activities.map((act: ToolActivity) => (
               <div key={act.toolUseId} className={styles.toolActivity}>
@@ -2121,7 +2204,7 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
                   <span className={styles.toolName} style={{ color: toolColor(act.toolName) }}>{act.toolName}</span>
                   {act.summary && (
                     <span className={styles.toolSummary}>
-                      {act.summary}
+                      <HighlightedPlainText text={act.summary} query={searchQuery} />
                     </span>
                   )}
                 </div>
