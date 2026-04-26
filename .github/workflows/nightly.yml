@@ -53,7 +53,7 @@ jobs:
           fi
 
           SHORT=$(git rev-parse --short=7 HEAD)
-          VERSION="${NEXT_MINOR}-dev.${COMMITS}.${SHORT}"
+          VERSION="${NEXT_MINOR}-dev.${COMMITS}.g${SHORT}"
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT}" >> "$GITHUB_OUTPUT"
