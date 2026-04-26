@@ -104,7 +104,57 @@ pub async fn run(options: ServerOptions) -> Result<(), Box<dyn std::error::Error
         }
     };
 
-    let state = Arc::new(ws::ServerState::new(db_path, worktree_base_dir));
+    // Mirror the Tauri-side plugin bootstrap so remote-launched agents
+    // pick up env-provider activation. Seeding bundled plugins is
+    // idempotent — if the desktop app has already populated the dir,
+    // this is a no-op; if the user is running headless, it makes the
+    // standard providers (direnv / mise / dotenv / nix-devshell)
+    // available without any manual setup.
+    let plugin_dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".claudette")
+        .join("plugins");
+    let _ = std::fs::create_dir_all(&plugin_dir);
+    for warning in claudette::plugin_runtime::seed::seed_bundled_plugins(&plugin_dir) {
+        eprintln!("[plugin] {warning}");
+    }
+    let plugins = claudette::plugin_runtime::PluginRegistry::discover(&plugin_dir);
+    eprintln!(
+        "[plugin] Discovered {} plugin(s): {}",
+        plugins.plugins.len(),
+        plugins
+            .plugins
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    // Hydrate global enable/disable + per-plugin setting overrides from
+    // app_settings, exactly as the Tauri binary does. Failures are
+    // non-fatal: the registry just runs with manifest defaults.
+    if let Ok(db) = claudette::db::Database::open(&db_path)
+        && let Ok(entries) = db.list_app_settings_with_prefix("plugin:")
+    {
+        for (key, value) in entries {
+            let rest = &key["plugin:".len()..];
+            if let Some((plugin_name, tail)) = rest.split_once(':') {
+                if tail == "enabled" && value == "false" {
+                    plugins.set_disabled(plugin_name, true);
+                } else if let Some(setting_key) = tail.strip_prefix("setting:")
+                    && let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&value)
+                {
+                    plugins.set_setting(plugin_name, setting_key, Some(json_value));
+                }
+            }
+        }
+    }
+
+    let state = Arc::new(ws::ServerState::new_with_plugins(
+        db_path,
+        worktree_base_dir,
+        plugins,
+    ));
 
     // Bind TCP listener before printing the connection string so the parent
     // process never sees `claudette://` unless we're actually listening.

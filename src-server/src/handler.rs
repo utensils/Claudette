@@ -188,6 +188,69 @@ fn open_db(state: &ServerState) -> Result<Database, String> {
     Database::open(&state.db_path).map_err(|e| e.to_string())
 }
 
+/// Mirror of `commands::env::load_disabled_providers` from the Tauri side.
+/// Reads per-repo env-provider toggles persisted in `app_settings` under
+/// keys of the form `repo:{repo_id}:env_provider:{plugin}:enabled`. The
+/// dispatcher consults this set to skip the matching plugin without
+/// running its detect/export operations.
+fn load_disabled_providers(db: &Database, repo_id: &str) -> std::collections::HashSet<String> {
+    let prefix = format!("repo:{repo_id}:env_provider:");
+    db.list_app_settings_with_prefix(&prefix)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(key, value)| {
+            if value == "false" {
+                let rest = key.strip_prefix(&prefix)?;
+                rest.strip_suffix(":enabled").map(|n| n.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Resolve the merged env-provider activation for a workspace turn.
+/// When the server's plugin registry is `None` (no bundled or
+/// user-installed plugins) this returns a default `ResolvedEnv`, which
+/// applies as a no-op on the spawned command. That matches the
+/// behaviour of `resolve_with_registry` against an empty registry and
+/// keeps deployments without plugins working unchanged.
+///
+/// `disabled` is the per-repo set of disabled env-provider names
+/// (typically from [`load_disabled_providers`]). Computing it
+/// synchronously in the caller avoids holding `&Database` (which is
+/// not `Sync`) across the `.await` on the plugin-registry lock —
+/// `handle_request` is invoked from inside `tokio::spawn`, so its
+/// future tree must stay `Send`.
+pub async fn resolve_workspace_env(
+    state: &ServerState,
+    ws: &claudette::model::Workspace,
+    repo: Option<&claudette::model::Repository>,
+    worktree_path: &str,
+    disabled: std::collections::HashSet<String>,
+) -> claudette::env_provider::ResolvedEnv {
+    let Some(plugins_lock) = state.plugins.as_ref() else {
+        return claudette::env_provider::ResolvedEnv::default();
+    };
+
+    let ws_info = claudette::plugin_runtime::host_api::WorkspaceInfo {
+        id: ws.id.clone(),
+        name: ws.name.clone(),
+        branch: ws.branch_name.clone(),
+        worktree_path: worktree_path.to_string(),
+        repo_path: repo.map(|r| r.path.clone()).unwrap_or_default(),
+    };
+    let registry = plugins_lock.read().await;
+    claudette::env_provider::resolve_with_registry(
+        &registry,
+        &state.env_cache,
+        std::path::Path::new(worktree_path),
+        &ws_info,
+        &disabled,
+    )
+    .await
+}
+
 fn now_iso() -> String {
     let dur = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -368,6 +431,47 @@ async fn handle_send_chat_message(
         .get_repository(&ws.repository_id)
         .map_err(|e| e.to_string())?;
 
+    // Expand @-file mentions into inline file content for the agent prompt.
+    let prompt = claudette::file_expand::expand_file_mentions(
+        std::path::Path::new(&worktree_path),
+        content,
+        mentioned_files.as_deref().unwrap_or(&[]),
+    )
+    .await;
+
+    // Build workspace env vars for the agent subprocess.
+    let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
+    let default_branch = match repo.as_ref().and_then(|r| r.base_branch.as_deref()) {
+        Some(b) => b.to_string(),
+        None => claudette::git::default_branch(
+            repo_path,
+            repo.as_ref().and_then(|r| r.default_remote.as_deref()),
+        )
+        .await
+        .unwrap_or_else(|_| "main".to_string()),
+    };
+    let ws_env = claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
+
+    // Resolve the env-provider layer (direnv / mise / dotenv / nix-devshell)
+    // once per turn. Mirrors the Tauri path in src-tauri/src/commands/chat.rs:
+    // the mtime-keyed cache makes this essentially free on quiet turns; on
+    // the first turn or after the user edits `.envrc` / `mise.toml` / etc.,
+    // it re-runs the affected plugin. Resolution happens before any
+    // `state.agents` lock is taken so the registry RwLock can be acquired
+    // without nested-lock concerns. The disabled-provider set is read
+    // synchronously here from the already-open `db` so we avoid both a
+    // duplicate SQLite connection and a non-`Send` borrow across `.await`.
+    let disabled_env_providers =
+        load_disabled_providers(&db, repo.as_ref().map(|r| r.id.as_str()).unwrap_or(""));
+    let resolved_env = resolve_workspace_env(
+        state,
+        ws,
+        repo.as_ref(),
+        &worktree_path,
+        disabled_env_providers,
+    )
+    .await;
+
     let mut agents = state.agents.write().await;
     let session = agents.entry(workspace_id.to_string()).or_insert_with(|| {
         let instructions = {
@@ -385,8 +489,31 @@ async fn handle_send_chat_message(
             turn_count: 0,
             active_pid: None,
             custom_instructions: instructions,
+            session_resolved_env: Default::default(),
         }
     });
+
+    // Env-provider drift teardown: the env baked into a running agent's
+    // env is fixed at spawn time, so the subprocess won't see `.envrc` /
+    // `mise.toml` / `direnv allow` changes until it's respawned. Compare
+    // the freshly-resolved vars against the snapshot stored at spawn and
+    // reset the session on divergence so this turn launches with the new
+    // env. The Tauri path uses a long-lived PersistentSession; the remote
+    // handler re-launches `claude --print` per turn, so a reset just means
+    // clearing turn_count / session_id before the rest of this function
+    // continues with `is_resume = false` and re-runs the session-init
+    // branch (`run_turn` is called below with the fresh state).
+    if session.turn_count > 0 && session.session_resolved_env != resolved_env.vars {
+        eprintln!(
+            "[handler] env-provider output changed ({} vars before, {} after) — resetting session for {workspace_id}",
+            session.session_resolved_env.len(),
+            resolved_env.vars.len(),
+        );
+        session.session_id = uuid::Uuid::new_v4().to_string();
+        session.turn_count = 0;
+        session.active_pid = None;
+        session.session_resolved_env = Default::default();
+    }
 
     let is_resume = session.turn_count > 0;
     let session_id = session.session_id.clone();
@@ -414,27 +541,6 @@ async fn handle_send_chat_message(
         disable_1m_context: disable_1m_context.unwrap_or(false),
     };
 
-    // Expand @-file mentions into inline file content for the agent prompt.
-    let prompt = claudette::file_expand::expand_file_mentions(
-        std::path::Path::new(&worktree_path),
-        content,
-        mentioned_files.as_deref().unwrap_or(&[]),
-    )
-    .await;
-
-    // Build workspace env vars for the agent subprocess.
-    let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
-    let default_branch = match repo.as_ref().and_then(|r| r.base_branch.as_deref()) {
-        Some(b) => b.to_string(),
-        None => claudette::git::default_branch(
-            repo_path,
-            repo.as_ref().and_then(|r| r.default_remote.as_deref()),
-        )
-        .await
-        .unwrap_or_else(|_| "main".to_string()),
-    };
-    let ws_env = claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
-
     let turn_handle = agent::run_turn(
         std::path::Path::new(&worktree_path),
         &session_id,
@@ -445,15 +551,12 @@ async fn handle_send_chat_message(
         &agent_settings,
         &[], // Attachments not yet supported over remote transport
         Some(&ws_env),
-        // Env-provider activation is not wired into the remote server path in
-        // v1 — it requires a PluginRegistry + EnvCache in ServerState, which
-        // is a separate follow-up. Local desktop agents already get it via
-        // claudette-tauri's AppState.
-        None,
+        Some(&resolved_env),
     )
     .await?;
 
     session.active_pid = Some(turn_handle.pid);
+    session.session_resolved_env = resolved_env.vars.clone();
     drop(agents);
 
     // Bridge agent events to WebSocket.
