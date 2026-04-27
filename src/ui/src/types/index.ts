@@ -17,6 +17,7 @@ export type {
 } from "./chat";
 export type {
   DiffFile,
+  DiffFileTab,
   DiffLayer,
   FileStatus,
   DiffViewMode,

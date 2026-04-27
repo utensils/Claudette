@@ -22,22 +22,6 @@
   min-width: 0;
 }
 
-.backBtn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-.backBtn:hover {
-  color: var(--accent-primary);
-  background: var(--accent-bg);
-}
-
 .fileName {
   font-family: var(--font-mono);
   font-size: 13px;
