@@ -18,8 +18,10 @@ interface MessageAttachmentTextHandlers {
 /** Switch over the attachment's media type and render the right card. Image
  *  and PDF rendering still live in `ChatPanel.tsx` because they hook into the
  *  lightbox / PDF-thumbnail machinery; this component owns the text/data
- *  cards. Returns `null` for non-text types so the caller can keep its own
- *  branches for those. */
+ *  cards. Returns `null` for any media type that isn't in the explicit
+ *  switch — there is no implicit fallback to the plain-text card. To add a
+ *  new text/data type, also add a case here AND extend
+ *  `isTextDataMediaType` so `ChatPanel` routes it to this component. */
 export function MessageAttachment({
   attachment,
   handlers,
@@ -86,7 +88,9 @@ export function MessageAttachment({
 }
 
 /** Whether the given media type is rendered by `<MessageAttachment>`. The
- *  caller should defer non-matching types to its own image / PDF branches. */
+ *  caller should defer non-matching types to its own image / PDF branches.
+ *  Keep in lock-step with the `switch` above: every case in the switch must
+ *  have a corresponding entry here, and vice-versa. */
 export function isTextDataMediaType(mediaType: string): boolean {
   return (
     mediaType === "text/csv" ||

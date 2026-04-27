@@ -24,8 +24,9 @@ const ICONS: Record<string, LucideIcon> = {
 
 /**
  * Common shell used by the CSV / Markdown / JSON / plain-text cards:
- * a header (icon + filename + size) and a body that collapses past
- * `collapsedHeightPx` with an "Expand" / "Collapse" toggle.
+ * a header (icon + filename + size) and a body that — when `collapsible`
+ * is true — clamps to ~320px (set in CSS via `.body { max-height: 320px }`)
+ * with a "Expand" / "Collapse" toggle.
  *
  * `onContextMenu` lets the call site wire the same Download / Copy / Open
  * menu image attachments use.

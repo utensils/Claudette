@@ -11,8 +11,10 @@ export const SUPPORTED_IMAGE_TYPES = new Set([
 export const SUPPORTED_DOCUMENT_TYPES = new Set(["application/pdf"]);
 
 /** Supported text/data MIME types. Each renders with a type-specific preview
- *  card on the message-list side; new entries that lack a dedicated card fall
- *  through to the plain-text card. Mirrors `ALLOWED_TEXT_TYPES` in
+ *  card on the message-list side. Adding a type here also requires adding it
+ *  to `MessageAttachment.tsx` (both the `switch` and `isTextDataMediaType`)
+ *  or it won't render — there is no implicit fallback to the plain-text
+ *  card. Mirrors `TEXT_TYPE_RULES` in
  *  `src/agent_mcp/tools/send_to_user.rs`. */
 export const SUPPORTED_TEXT_TYPES = new Set([
   "text/plain",

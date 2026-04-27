@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { AttachmentCardShell } from "./AttachmentCardShell";
 import { useAttachmentText } from "./useAttachmentText";
-import { countCsvLines, parseCsv } from "../../utils/csvParse";
+import { countCsvRows, parseCsv } from "../../utils/csvParse";
 import styles from "./MessageAttachment.module.css";
 
 /** Inline preview for a CSV attachment: header row + first ~50 data rows
@@ -32,8 +32,10 @@ export function CsvAttachmentCard({
   const parsed = useMemo(() => {
     if (text === null) return null;
     const rows = parseCsv(text, 51); // 1 header + 50 data rows
-    const totalLines = countCsvLines(text);
-    return { rows, totalLines };
+    // Use the quote-aware row counter so files with multiline quoted
+    // fields or blank lines don't produce a wrong "+ N more rows".
+    const totalRows = countCsvRows(text);
+    return { rows, totalRows };
   }, [text]);
 
   return (
@@ -74,9 +76,9 @@ export function CsvAttachmentCard({
               </tbody>
             </table>
           </div>
-          {parsed.totalLines > parsed.rows.length && (
+          {parsed.totalRows > parsed.rows.length && (
             <div className={styles.csvTruncated}>
-              + {parsed.totalLines - parsed.rows.length} more rows
+              + {parsed.totalRows - parsed.rows.length} more rows
             </div>
           )}
         </>

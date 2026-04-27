@@ -26,7 +26,7 @@ use crate::agent_mcp::protocol::{
     MCP_PROTOCOL_VERSION, error_codes,
 };
 use crate::agent_mcp::tools::send_to_user::{
-    ALLOWED_DOCUMENT_TYPES, ALLOWED_IMAGE_TYPES, ALLOWED_TEXT_TYPES,
+    ALLOWED_DOCUMENT_TYPES, ALLOWED_IMAGE_TYPES, allowed_text_types,
 };
 
 pub const ENV_SOCKET_ADDR: &str = "CLAUDETTE_MCP_SOCKET";
@@ -130,8 +130,8 @@ fn tools_list_result() -> Value {
     let allowed_types: Vec<&str> = ALLOWED_IMAGE_TYPES
         .iter()
         .chain(ALLOWED_DOCUMENT_TYPES.iter())
-        .chain(ALLOWED_TEXT_TYPES.iter())
         .copied()
+        .chain(allowed_text_types())
         .collect();
 
     json!({

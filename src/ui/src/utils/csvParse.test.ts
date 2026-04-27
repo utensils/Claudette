@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { countCsvLines, parseCsv } from "./csvParse";
+import { countCsvRows, parseCsv } from "./csvParse";
 
 describe("parseCsv", () => {
   it("splits a simple comma-separated row", () => {
@@ -51,25 +51,57 @@ describe("parseCsv", () => {
     expect(got).toEqual([["a"], ["1"], ["2"]]);
   });
 
-  it("ignores blank lines from trailing newlines", () => {
-    expect(parseCsv("a\n1\n\n")).toEqual([["a"], ["1"]]);
+  it("ignores blank physical lines anywhere in the input", () => {
+    // Documented contract: blank lines (no commas, no content) are
+    // skipped wherever they appear, not just at EOF.
+    expect(parseCsv("a\n\n1\n\n2\n")).toEqual([["a"], ["1"], ["2"]]);
   });
 });
 
-describe("countCsvLines", () => {
-  it("counts lines without a trailing newline", () => {
-    expect(countCsvLines("a\n1\n2")).toBe(3);
+describe("countCsvRows", () => {
+  it("counts rows without a trailing newline", () => {
+    expect(countCsvRows("a\n1\n2")).toBe(3);
   });
 
-  it("counts lines with a trailing newline", () => {
-    expect(countCsvLines("a\n1\n2\n")).toBe(3);
+  it("counts rows with a trailing newline", () => {
+    expect(countCsvRows("a\n1\n2\n")).toBe(3);
   });
 
-  it("treats CRLF as one line break", () => {
-    expect(countCsvLines("a\r\n1\r\n2\r\n")).toBe(3);
+  it("treats CRLF as one row terminator", () => {
+    expect(countCsvRows("a\r\n1\r\n2\r\n")).toBe(3);
   });
 
   it("returns 0 for empty input", () => {
-    expect(countCsvLines("")).toBe(0);
+    expect(countCsvRows("")).toBe(0);
+  });
+
+  it("does not treat newlines inside quoted fields as row terminators", () => {
+    const text = 'a,b\n"line1\nline2",x\n3,4\n';
+    expect(countCsvRows(text)).toBe(3);
+    expect(parseCsv(text)).toEqual([
+      ["a", "b"],
+      ["line1\nline2", "x"],
+      ["3", "4"],
+    ]);
+  });
+
+  it("skips blank physical lines wherever they appear (mirrors parseCsv)", () => {
+    const text = "a\n\n1\n\n\n2\n";
+    expect(countCsvRows(text)).toBe(3);
+    expect(parseCsv(text)).toEqual([["a"], ["1"], ["2"]]);
+  });
+
+  it("counts a row with only commas as non-blank", () => {
+    expect(countCsvRows(",,\n")).toBe(1);
+    expect(parseCsv(",,\n")).toEqual([["", "", ""]]);
+  });
+
+  it("handles escaped quotes inside a quoted field without overcounting", () => {
+    const text = 'a\n"he said ""hi""\nstill quoted",b\n';
+    expect(countCsvRows(text)).toBe(2);
+    expect(parseCsv(text)).toEqual([
+      ["a"],
+      ['he said "hi"\nstill quoted', "b"],
+    ]);
   });
 });
