@@ -424,6 +424,7 @@ export const Sidebar = memo(function Sidebar() {
 
             const expanded = expandedCommandWorkspaces.has(ws.id);
             const count = entries.length;
+            const listId = `running-commands-${ws.id}`;
 
             return (
               <>
@@ -435,6 +436,8 @@ export const Sidebar = memo(function Sidebar() {
                     toggleCommandsExpanded(ws.id);
                   }}
                   title={expanded ? "Collapse running commands" : "Expand running commands"}
+                  aria-expanded={expanded}
+                  aria-controls={listId}
                 >
                   <span className={styles.iconWrap} aria-label="Running">
                     <Cog size={12} className={styles.runningIcon} />
@@ -448,14 +451,17 @@ export const Sidebar = memo(function Sidebar() {
                     <ChevronRight size={10} className={styles.commandChevron} />
                   )}
                 </button>
-                {expanded &&
-                  entries.map(([ptyId, command]) => (
-                    <div key={ptyId} className={styles.terminalCommandItem}>
-                      <span className={styles.commandText} title={command ?? ""}>
-                        {truncateCommand(command ?? "(running)", 40)}
-                      </span>
-                    </div>
-                  ))}
+                {expanded && (
+                  <div id={listId} role="group" aria-label="Running commands">
+                    {entries.map(([ptyId, command]) => (
+                      <div key={ptyId} className={styles.terminalCommandItem}>
+                        <span className={styles.commandText} title={command ?? ""}>
+                          {truncateCommand(command ?? "(running)", 40)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             );
           })()}

@@ -482,10 +482,6 @@
   margin-left: 14px;
   cursor: pointer;
   text-align: left;
-  font: inherit;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-dim);
 }
 
 .terminalCommandSummary:hover .commandText {

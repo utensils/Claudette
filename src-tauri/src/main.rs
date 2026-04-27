@@ -687,9 +687,11 @@ fn shutdown_runtime_handler(_app: &tauri::AppHandle, _event: tauri::RunEvent) {
             // Kill all spawned children (PTY shells + Claude CLI agent
             // subprocesses) before our process dies, otherwise they
             // re-parent to launchd and survive — the user has to hunt
-            // them down with `ps`. PTY shells are signaled as process
-            // groups so backgrounded jobs and child commands (dev
-            // servers, etc.) go down with the shell.
+            // them down with `ps`. Each root's full descendant tree is
+            // walked via `subprocess_cleanup` and signaled in parallel,
+            // which catches grandchildren detached into a fresh
+            // session/PG (e.g. cargo-watch's nxv serve) that a plain
+            // PG signal would miss.
             #[cfg(unix)]
             cleanup_subprocesses_on_exit(&app_state);
 

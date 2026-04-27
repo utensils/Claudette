@@ -8,12 +8,13 @@
 //! Unix without any user setup, and without writing any files to disk.
 //!
 //! Trade-off versus the OSC 133 path it replaces: we cannot observe exit
-//! codes, only the start/stop transition. The sidebar renders a neutral
-//! "stopped" state when `exit_code` is `None`.
+//! codes, only the start/stop transition — `pty-command-stopped` carries
+//! `exit_code: None` and the frontend reacts by removing the entry from
+//! the workspace's running-command map (no separate "stopped" state).
 //!
 //! Windows has no analog of process groups attached to the controlling
 //! terminal, so this module is Unix-only. On Windows the command indicator
-//! is simply absent — `spawn` is a no-op.
+//! is simply absent — call sites are gated by `#[cfg(unix)]`.
 
 #[cfg(unix)]
 use std::os::fd::{FromRawFd, OwnedFd};
@@ -89,7 +90,7 @@ pub fn spawn(pty_id: u64, shell_pid: i32, master_fd: OwnedFd, cancel: Arc<Notify
                 );
             } else {
                 // New foreground group — a command started.
-                let cmd = lookup_command(fg);
+                let cmd = lookup_command(fg).await;
                 last_command = cmd.clone();
                 let _ = app.emit(
                     "pty-command-detected",
@@ -151,16 +152,20 @@ fn errno() -> i32 {
 }
 
 #[cfg(unix)]
-fn lookup_command(pid: i32) -> Option<String> {
+async fn lookup_command(pid: i32) -> Option<String> {
     // `ps -o args= -p <pid>` prints the full argv for a single pid with no
     // header. Works identically on macOS and Linux. Output is at most one
     // line; trim whitespace to drop the trailing newline.
-    let output = std::process::Command::new("ps")
+    //
+    // Use tokio::process::Command so the syscall doesn't block the worker
+    // thread — multiple PTYs each fire this on every command transition.
+    let output = tokio::process::Command::new("ps")
         .arg("-o")
         .arg("args=")
         .arg("-p")
         .arg(pid.to_string())
         .output()
+        .await
         .ok()?;
     let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if s.is_empty() { None } else { Some(s) }
@@ -186,10 +191,10 @@ mod tests {
         assert!(!pid_alive(i32::MAX));
     }
 
-    #[test]
-    fn lookup_command_for_self_returns_something() {
+    #[tokio::test]
+    async fn lookup_command_for_self_returns_something() {
         let me = std::process::id() as i32;
-        let cmd = lookup_command(me);
+        let cmd = lookup_command(me).await;
         assert!(cmd.is_some(), "ps should find this test process");
         assert!(!cmd.unwrap().is_empty());
     }
