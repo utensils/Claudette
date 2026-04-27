@@ -2164,7 +2164,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             key={turn.id}
             turn={turn}
             collapsed={turn.collapsed}
-            onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
+            onToggle={() => toggleCompletedTurn(sessionId, globalIdx)}
             taskProgress={taskProgressByTurn.get(globalIdx)}
             assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
             onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
