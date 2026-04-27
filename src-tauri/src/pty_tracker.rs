@@ -32,6 +32,7 @@ use tokio::sync::Notify;
 #[cfg(unix)]
 const POLL_INTERVAL: Duration = Duration::from_millis(300);
 
+#[cfg(unix)]
 #[derive(Clone, Serialize)]
 struct CommandEvent {
     pty_id: u64,
