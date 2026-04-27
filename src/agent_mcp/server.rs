@@ -26,7 +26,7 @@ use crate::agent_mcp::protocol::{
     MCP_PROTOCOL_VERSION, error_codes,
 };
 use crate::agent_mcp::tools::send_to_user::{
-    ALLOWED_DOCUMENT_TYPES, ALLOWED_IMAGE_TYPES, ALLOWED_TEXT_TYPES,
+    ALLOWED_DOCUMENT_TYPES, ALLOWED_IMAGE_TYPES, allowed_text_types,
 };
 
 pub const ENV_SOCKET_ADDR: &str = "CLAUDETTE_MCP_SOCKET";
@@ -130,18 +130,23 @@ fn tools_list_result() -> Value {
     let allowed_types: Vec<&str> = ALLOWED_IMAGE_TYPES
         .iter()
         .chain(ALLOWED_DOCUMENT_TYPES.iter())
-        .chain(ALLOWED_TEXT_TYPES.iter())
         .copied()
+        .chain(allowed_text_types())
         .collect();
 
     json!({
         "tools": [{
             "name": TOOL_NAME,
             "description": "Deliver a file to the user inline in the Claudette chat surface. \
-                           Use this when the user asks to be sent an artifact (screenshot, \
-                           generated image, PDF, small text file). The file must already exist \
-                           on disk; pass its absolute path. Renders inline; the user can \
-                           click to enlarge or download.",
+                           Supported types: images (PNG/JPEG/GIF/WebP/SVG), PDF, plain text, \
+                           CSV, JSON, and Markdown. Each type has its own size cap; the call \
+                           is rejected for oversized or unsupported types. The file must \
+                           already exist on disk — pass its absolute path. Renders inline \
+                           with a type-aware preview; the user can click to enlarge or \
+                           download. For anything outside the supported set (binaries, \
+                           archives, oversized files), do NOT call this tool — instead, \
+                           tell the user the absolute path on disk so they can open it \
+                           manually.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
