@@ -406,7 +406,7 @@ export const Sidebar = memo(function Sidebar() {
             return (
               <div className={styles.terminalCommand}>
                 {commandState.isRunning ? (
-                  <span title="Running" aria-label="Running">
+                  <span className={styles.iconWrap} title="Running" aria-label="Running">
                     <Cog size={12} className={styles.runningIcon} />
                   </span>
                 ) : commandState.exitCode === 0 ? (

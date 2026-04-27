@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "./stores/useAppStore";
-import { loadInitialData, getAppSetting, getHostEnvFlags, listRemoteConnections, listDiscoveredServers, getLocalServerStatus, clearAttention, detectInstalledApps, listSystemFonts } from "./services/tauri";
+import { loadInitialData, getAppSetting, getHostEnvFlags, listRemoteConnections, listDiscoveredServers, getLocalServerStatus, clearAttention, detectInstalledApps, listSystemFonts, deleteTerminalTab } from "./services/tauri";
 import { applyTheme, applyUserFonts, loadAllThemes, findTheme } from "./utils/theme";
 import { adjustUiFontSize, resetUiFontSize } from "./utils/fontSettings";
 import { useMcpStatus } from "./hooks/useMcpStatus";
@@ -185,9 +185,36 @@ function App() {
         });
       });
 
+      // Shell exited (e.g. user typed `exit`): the backend reader saw EOF
+      // and emitted pty-exit. Close the owning pane, and if it was the
+      // only pane in its tab, close the tab too.
+      const unlistenPtyExit = await listen<{ pty_id: number }>("pty-exit", (event) => {
+        const ptyId = event.payload.pty_id;
+        const { terminalTabs, terminalPaneTrees, closePane, removeTerminalTab, setWorkspaceTerminalCommand } =
+          useAppStore.getState();
+        for (const [wsId, tabs] of Object.entries(terminalTabs)) {
+          for (const tab of tabs) {
+            const tree = terminalPaneTrees[tab.id];
+            if (!tree) continue;
+            const leaf = findLeafByPtyId(tree, ptyId);
+            if (!leaf) continue;
+            const remaining = closePane(tab.id, leaf.id);
+            if (remaining === null) {
+              deleteTerminalTab(tab.id).catch((err) =>
+                console.error("Failed to delete terminal tab on exit:", err),
+              );
+              removeTerminalTab(wsId, tab.id);
+            }
+            setWorkspaceTerminalCommand(wsId, { command: null, isRunning: false, exitCode: null });
+            return;
+          }
+        }
+      });
+
       return () => {
         unlistenCommandDetected();
         unlistenCommandStopped();
+        unlistenPtyExit();
       };
     };
 

@@ -483,6 +483,17 @@
   color: var(--status-running);
   animation: spin 2s linear infinite;
   flex-shrink: 0;
+  display: block;
+}
+
+/* Wrapper for the Cog icon — without this, the inline span's baseline
+   centers the SVG to the text baseline rather than its midline, so the
+   gear floats above the command text. */
+.iconWrap {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 @keyframes spin {
