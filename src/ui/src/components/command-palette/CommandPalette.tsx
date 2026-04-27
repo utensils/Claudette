@@ -103,25 +103,25 @@ export function CommandPalette() {
   }, [themes]);
 
   const applyThemeById = useCallback((id: string) => {
-    applyThemeWithFonts(id);
-    setCurrentThemeId(id);
+    const theme = findTheme(themes, id);
+    applyThemeWithFonts(theme.id);
+    setCurrentThemeId(theme.id);
     // Write to the mode-appropriate key so the Settings UI stays consistent.
     // In system mode, apply to the key for the currently active OS preference.
     const isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const effectiveMode = themeMode === "system" ? (isSystemDark ? "dark" : "light") : themeMode;
-    const theme = findTheme(themes, id);
     if (effectiveMode === "light") {
-      setThemeLight(id);
+      setThemeLight(theme.id);
       const state = useAppStore.getState();
       const darkTheme = findTheme(themes, state.themeDark);
       cacheThemePreference(themeMode, getThemeDataAttr(darkTheme), getThemeDataAttr(theme));
-      setAppSetting("theme_light", id).catch(console.error);
+      setAppSetting("theme_light", theme.id).catch(console.error);
     } else {
-      setThemeDark(id);
+      setThemeDark(theme.id);
       const state = useAppStore.getState();
       const lightTheme = findTheme(themes, state.themeLight);
       cacheThemePreference(themeMode, getThemeDataAttr(theme), getThemeDataAttr(lightTheme));
-      setAppSetting("theme_dark", id).catch(console.error);
+      setAppSetting("theme_dark", theme.id).catch(console.error);
     }
   }, [applyThemeWithFonts, setCurrentThemeId, themeMode, themes, setThemeDark, setThemeLight]);
 

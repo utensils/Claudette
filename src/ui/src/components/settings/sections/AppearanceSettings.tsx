@@ -103,9 +103,9 @@ export function AppearanceSettings() {
     if (isEffective) {
       applyTheme(theme);
       applyUserFonts(fontFamilySans, fontFamilyMono, uiFontSize);
-      setCurrentThemeId(id);
+      setCurrentThemeId(theme.id);
     }
-    setThemeDark(id);
+    setThemeDark(theme.id);
     cacheThemePreference(
       themeMode,
       getThemeDataAttr(theme),
@@ -113,7 +113,7 @@ export function AppearanceSettings() {
     );
     try {
       setError(null);
-      await setAppSetting("theme_dark", id);
+      await setAppSetting("theme_dark", theme.id);
     } catch (e) {
       setError(String(e));
     }
@@ -127,9 +127,9 @@ export function AppearanceSettings() {
     if (isEffective) {
       applyTheme(theme);
       applyUserFonts(fontFamilySans, fontFamilyMono, uiFontSize);
-      setCurrentThemeId(id);
+      setCurrentThemeId(theme.id);
     }
-    setThemeLight(id);
+    setThemeLight(theme.id);
     cacheThemePreference(
       themeMode,
       getThemeDataAttr(findTheme(availableThemes, themeDark)),
@@ -137,7 +137,7 @@ export function AppearanceSettings() {
     );
     try {
       setError(null);
-      await setAppSetting("theme_light", id);
+      await setAppSetting("theme_light", theme.id);
     } catch (e) {
       setError(String(e));
     }

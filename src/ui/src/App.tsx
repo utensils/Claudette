@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "./stores/useAppStore";
 import { loadInitialData, getAppSetting, listRemoteConnections, listDiscoveredServers, getLocalServerStatus, clearAttention, detectInstalledApps, listSystemFonts } from "./services/tauri";
 import { applyTheme, applyUserFonts, loadAllThemes, findTheme, cacheThemePreference, getThemeDataAttr } from "./utils/theme";
+import type { ThemeDefinition } from "./types/theme";
 import { adjustUiFontSize, resetUiFontSize } from "./utils/fontSettings";
 import { useMcpStatus } from "./hooks/useMcpStatus";
 import { AppLayout } from "./components/layout/AppLayout";
@@ -33,6 +34,9 @@ function App() {
   const setUsageInsightsEnabled = useAppStore((s) => s.setUsageInsightsEnabled);
   const setPluginManagementEnabled = useAppStore((s) => s.setPluginManagementEnabled);
   const setAppVersion = useAppStore((s) => s.setAppVersion);
+
+  // Cached theme list — populated on initial load, reused by the OS handler.
+  const loadedThemesRef = useRef<ThemeDefinition[]>([]);
 
   // Listen for MCP supervisor status events from the Rust backend.
   useMcpStatus();
@@ -66,6 +70,7 @@ function App() {
     (async () => {
       try {
         const allThemes = await loadAllThemes();
+        loadedThemesRef.current = allThemes;
         const [themeModeVal, darkIdVal, lightIdVal, legacyThemeVal] = await Promise.all([
           getAppSetting("theme_mode"),
           getAppSetting("theme_dark"),
@@ -273,15 +278,13 @@ function App() {
   // Listen for OS light/dark changes and switch theme when mode is "system".
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    let generation = 0;
-    const handleChange = async (e: MediaQueryListEvent) => {
+    const handleChange = (e: MediaQueryListEvent) => {
       const state = useAppStore.getState();
       if (state.themeMode !== "system") return;
       const effectiveId = e.matches ? state.themeDark : state.themeLight;
-      const token = ++generation;
+      const themes = loadedThemesRef.current;
+      if (themes.length === 0) return;
       try {
-        const themes = await loadAllThemes();
-        if (token !== generation) return;
         const theme = findTheme(themes, effectiveId);
         applyTheme(theme);
         applyUserFonts(state.fontFamilySans, state.fontFamilyMono, state.uiFontSize);
@@ -290,8 +293,13 @@ function App() {
         console.error("Failed to apply system theme change:", err);
       }
     };
-    mq.addEventListener("change", handleChange);
-    return () => mq.removeEventListener("change", handleChange);
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", handleChange);
+      return () => mq.removeEventListener("change", handleChange);
+    }
+    // Fallback for older WebKit (e.g. macOS Catalina / Safari <14)
+    mq.addListener(handleChange);
+    return () => mq.removeListener(handleChange);
   }, []);
 
   return <AppLayout />;
