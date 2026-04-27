@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
+use crate::process::CommandWindowExt as _;
 use tokio::process::Command;
 
 use crate::model::diff::{
@@ -30,7 +31,14 @@ fn validate_file_path(file_path: &str) -> Result<(), DiffError> {
             "Invalid file path: contains null byte".into(),
         ));
     }
-    if Path::new(file_path).is_absolute() {
+    // Reject platform-absolute paths AND Unix-style rooted paths on any
+    // platform. `Path::is_absolute` on Windows considers only
+    // drive-letter and UNC forms absolute — so `/etc/passwd` would pass
+    // through `is_absolute()` as `false` on a Windows build, defeating
+    // the path-traversal guard. Checking the leading byte directly
+    // closes that gap regardless of host OS.
+    let first_byte = file_path.as_bytes().first().copied();
+    if Path::new(file_path).is_absolute() || first_byte == Some(b'/') || first_byte == Some(b'\\') {
         return Err(DiffError::CommandFailed(
             "Invalid file path: absolute paths are not allowed".into(),
         ));
@@ -44,7 +52,8 @@ fn validate_file_path(file_path: &str) -> Result<(), DiffError> {
 }
 
 async fn run_git(path: &str, args: &[&str]) -> Result<String, DiffError> {
-    let output = Command::new("git")
+    let output = Command::new(crate::git::resolve_git_path_blocking())
+        .no_console_window()
         .args(["-C", path])
         .args(args)
         .output()
@@ -270,7 +279,8 @@ pub async fn file_diff(
     if !ls_output.trim().is_empty() {
         // Untracked file — diff against /dev/null
         let full_path = Path::new(worktree_path).join(file_path);
-        let output = Command::new("git")
+        let output = Command::new(crate::git::resolve_git_path_blocking())
+            .no_console_window()
             .args(["-C", worktree_path])
             .args([
                 "diff",
@@ -322,7 +332,8 @@ pub async fn file_diff_for_layer(
         Some("untracked") => {
             // Diff against /dev/null for untracked files
             let full_path = Path::new(worktree_path).join(file_path);
-            let output = Command::new("git")
+            let output = Command::new(crate::git::resolve_git_path_blocking())
+                .no_console_window()
                 .args(["-C", worktree_path])
                 .args([
                     "diff",
@@ -370,6 +381,32 @@ pub async fn revert_file(
             // Restore from merge base
             run_git(worktree_path, &["checkout", merge_base, "--", file_path]).await?;
         }
+    }
+    Ok(())
+}
+
+/// Discard worktree changes for a single file from the Changes sidebar.
+///
+/// - `is_untracked = false`: runs `git restore -- <file>`, which restores the
+///   worktree copy from the index. Any staged changes are preserved.
+/// - `is_untracked = true`: deletes the file from disk via `fs::remove_file`.
+///
+/// This is distinct from [`revert_file`], which restores all the way back to
+/// the merge base and so also discards staged changes.
+pub async fn discard_file(
+    worktree_path: &str,
+    file_path: &str,
+    is_untracked: bool,
+) -> Result<(), DiffError> {
+    validate_file_path(file_path)?;
+
+    if is_untracked {
+        let full_path = Path::new(worktree_path).join(file_path);
+        tokio::fs::remove_file(&full_path)
+            .await
+            .map_err(|e| DiffError::CommandFailed(e.to_string()))?;
+    } else {
+        run_git(worktree_path, &["restore", "--", file_path]).await?;
     }
     Ok(())
 }
@@ -832,7 +869,8 @@ mod integration_tests {
     use std::process::Command as StdCommand;
 
     fn git_cmd(dir: &Path, args: &[&str]) -> String {
-        let output = StdCommand::new("git")
+        let output = StdCommand::new(crate::git::resolve_git_path_blocking())
+            .no_console_window()
             .args(["-C", dir.to_str().unwrap()])
             .args(args)
             .output()
@@ -844,6 +882,14 @@ mod integration_tests {
         git_cmd(dir, &["init", "-b", "main"]);
         git_cmd(dir, &["config", "user.email", "test@test.com"]);
         git_cmd(dir, &["config", "user.name", "Test"]);
+        // Force LF line endings in the working tree. Git for Windows
+        // defaults to `core.autocrlf=true` globally, which rewrites LF to
+        // CRLF on checkout and would make the revert assertions compare
+        // "keep\r\n" against "keep\n". The production worktree this
+        // module manages is a git worktree created by the app, where we
+        // control the config — so mirroring that in tests is closer to
+        // real conditions, not less accurate.
+        git_cmd(dir, &["config", "core.autocrlf", "false"]);
 
         // Create initial file and commit on main
         std::fs::write(dir.join("file.txt"), "line 1\nline 2\nline 3\n").unwrap();
@@ -1049,6 +1095,118 @@ mod integration_tests {
         .unwrap();
 
         assert!(!tmp.path().join("new_file.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_discard_unstaged_modified_restores_from_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        git_cmd(dir, &["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("file.txt"), "original\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        // Unstaged modification
+        std::fs::write(dir.join("file.txt"), "modified\n").unwrap();
+
+        discard_file(dir.to_str().unwrap(), "file.txt", false)
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(dir.join("file.txt")).unwrap();
+        assert_eq!(content, "original\n");
+    }
+
+    #[tokio::test]
+    async fn test_discard_unstaged_modified_preserves_staged_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        git_cmd(dir, &["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("file.txt"), "v1\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        // Stage v2, then add an unstaged v3 layer on top
+        std::fs::write(dir.join("file.txt"), "v2\n").unwrap();
+        git_cmd(dir, &["add", "file.txt"]);
+        std::fs::write(dir.join("file.txt"), "v3\n").unwrap();
+
+        discard_file(dir.to_str().unwrap(), "file.txt", false)
+            .await
+            .unwrap();
+
+        // Worktree restored to staged copy (v2), staged changes still present
+        let content = std::fs::read_to_string(dir.join("file.txt")).unwrap();
+        assert_eq!(content, "v2\n");
+
+        // Confirm v2 is still staged
+        let staged_diff = git_cmd(dir, &["diff", "--cached", "--", "file.txt"]);
+        assert!(staged_diff.contains("+v2"));
+    }
+
+    #[tokio::test]
+    async fn test_discard_unstaged_deleted_restores_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        git_cmd(dir, &["config", "core.autocrlf", "false"]);
+        std::fs::write(dir.join("keep.txt"), "keep\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        std::fs::remove_file(dir.join("keep.txt")).unwrap();
+
+        discard_file(dir.to_str().unwrap(), "keep.txt", false)
+            .await
+            .unwrap();
+
+        let content = std::fs::read_to_string(dir.join("keep.txt")).unwrap();
+        assert_eq!(content, "keep\n");
+    }
+
+    #[tokio::test]
+    async fn test_discard_untracked_file_removes_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        git_cmd(dir, &["init", "-b", "main"]);
+        git_cmd(dir, &["config", "user.email", "test@test.com"]);
+        git_cmd(dir, &["config", "user.name", "Test"]);
+        std::fs::write(dir.join("base.txt"), "base\n").unwrap();
+        git_cmd(dir, &["add", "."]);
+        git_cmd(dir, &["commit", "-m", "initial"]);
+
+        std::fs::write(dir.join("new.txt"), "untracked\n").unwrap();
+        assert!(dir.join("new.txt").exists());
+
+        discard_file(dir.to_str().unwrap(), "new.txt", true)
+            .await
+            .unwrap();
+
+        assert!(!dir.join("new.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_discard_rejects_path_traversal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        git_cmd(dir, &["init", "-b", "main"]);
+
+        let err = discard_file(dir.to_str().unwrap(), "../etc/passwd", true)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DiffError::CommandFailed(_)));
     }
 
     #[tokio::test]

@@ -1,13 +1,13 @@
 import React, { createContext, memo, useContext, useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { isAgentBusy } from "../../utils/agentStatus";
-import Markdown from "react-markdown";
-import { preprocessContent, MARKDOWN_COMPONENTS, REHYPE_PLUGINS, REMARK_PLUGINS } from "../../utils/markdown";
-import { FileText, GitBranch, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
+import { HighlightedMessageMarkdown } from "./HighlightedMessageMarkdown";
+import { HighlightedPlainText } from "./HighlightedPlainText";
+import { ChatSearchBar } from "./ChatSearchBar";
+import { AlertCircle, FileText, GitBranch, LoaderCircle, Mic, Plus, RotateCcw, Send, Split, Square, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { ToolActivity, CompletedTurn } from "../../stores/useAppStore";
 import {
   loadChatHistory,
-  loadAttachmentsForWorkspace,
+  loadAttachmentsForSession,
   readFileAsBase64,
   listCheckpoints,
   loadCompletedTurns,
@@ -31,6 +31,7 @@ import {
 import { applySelectedModel } from "./applySelectedModel";
 import { MODELS } from "./modelRegistry";
 import { roleClassKey, shouldRenderAsMarkdown } from "./messageRendering";
+import { StreamingContext } from "./StreamingContext";
 import { findLatestPlanFilePath } from "./planFilePath";
 import type { PermissionLevel } from "../../stores/useAppStore";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -47,7 +48,6 @@ import {
   maxSizeFor,
   isTextFile,
 } from "../../utils/attachmentValidation";
-import { useAgentStream } from "../../hooks/useAgentStream";
 import { useTypewriter } from "../../hooks/useTypewriter";
 import { extractToolSummary } from "../../hooks/toolSummary";
 import { AgentQuestionCard } from "./AgentQuestionCard";
@@ -57,7 +57,22 @@ import { SegmentedMeter } from "./composer/SegmentedMeter";
 import { ContextPopover } from "./composer/ContextPopover";
 import { WorkspaceActions } from "./WorkspaceActions";
 import { SlashCommandPicker, filterSlashCommands } from "./SlashCommandPicker";
+import { PinnedCommandsBar } from "./PinnedCommandsBar";
 import { AttachMenu } from "./AttachMenu";
+import {
+  AttachmentContextMenu,
+  buildAttachmentMenuLabels,
+} from "./AttachmentContextMenu";
+import { AttachmentLightbox } from "./AttachmentLightbox";
+import {
+  downloadAttachment,
+  openAttachmentInBrowser,
+  openAttachmentWithDefaultApp,
+  copyAttachmentToClipboard,
+  shareAttachment,
+  isShareSupported,
+  type DownloadableAttachment,
+} from "../../utils/attachmentDownload";
 import { FileMentionPicker, matchFiles } from "./FileMentionPicker";
 import {
   describeSlashQuery,
@@ -65,24 +80,39 @@ import {
   resolveNativeHandler,
 } from "./nativeSlashCommands";
 import { checkpointHasFileChanges, clearAllHasFileChanges, buildRollbackMap } from "../../utils/checkpointUtils";
+import {
+  assistantTextForTurn,
+  buildPlainTurnFooters,
+  findTriggeringUserIndex,
+} from "../../utils/chatTurnFooter";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { CompactionDivider } from "./CompactionDivider";
 import { SyntheticContinuationMessage } from "./SyntheticContinuationMessage";
+import {
+  hasUltrathink,
+  renderUltrathinkText,
+  resolveUltrathinkEffort,
+} from "./ultrathink";
 import {
   extractCompactionEvents,
   parseCompactionSentinel,
   parseSyntheticSummarySentinel,
 } from "../../utils/compactionSentinel";
 import { PanelToggles } from "../shared/PanelToggles";
+import { SessionTabs } from "./SessionTabs";
 import { deriveTasks, processActivities, turnHasTaskActivity, hasTaskActivity } from "../../hooks/useTaskTracker";
 import type { TaskTrackerResult, TrackedTask } from "../../hooks/useTaskTracker";
 import { ScrollToBottomPill } from "./ScrollToBottomPill";
 import { useStickyScroll } from "../../hooks/useStickyScroll";
+import { useVoiceInput } from "../../hooks/useVoiceInput";
 import { debugChat } from "../../utils/chatDebug";
+import {
+  insertTranscriptAtSelection,
+  shouldOpenVoiceSettingsForError,
+} from "../../utils/voice";
 import styles from "./ChatPanel.module.css";
 import caretStyles from "./caret.module.css";
 
-import { SPINNER_FRAMES, SPINNER_INTERVAL_MS } from "../../utils/spinnerFrames";
 import { formatTokens } from "./formatTokens";
 
 function shouldDisable1mContext(modelId: string | null): boolean {
@@ -112,11 +142,18 @@ function formatDurationMs(ms: number): string {
  * (fetches the body from the backend on demand). Shows a loading pill with
  * the filename while the thumbnail generates.
  */
-function PdfThumbnail({ dataBase64, attachmentId, filename, className }: {
+function PdfThumbnail({ dataBase64, attachmentId, filename, className, onClick, onContextMenu }: {
   dataBase64?: string;
   attachmentId?: string;
   filename: string;
   className?: string;
+  /** Left-click handler. Used to open the PDF with the system's default
+   *  PDF viewer rather than the lightbox (which only renders images). */
+  onClick?: () => void;
+  /** Right-click handler. Wired so PDF thumbnails get the same Claudette
+   *  context menu (Download / Copy / Open) as image attachments rather than
+   *  WebKit's default image menu. See issue 430. */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
@@ -139,15 +176,47 @@ function PdfThumbnail({ dataBase64, attachmentId, filename, className }: {
     return () => { cancelled = true; };
   }, [dataBase64, attachmentId]);
 
+  // Both the loading-state pill and the rendered first-page thumbnail
+  // need to be keyboard-actionable when an onClick is wired — without
+  // role/tabIndex/Enter+Space handling, non-mouse users can't open the
+  // PDF.
+  const interactiveProps = onClick
+    ? {
+        role: "button" as const,
+        tabIndex: 0,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        },
+        "aria-label": `Open ${filename}`,
+      }
+    : {};
   if (!src) {
     return (
-      <div className={styles.messagePdf}>
+      <div
+        className={styles.messagePdf}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        {...interactiveProps}
+      >
         <FileText size={16} />
         <span>{filename}</span>
       </div>
     );
   }
-  return <img src={src} alt={filename} className={className} />;
+  return (
+    <img
+      src={src}
+      alt={filename}
+      className={className}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      style={onClick ? { cursor: "zoom-in" } : undefined}
+      {...interactiveProps}
+    />
+  );
 }
 
 /** Semantic colors for tool names — makes tool activity scannable at a glance. */
@@ -182,6 +251,11 @@ const EMPTY_ATTACHMENTS: ChatAttachment[] = [];
 
 export function ChatPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
+  const activeSessionId = useAppStore((s) =>
+    s.selectedWorkspaceId
+      ? s.selectedSessionIdByWorkspaceId[s.selectedWorkspaceId] ?? null
+      : null,
+  );
   const workspaces = useAppStore((s) => s.workspaces);
   const repositories = useAppStore((s) => s.repositories);
   const chatMessages = useAppStore((s) => s.chatMessages);
@@ -200,64 +274,137 @@ export function ChatPanel() {
   const processingRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Prompt history: stores past user inputs per workspace.
+  // Cmd/Ctrl+F search bar state. `searchQuery` flows down to message
+  // renderers as the highlight trigger; an empty string short-circuits the
+  // wrappers' DOM-walk pass entirely, so search-off has zero render cost.
+  const chatSearchOpen = useAppStore(
+    (s) => (selectedWorkspaceId ? s.chatSearch[selectedWorkspaceId]?.open ?? false : false),
+  );
+  const chatSearchQuery = useAppStore(
+    (s) => (selectedWorkspaceId ? s.chatSearch[selectedWorkspaceId]?.query ?? "" : ""),
+  );
+  const searchQuery = chatSearchOpen ? chatSearchQuery : "";
+
+  const [attachmentMenu, setAttachmentMenu] = useState<{
+    x: number;
+    y: number;
+    attachment: DownloadableAttachment;
+    /** Persisted PDFs hydrate without data_base64 (it's stripped to keep
+     *  the initial IPC small). When the menu fires for one, hold the row
+     *  id so each action can lazy-load the bytes via loadAttachmentData
+     *  before downloading / copying. */
+    attachmentId?: string;
+  } | null>(null);
+
+  const openAttachmentMenu = useCallback(
+    (e: React.MouseEvent, attachment: DownloadableAttachment, attachmentId?: string) => {
+      e.preventDefault();
+      setAttachmentMenu({
+        x: e.clientX,
+        y: e.clientY,
+        attachment,
+        attachmentId,
+      });
+    },
+    [],
+  );
+
+  /** Resolves an attachment's data_base64, fetching from the backend on
+   *  demand if it was stripped during hydration. Returns a fresh object
+   *  so callers can pass it straight into download / copy helpers. */
+  const ensureAttachmentBytes = useCallback(
+    async (
+      attachment: DownloadableAttachment,
+      attachmentId?: string,
+    ): Promise<DownloadableAttachment> => {
+      if (attachment.data_base64 || !attachmentId) return attachment;
+      const { loadAttachmentData } = await import("../../services/tauri");
+      const data_base64 = await loadAttachmentData(attachmentId);
+      return { ...attachment, data_base64 };
+    },
+    [],
+  );
+
+  const [lightbox, setLightbox] = useState<{
+    attachment: DownloadableAttachment;
+    returnFocus: HTMLElement | null;
+  } | null>(null);
+
+  const openLightbox = useCallback(
+    (e: React.MouseEvent, attachment: DownloadableAttachment) => {
+      setLightbox({
+        attachment,
+        returnFocus: (e.currentTarget as HTMLElement) ?? null,
+      });
+    },
+    [],
+  );
+
+  // navigator.canShare({ files: [probe] }) doesn't change across re-renders —
+  // it's a function of the platform / webview capabilities. Compute once.
+  const shareSupported = useMemo(() => isShareSupported(), []);
+
+  // Prompt history: stores past user inputs per session.
   const historyRef = useRef<Record<string, string[]>>({});
   const historyIndexRef = useRef(-1);
   const draftRef = useRef("");
-
-  useAgentStream();
 
   const defaultBranchesMap = useAppStore((s) => s.defaultBranches);
 
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
   const repo = repositories.find((r) => r.id === ws?.repository_id);
   const defaultBranch = repo ? defaultBranchesMap[repo.id] : undefined;
-  const messages = selectedWorkspaceId
-    ? chatMessages[selectedWorkspaceId] || []
+  const messages = activeSessionId
+    ? chatMessages[activeSessionId] || []
     : [];
   // Subscribe only to boolean — avoids re-render on every streaming character
   const hasStreaming = useAppStore(
-    (s) => !!(selectedWorkspaceId && s.streamingContent[selectedWorkspaceId])
+    (s) => !!(activeSessionId && s.streamingContent[activeSessionId])
   );
   const hasPendingTypewriter = useAppStore(
-    (s) => !!(selectedWorkspaceId && s.pendingTypewriter[selectedWorkspaceId])
+    (s) => !!(activeSessionId && s.pendingTypewriter[activeSessionId])
   );
   const hasThinking = useAppStore(
-    (s) => !!(selectedWorkspaceId && s.streamingThinking[selectedWorkspaceId])
+    (s) => !!(activeSessionId && s.streamingThinking[activeSessionId])
   );
   const showThinkingBlocks = useAppStore(
-    (s) => selectedWorkspaceId ? s.showThinkingBlocks[selectedWorkspaceId] === true : false
+    (s) => activeSessionId ? s.showThinkingBlocks[activeSessionId] === true : false
   );
   // Subscribe only to count — avoids re-render on tool activity content changes
   const activitiesCount = useAppStore(
-    (s) => (selectedWorkspaceId ? (s.toolActivities[selectedWorkspaceId] || []).length : 0)
+    (s) => (activeSessionId ? (s.toolActivities[activeSessionId] || []).length : 0)
   );
   const completedTurnsCount = useAppStore(
-    (s) => (selectedWorkspaceId ? (s.completedTurns[selectedWorkspaceId] || []).length : 0)
+    (s) => (activeSessionId ? (s.completedTurns[activeSessionId] || []).length : 0)
   );
   const permissionLevelMap = useAppStore((s) => s.permissionLevel);
   const setPermissionLevel = useAppStore((s) => s.setPermissionLevel);
-  const permissionLevel = selectedWorkspaceId
-    ? permissionLevelMap[selectedWorkspaceId] ?? "full"
+  const permissionLevel = activeSessionId
+    ? permissionLevelMap[activeSessionId] ?? "full"
     : "full";
   const pendingQuestion = useAppStore(
-    (s) => (selectedWorkspaceId ? s.agentQuestions[selectedWorkspaceId] ?? null : null)
+    (s) => (activeSessionId ? s.agentQuestions[activeSessionId] ?? null : null)
   );
   const clearAgentQuestion = useAppStore((s) => s.clearAgentQuestion);
   const finishTypewriterDrainTop = useAppStore((s) => s.finishTypewriterDrain);
   const pendingPlan = useAppStore(
-    (s) => (selectedWorkspaceId ? s.planApprovals[selectedWorkspaceId] ?? null : null)
+    (s) => (activeSessionId ? s.planApprovals[activeSessionId] ?? null : null)
   );
   const clearPlanApproval = useAppStore((s) => s.clearPlanApproval);
   const setPlanMode = useAppStore((s) => s.setPlanMode);
   const queuedMessage = useAppStore(
-    (s) => (selectedWorkspaceId ? s.queuedMessages[selectedWorkspaceId] ?? null : null)
+    (s) => (activeSessionId ? s.queuedMessages[activeSessionId] ?? null : null)
   );
   const setQueuedMessage = useAppStore((s) => s.setQueuedMessage);
   const clearQueuedMessage = useAppStore((s) => s.clearQueuedMessage);
   const addWorkspace = useAppStore((s) => s.addWorkspace);
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
-  const isRunning = isAgentBusy(ws?.agent_status);
+  const activeSessionStatus = useAppStore((s) => {
+    if (!activeSessionId || !selectedWorkspaceId) return "Idle" as const;
+    const sessions = s.sessionsByWorkspace[selectedWorkspaceId];
+    return sessions?.find((sess) => sess.id === activeSessionId)?.agent_status ?? "Idle" as const;
+  });
+  const isRunning = activeSessionStatus === "Running";
 
   const isRemote = !!ws?.remote_connection_id;
 
@@ -288,8 +435,7 @@ export function ChatPanel() {
     [handleContentChanged],
   );
 
-  // Spinner and elapsed timer for running agent.
-  const [spinnerIdx, setSpinnerIdx] = useState(0);
+  // Elapsed timer for running agent.
   const promptStartTime = useAppStore(
     (s) => (selectedWorkspaceId ? s.promptStartTime[selectedWorkspaceId] ?? null : null)
   );
@@ -297,26 +443,24 @@ export function ChatPanel() {
   useEffect(() => {
     if (!isRunning || promptStartTime == null) return;
     setElapsed(Math.floor((Date.now() - promptStartTime) / 1000));
-    setSpinnerIdx(0);
     const interval = setInterval(() => {
-      setSpinnerIdx((i) => (i + 1) % SPINNER_FRAMES.length);
       const newElapsed = Math.floor((Date.now() - promptStartTime) / 1000);
       setElapsed((prev) => (prev === newElapsed ? prev : newElapsed));
-    }, SPINNER_INTERVAL_MS);
+    }, 1000);
     return () => clearInterval(interval);
   }, [isRunning, promptStartTime]);
 
   const formatElapsed = formatElapsedSeconds;
 
-  // Load persisted permission level when workspace changes.
+  // Load persisted permission level when the active session changes.
   useEffect(() => {
-    if (!selectedWorkspaceId) return;
+    if (!activeSessionId) return;
     let cancelled = false;
-    getAppSetting(`permission_level:${selectedWorkspaceId}`)
+    getAppSetting(`permission_level:${activeSessionId}`)
       .then((val) => {
         if (cancelled) return;
         if (val === "readonly" || val === "standard" || val === "full") {
-          setPermissionLevel(selectedWorkspaceId, val);
+          setPermissionLevel(activeSessionId, val);
         }
       })
       .catch((err) => {
@@ -325,28 +469,30 @@ export function ChatPanel() {
     return () => {
       cancelled = true;
     };
-  }, [selectedWorkspaceId, setPermissionLevel]);
+  }, [activeSessionId, setPermissionLevel]);
 
-  // Load chat history when workspace changes, seed prompt history from it.
+  // Load chat history when the active session changes, seed prompt history from it.
   useEffect(() => {
-    if (!selectedWorkspaceId) return;
+    if (!activeSessionId || !selectedWorkspaceId) return;
     let cancelled = false;
     setError(null);
     historyIndexRef.current = -1;
     draftRef.current = "";
 
-    const currentWs = useAppStore.getState().workspaces.find((w) => w.id === selectedWorkspaceId);
+    const currentWs = useAppStore
+      .getState()
+      .workspaces.find((w) => w.id === selectedWorkspaceId);
+    const sessionId = activeSessionId;
     const loadHistory = currentWs?.remote_connection_id
       ? sendRemoteCommand(currentWs.remote_connection_id, "load_chat_history", {
-          workspace_id: selectedWorkspaceId,
+          chat_session_id: sessionId,
         }).then((data) => (data as { messages?: ChatMessage[] })?.messages ?? data as ChatMessage[])
-      : loadChatHistory(selectedWorkspaceId);
+      : loadChatHistory(sessionId);
 
-    const wsId = selectedWorkspaceId;
     const isLocal = !currentWs?.remote_connection_id;
 
     debugChat("ChatPanel", "load-history:start", {
-      wsId,
+      sessionId,
       isLocal,
       agentStatus: currentWs?.agent_status ?? null,
     });
@@ -360,13 +506,13 @@ export function ChatPanel() {
           (m) => m.role !== "Assistant" || m.content.trim() !== "" || !!m.thinking
         );
         debugChat("ChatPanel", "load-history:success", {
-          wsId,
+          sessionId,
           rawMessageCount: msgs.length,
           filteredMessageCount: filtered.length,
           messageIds: filtered.map((msg) => msg.id),
         });
-        setChatMessages(wsId, filtered);
-        historyRef.current[wsId] = filtered
+        setChatMessages(sessionId, filtered);
+        historyRef.current[sessionId] = filtered
           .filter((m) => m.role === "User")
           .map((m) => m.content);
         // Seed the ContextMeter from the last assistant message's per-call
@@ -374,17 +520,17 @@ export function ChatPanel() {
         // clear any stale value so the meter hides.
         const callUsage = extractLatestCallUsage(filtered);
         const store = useAppStore.getState();
-        if (callUsage) store.setLatestTurnUsage(wsId, callUsage);
-        else store.clearLatestTurnUsage(wsId);
+        if (callUsage) store.setLatestTurnUsage(sessionId, callUsage);
+        else store.clearLatestTurnUsage(sessionId);
         // Phase 3: seed compactionEvents by scanning for COMPACTION: sentinels.
-        store.setCompactionEvents(wsId, extractCompactionEvents(filtered));
+        store.setCompactionEvents(sessionId, extractCompactionEvents(filtered));
 
-        // Load attachments for this workspace's messages.
+        // Load attachments for this session's messages.
         if (isLocal) {
-          loadAttachmentsForWorkspace(wsId)
+          loadAttachmentsForSession(sessionId)
             .then((atts) => {
               if (cancelled) return;
-              useAppStore.getState().setChatAttachments(wsId, atts);
+              useAppStore.getState().setChatAttachments(sessionId, atts);
             })
             .catch((e) => console.error("Failed to load attachments:", e));
         }
@@ -393,26 +539,27 @@ export function ChatPanel() {
         // Skip if the agent is currently running — the in-memory state from
         // finalizeTurn() is more current than the DB and must not be overwritten.
         if (isLocal) {
-          const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId);
-          const isRunning = isAgentBusy(ws?.agent_status);
+          const sessions = useAppStore.getState().sessionsByWorkspace[selectedWorkspaceId] ?? [];
+          const thisSession = sessions.find((s) => s.id === sessionId);
+          const isRunning = thisSession?.agent_status === "Running";
           debugChat("ChatPanel", "load-completed-turns:gate", {
-            wsId,
+            sessionId,
             isRunning,
-            currentCompletedTurnIds: (useAppStore.getState().completedTurns[wsId] || []).map(
+            currentCompletedTurnIds: (useAppStore.getState().completedTurns[sessionId] || []).map(
               (turn) => turn.id
             ),
           });
           if (!isRunning) {
-            loadCompletedTurns(wsId)
+            loadCompletedTurns(sessionId)
               .then((turnData) => {
                 if (cancelled) return;
                 const turns = reconstructCompletedTurns(filtered, turnData);
                 debugChat("ChatPanel", "load-completed-turns:success", {
-                  wsId,
+                  sessionId,
                   dbTurnIds: turnData.map((turn) => turn.checkpoint_id),
                   reconstructedTurnIds: turns.map((turn) => turn.id),
                 });
-                hydrateCompletedTurns(wsId, turns);
+                hydrateCompletedTurns(sessionId, turns);
               })
               .catch((e) => console.error("Failed to load completed turns:", e));
           }
@@ -423,10 +570,10 @@ export function ChatPanel() {
     // Load checkpoints for rollback support.
     if (isLocal) {
       const setCheckpoints = useAppStore.getState().setCheckpoints;
-      listCheckpoints(wsId)
+      listCheckpoints(sessionId)
         .then((cps) => {
           if (cancelled) return;
-          setCheckpoints(wsId, cps);
+          setCheckpoints(sessionId, cps);
         })
         .catch((e) => console.error("Failed to load checkpoints:", e));
     }
@@ -434,25 +581,25 @@ export function ChatPanel() {
     return () => {
       cancelled = true;
     };
-  }, [selectedWorkspaceId, setChatMessages, hydrateCompletedTurns]);
+  }, [activeSessionId, selectedWorkspaceId, setChatMessages, hydrateCompletedTurns]);
 
-  // Scroll to bottom unconditionally on workspace switch.
+  // Scroll to bottom unconditionally on session switch.
   useEffect(() => {
-    if (selectedWorkspaceId) scrollToBottom();
-  }, [selectedWorkspaceId, scrollToBottom]);
+    if (activeSessionId) scrollToBottom();
+  }, [activeSessionId, scrollToBottom]);
 
   // Auto-scroll when new content arrives — respects user intent via useStickyScroll.
   // Only scrolls if the user is already at/near the bottom.
   const prevMsgCountRef = useRef<Record<string, number>>({});
   useEffect(() => {
-    const wsId = selectedWorkspaceId;
-    if (!wsId) return;
-    const prev = prevMsgCountRef.current[wsId] ?? 0;
+    const sid = activeSessionId;
+    if (!sid) return;
+    const prev = prevMsgCountRef.current[sid] ?? 0;
     const cur = messages.length;
-    prevMsgCountRef.current[wsId] = cur;
+    prevMsgCountRef.current[sid] = cur;
     // Only trigger on genuinely new messages (count increase), not DB rehydration.
     if (cur > prev) handleContentChanged();
-  }, [messages.length, selectedWorkspaceId, handleContentChanged]);
+  }, [messages.length, activeSessionId, handleContentChanged]);
 
   useEffect(() => {
     if (completedTurnsCount > 0 || activitiesCount > 0 || pendingQuestion || pendingPlan) {
@@ -461,8 +608,9 @@ export function ChatPanel() {
   }, [completedTurnsCount, activitiesCount, pendingQuestion, pendingPlan, handleContentChanged]);
 
   useEffect(() => {
-    if (!selectedWorkspaceId) return;
+    if (!activeSessionId) return;
     debugChat("ChatPanel", "state", {
+      sessionId: activeSessionId,
       wsId: selectedWorkspaceId,
       isRunning,
       messageCount: messages.length,
@@ -471,6 +619,7 @@ export function ChatPanel() {
       hasStreaming,
     });
   }, [
+    activeSessionId,
     selectedWorkspaceId,
     isRunning,
     messages.length,
@@ -486,14 +635,14 @@ export function ChatPanel() {
     attachments?: AttachmentInput[],
   ) => void) | null>(null);
   useEffect(() => {
-    if (isRunning || !selectedWorkspaceId || !queuedMessage) return;
+    if (isRunning || !activeSessionId || !queuedMessage) return;
     // Agent just finished — dispatch the queued message.
     const { content, mentionedFiles, attachments } = queuedMessage;
-    clearQueuedMessage(selectedWorkspaceId);
+    clearQueuedMessage(activeSessionId);
     const filesSet = mentionedFiles?.length ? new Set(mentionedFiles) : undefined;
     // Use a microtask to avoid calling handleSend during render.
     queueMicrotask(() => handleSendRef.current?.(content, filesSet, attachments));
-  }, [isRunning, selectedWorkspaceId, queuedMessage, clearQueuedMessage]);
+  }, [isRunning, activeSessionId, queuedMessage, clearQueuedMessage]);
 
   if (!ws) return null;
 
@@ -503,7 +652,13 @@ export function ChatPanel() {
     attachments?: AttachmentInput[],
   ) => {
     let trimmed = content.trim();
-    if ((!trimmed && !attachments?.length) || !selectedWorkspaceId) return;
+    if (
+      (!trimmed && !attachments?.length) ||
+      !selectedWorkspaceId ||
+      !activeSessionId
+    )
+      return;
+    const sessionId = activeSessionId;
 
     // Convert mentioned files set to array for the backend.
     const mentionedFilesArray = mentionedFiles?.size
@@ -565,15 +720,15 @@ export function ChatPanel() {
       if (nativeHandler) {
         const workspaceId = selectedWorkspaceId;
         const state = useAppStore.getState();
-        const currentModel = state.selectedModel[workspaceId] ?? "opus";
+        const currentModel = state.selectedModel[sessionId] ?? "opus";
         const currentPermission: PermissionLevel =
-          state.permissionLevel[workspaceId] ?? "full";
-        const currentPlanMode = state.planMode[workspaceId] ?? false;
-        const currentFastMode = state.fastMode[workspaceId] ?? false;
-        const currentThinking = state.thinkingEnabled[workspaceId] ?? false;
-        const currentChrome = state.chromeEnabled[workspaceId] ?? false;
-        const currentEffort = state.effortLevel[workspaceId] ?? "auto";
-        const planFilePath = findLatestPlanFilePath(workspaceId);
+          state.permissionLevel[sessionId] ?? "full";
+        const currentPlanMode = state.planMode[sessionId] ?? false;
+        const currentFastMode = state.fastMode[sessionId] ?? false;
+        const currentThinking = state.thinkingEnabled[sessionId] ?? false;
+        const currentChrome = state.chromeEnabled[sessionId] ?? false;
+        const currentEffort = state.effortLevel[sessionId] ?? "auto";
+        const planFilePath = findLatestPlanFilePath(sessionId);
         const agentStatusLabel =
           typeof ws.agent_status === "string"
             ? ws.agent_status
@@ -581,9 +736,10 @@ export function ChatPanel() {
         const isRemoteWorkspace = !!ws.remote_connection_id;
 
         const addLocalMessage = (text: string) => {
-          addChatMessage(workspaceId, {
+          addChatMessage(sessionId, {
             id: crypto.randomUUID(),
             workspace_id: workspaceId,
+            chat_session_id: sessionId,
             role: "System",
             content: text,
             cost_usd: null,
@@ -598,22 +754,22 @@ export function ChatPanel() {
         };
 
         const setSelectedModelBound = (nextModel: string) =>
-          applySelectedModel(workspaceId, nextModel);
+          applySelectedModel(sessionId, nextModel);
 
         const setPermissionLevelBound = async (level: PermissionLevel) => {
           const previous =
-            useAppStore.getState().permissionLevel[workspaceId] ?? "full";
-          useAppStore.getState().setPermissionLevel(workspaceId, level);
+            useAppStore.getState().permissionLevel[sessionId] ?? "full";
+          useAppStore.getState().setPermissionLevel(sessionId, level);
           try {
-            await setAppSetting(`permission_level:${workspaceId}`, level);
+            await setAppSetting(`permission_level:${sessionId}`, level);
           } catch (err) {
-            useAppStore.getState().setPermissionLevel(workspaceId, previous);
+            useAppStore.getState().setPermissionLevel(sessionId, previous);
             throw err;
           }
         };
 
         const setPlanModeBound = (enabled: boolean) => {
-          useAppStore.getState().setPlanMode(workspaceId, enabled);
+          useAppStore.getState().setPlanMode(sessionId, enabled);
         };
 
         // Route plan-file reads through the remote server for remote
@@ -639,19 +795,19 @@ export function ChatPanel() {
             );
           }
           const store = useAppStore.getState();
-          const messages = await clearConversation(workspaceId, restoreFiles);
-          store.rollbackConversation(workspaceId, "__clear__", messages);
-          loadCompletedTurns(workspaceId)
+          const messages = await clearConversation(sessionId, restoreFiles);
+          store.rollbackConversation(sessionId, workspaceId, "__clear__", messages);
+          loadCompletedTurns(sessionId)
             .then((turnData) => {
               const turns = reconstructCompletedTurns(messages, turnData);
-              useAppStore.getState().setCompletedTurns(workspaceId, turns);
+              useAppStore.getState().setCompletedTurns(sessionId, turns);
             })
             .catch((err) =>
               console.error("Failed to reload turns after /clear:", err),
             );
-          loadAttachmentsForWorkspace(workspaceId)
+          loadAttachmentsForSession(sessionId)
             .then((atts) =>
-              useAppStore.getState().setChatAttachments(workspaceId, atts),
+              useAppStore.getState().setChatAttachments(sessionId, atts),
             )
             .catch((err) =>
               console.error("Failed to reload attachments after /clear:", err),
@@ -730,7 +886,7 @@ export function ChatPanel() {
     // Queued messages are auto-sent when the current turn finishes.
     if (isRunning) {
       setQueuedMessage(
-        selectedWorkspaceId,
+        sessionId,
         trimmed,
         mentionedFilesArray,
         attachments,
@@ -743,23 +899,22 @@ export function ChatPanel() {
     // stuck typewriter drain from the previous turn so the completed message
     // doesn't stay hidden behind pendingTypewriter across turns (the
     // drain-complete effect cannot fire while isStreaming flips back to true).
-    if (selectedWorkspaceId) {
-      clearAgentQuestion(selectedWorkspaceId);
-      clearPlanApproval(selectedWorkspaceId);
-      finishTypewriterDrainTop(selectedWorkspaceId);
-    }
+    clearAgentQuestion(sessionId);
+    clearPlanApproval(sessionId);
+    finishTypewriterDrainTop(sessionId);
 
     setError(null);
 
     // Push to prompt history.
-    const history = (historyRef.current[selectedWorkspaceId] ??= []);
+    const history = (historyRef.current[sessionId] ??= []);
     history.push(trimmed);
     historyIndexRef.current = -1;
     draftRef.current = "";
     const optimisticMsgId = crypto.randomUUID();
-    addChatMessage(selectedWorkspaceId, {
+    addChatMessage(sessionId, {
       id: optimisticMsgId,
       workspace_id: selectedWorkspaceId,
+      chat_session_id: sessionId,
       role: "User",
       content: trimmed,
       cost_usd: null,
@@ -784,42 +939,55 @@ export function ChatPanel() {
         height: null,
         size_bytes: Math.ceil(a.data_base64.length * 0.75),
       }));
-      useAppStore.getState().addChatAttachments(selectedWorkspaceId, optimisticAtts);
+      useAppStore.getState().addChatAttachments(sessionId, optimisticAtts);
     }
+    // Keep both the workspace aggregate AND the per-session status fresh.
+    // The tab icon, sidebar badge, and ChatToolbar disable-state all read
+    // session-level status; the workspace row still drives tray + unread.
     updateWorkspace(selectedWorkspaceId, { agent_status: "Running" });
     useAppStore.getState().setPromptStartTime(selectedWorkspaceId, Date.now());
+    useAppStore.getState().updateChatSession(sessionId, {
+      agent_status: "Running",
+    });
     useAppStore.getState().clearUnreadCompletion(selectedWorkspaceId);
 
     try {
       if (ws?.remote_connection_id) {
         // Route to remote server via WebSocket.
         const state = useAppStore.getState();
-        const selectedModel = state.selectedModel[selectedWorkspaceId] || null;
+        const selectedModel = state.selectedModel[sessionId] || null;
         const disable1mContext = shouldDisable1mContext(selectedModel);
+        const effort = resolveUltrathinkEffort(
+          trimmed,
+          state.effortLevel[sessionId],
+        );
         await sendRemoteCommand(ws.remote_connection_id, "send_chat_message", {
-          workspace_id: selectedWorkspaceId,
+          chat_session_id: sessionId,
           content: trimmed,
           mentioned_files: mentionedFilesArray,
           permission_level: permissionLevel,
-          model: selectedModel,
-          fast_mode: state.fastMode[selectedWorkspaceId] || false,
-          thinking_enabled: state.thinkingEnabled[selectedWorkspaceId] || false,
-          plan_mode: state.planMode[selectedWorkspaceId] || false,
-          effort: state.effortLevel[selectedWorkspaceId] || null,
-          chrome_enabled: state.chromeEnabled[selectedWorkspaceId] || false,
+          model: state.selectedModel[sessionId] || null,
+          fast_mode: state.fastMode[sessionId] || false,
+          thinking_enabled: state.thinkingEnabled[sessionId] || false,
+          plan_mode: state.planMode[sessionId] || false,
+          effort: effort ?? null,
+          chrome_enabled: state.chromeEnabled[sessionId] || false,
           disable_1m_context: disable1mContext,
         });
       } else {
         const state = useAppStore.getState();
-        const model = state.selectedModel[selectedWorkspaceId] || undefined;
-        const fastMode = state.fastMode[selectedWorkspaceId] || false;
-        const thinkingEnabled = state.thinkingEnabled[selectedWorkspaceId] || false;
-        const planMode = state.planMode[selectedWorkspaceId] || false;
-        const effort = state.effortLevel[selectedWorkspaceId] || undefined;
-        const chromeEnabled = state.chromeEnabled[selectedWorkspaceId] || false;
+        const model = state.selectedModel[sessionId] || undefined;
+        const fastMode = state.fastMode[sessionId] || false;
+        const thinkingEnabled = state.thinkingEnabled[sessionId] || false;
+        const planMode = state.planMode[sessionId] || false;
+        const effort = resolveUltrathinkEffort(
+          trimmed,
+          state.effortLevel[sessionId],
+        );
+        const chromeEnabled = state.chromeEnabled[sessionId] || false;
         const disable1mContext = shouldDisable1mContext(model ?? null);
         await sendChatMessage(
-          selectedWorkspaceId,
+          sessionId,
           trimmed,
           mentionedFilesArray,
           permissionLevel,
@@ -846,18 +1014,22 @@ export function ChatPanel() {
   handleSendRef.current = handleSend;
 
   const handleStop = async () => {
-    if (!selectedWorkspaceId) return;
+    if (!activeSessionId || !selectedWorkspaceId) return;
+    const sessionId = activeSessionId;
     // Clear queued message — stopping means the user wants to take control.
-    clearQueuedMessage(selectedWorkspaceId);
+    clearQueuedMessage(sessionId);
     try {
       if (ws?.remote_connection_id) {
         await sendRemoteCommand(ws.remote_connection_id, "stop_agent", {
-          workspace_id: selectedWorkspaceId,
+          chat_session_id: sessionId,
         });
       } else {
-        await stopAgent(selectedWorkspaceId);
+        await stopAgent(sessionId);
       }
-      updateWorkspace(selectedWorkspaceId, { agent_status: "Stopped" });
+      // Don't write workspace-level agent_status here: stop is per-session
+      // and other sessions in the workspace may still be running. The
+      // backend ProcessExited event flips this session to Stopped, and
+      // useAgentStream re-derives the workspace aggregate from sessions.
     } catch (e) {
       console.error("stopAgent failed:", e);
     }
@@ -891,8 +1063,16 @@ export function ChatPanel() {
           <PanelToggles />
         </div>
       </div>
+      {selectedWorkspaceId && <SessionTabs workspaceId={selectedWorkspaceId} />}
 
-      <ScrollContext.Provider value={scrollContextValue}>
+      <div className={styles.messagesWrapper}>
+        {selectedWorkspaceId && (
+          <ChatSearchBar
+            workspaceId={selectedWorkspaceId}
+            scopeRef={messagesContainerRef}
+          />
+        )}
+        <ScrollContext.Provider value={scrollContextValue}>
         <div className={styles.messages} ref={messagesContainerRef}>
           {messages.length === 0 && !hasStreaming ? (
             <div className={styles.empty}>
@@ -900,48 +1080,57 @@ export function ChatPanel() {
             </div>
           ) : (
             <>
-              {selectedWorkspaceId && (
+              {activeSessionId && selectedWorkspaceId && (
                 <MessagesWithTurns
                   messages={messages}
                   workspaceId={selectedWorkspaceId}
+                  sessionId={activeSessionId}
                   isRunning={isRunning}
                   onForkTurn={isRemote ? undefined : handleFork}
+                  onAttachmentContextMenu={openAttachmentMenu}
+                  onAttachmentClick={openLightbox}
+                  searchQuery={searchQuery}
                 />
               )}
 
-              {selectedWorkspaceId && hasThinking && showThinkingBlocks && (
-                <StreamingThinkingBlock workspaceId={selectedWorkspaceId} isStreaming={isRunning ?? false} />
+              {activeSessionId && hasThinking && showThinkingBlocks && (
+                <StreamingThinkingBlock
+                  sessionId={activeSessionId}
+                  isStreaming={isRunning ?? false}
+                  searchQuery={searchQuery}
+                />
               )}
 
-              {selectedWorkspaceId && (hasStreaming || hasPendingTypewriter) && (
-                <StreamingMessage workspaceId={selectedWorkspaceId} />
+              {activeSessionId && (hasStreaming || hasPendingTypewriter) && (
+                <StreamingMessage
+                  sessionId={activeSessionId}
+                  isStreaming={isRunning ?? false}
+                  searchQuery={searchQuery}
+                />
               )}
 
-              {selectedWorkspaceId && activitiesCount > 0 && (
+              {activeSessionId && activitiesCount > 0 && (
                 <ToolActivitiesSection
-                  workspaceId={selectedWorkspaceId}
+                  sessionId={activeSessionId}
                   isRunning={isRunning ?? false}
+                  searchQuery={searchQuery}
                 />
               )}
 
-              {selectedWorkspaceId && (
-                <CurrentTurnTaskProgress workspaceId={selectedWorkspaceId} />
+              {activeSessionId && (
+                <CurrentTurnTaskProgress sessionId={activeSessionId} />
               )}
 
               {pendingQuestion && (
                 <AgentQuestionCard
                   question={pendingQuestion}
                   onRespond={async (answers) => {
-                    if (!selectedWorkspaceId) return;
-                    const wsId = selectedWorkspaceId;
+                    if (!activeSessionId) return;
+                    const sid = activeSessionId;
                     const toolUseId = pendingQuestion.toolUseId;
-                    // Send first; only clear the card on success. If the
-                    // invoke fails (IPC error, session reset, …) the card
-                    // stays visible so the user can retry instead of leaving
-                    // the CLI blocked on an unanswerable can_use_tool.
                     try {
-                      await submitAgentAnswer(wsId, toolUseId, answers);
-                      clearAgentQuestion(wsId);
+                      await submitAgentAnswer(sid, toolUseId, answers);
+                      clearAgentQuestion(sid);
                     } catch (e) {
                       console.error("Failed to submit agent answer:", e);
                       setError(String(e));
@@ -955,18 +1144,18 @@ export function ChatPanel() {
                   approval={pendingPlan}
                   remoteConnectionId={ws?.remote_connection_id ?? undefined}
                   onRespond={async (approved, reason) => {
-                    if (!selectedWorkspaceId) return;
-                    const wsId = selectedWorkspaceId;
+                    if (!activeSessionId) return;
+                    const sid = activeSessionId;
                     const toolUseId = pendingPlan.toolUseId;
                     try {
-                      await submitPlanApproval(wsId, toolUseId, approved, reason);
-                      clearPlanApproval(wsId);
+                      await submitPlanApproval(sid, toolUseId, approved, reason);
+                      clearPlanApproval(sid);
                       // User action is authoritative for ending the plan
                       // phase — flip planMode off so the next turn triggers
                       // drift detection (backend `session_exited_plan` covers
                       // this already, but clearing the UI state keeps the
                       // toolbar chip in sync).
-                      setPlanMode(wsId, false);
+                      setPlanMode(sid, false);
                     } catch (e) {
                       console.error("Failed to submit plan approval:", e);
                       setError(String(e));
@@ -986,7 +1175,7 @@ export function ChatPanel() {
                       : `Processing, ${formatElapsed(elapsed)} elapsed`
                   }
                 >
-                  <span className={styles.spinner} aria-hidden="true">{SPINNER_FRAMES[spinnerIdx]}</span>
+                  <LoaderCircle size={14} className={styles.spinner} aria-hidden="true" />
                   {ws?.agent_status === "Compacting" && (
                     <span className={styles.compactingLabel}>Compacting context…</span>
                   )}
@@ -994,13 +1183,13 @@ export function ChatPanel() {
                 </div>
               )}
 
-              {queuedMessage && selectedWorkspaceId && (
+              {queuedMessage && activeSessionId && (
                 <div className={styles.queuedMessage}>
                   <span className={styles.queuedLabel}>Queued</span>
                   <span className={styles.queuedContent}>{queuedMessage.content}</span>
                   <button
                     className={styles.queuedCancel}
-                    onClick={() => clearQueuedMessage(selectedWorkspaceId)}
+                    onClick={() => clearQueuedMessage(activeSessionId)}
                     title="Cancel queued message"
                   >
                     ×
@@ -1013,6 +1202,7 @@ export function ChatPanel() {
           )}
         </div>
       </ScrollContext.Provider>
+      </div>
 
       <ScrollToBottomPill
         visible={!isAtBottom && messages.length > 0}
@@ -1025,12 +1215,88 @@ export function ChatPanel() {
         isRunning={isRunning}
         isRemote={!!ws?.remote_connection_id}
         selectedWorkspaceId={selectedWorkspaceId!}
+        sessionId={activeSessionId!}
         repoId={repo?.id}
         projectPath={repo?.path}
         historyRef={historyRef}
         historyIndexRef={historyIndexRef}
         draftRef={draftRef}
+        onAttachmentContextMenu={openAttachmentMenu}
+        onAttachmentClick={openLightbox}
       />
+      {attachmentMenu && (() => {
+        const mt = attachmentMenu.attachment.media_type;
+        const labels = buildAttachmentMenuLabels(mt);
+        // The browser-wrapper path renders bytes inside <img>, which is
+        // broken for PDFs (and would be broken for any non-image type we
+        // add later). Drop "Open in New Window" for non-images — left-
+        // click already opens the PDF in the system default viewer.
+        const isImage = mt.startsWith("image/");
+        const withBytes = () =>
+          ensureAttachmentBytes(
+            attachmentMenu.attachment,
+            attachmentMenu.attachmentId,
+          );
+        return (
+          <AttachmentContextMenu
+            x={attachmentMenu.x}
+            y={attachmentMenu.y}
+            onClose={() => setAttachmentMenu(null)}
+            items={[
+              {
+                label: labels.download,
+                onSelect: () => {
+                  withBytes()
+                    .then(downloadAttachment)
+                    .catch((err) => console.error("Download failed:", err));
+                },
+              },
+              {
+                label: labels.copy,
+                onSelect: () => {
+                  withBytes()
+                    .then(copyAttachmentToClipboard)
+                    .catch((err) => console.error("Copy failed:", err));
+                },
+              },
+              ...(isImage
+                ? [
+                    {
+                      label: labels.open,
+                      onSelect: () => {
+                        withBytes()
+                          .then(openAttachmentInBrowser)
+                          .catch((err) =>
+                            console.error("Open in browser failed:", err),
+                          );
+                      },
+                    },
+                  ]
+                : []),
+              ...(shareSupported
+                ? [
+                    {
+                      label: "Share…",
+                      onSelect: () => {
+                        withBytes()
+                          .then(shareAttachment)
+                          .catch((err) => console.error("Share failed:", err));
+                      },
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        );
+      })()}
+      {lightbox && (
+        <AttachmentLightbox
+          attachment={lightbox.attachment}
+          returnFocusTo={lightbox.returnFocus}
+          onClose={() => setLightbox(null)}
+          onContextMenu={(e) => openAttachmentMenu(e, lightbox.attachment)}
+        />
+      )}
     </div>
   );
 }
@@ -1040,17 +1306,26 @@ export function ChatPanel() {
  * re-rendering ChatPanel on every thinking delta.
  */
 const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
-  workspaceId,
+  sessionId,
   isStreaming,
+  searchQuery,
 }: {
-  workspaceId: string;
+  sessionId: string;
   isStreaming: boolean;
+  searchQuery: string;
 }) {
   const thinking = useAppStore(
-    (s) => s.streamingThinking[workspaceId] || ""
+    (s) => s.streamingThinking[sessionId] || ""
   );
   if (!thinking) return null;
-  return <ThinkingBlock content={thinking} isStreaming={isStreaming} enableTypewriter />;
+  return (
+    <ThinkingBlock
+      content={thinking}
+      isStreaming={isStreaming}
+      enableTypewriter
+      searchQuery={searchQuery}
+    />
+  );
 });
 
 /**
@@ -1061,18 +1336,19 @@ const StreamingThinkingBlock = memo(function StreamingThinkingBlock({
  * completes).
  */
 const StreamingMessage = memo(function StreamingMessage({
-  workspaceId,
+  sessionId,
+  isStreaming,
+  searchQuery,
 }: {
-  workspaceId: string;
+  sessionId: string;
+  isStreaming: boolean;
+  searchQuery: string;
 }) {
   const streaming = useAppStore(
-    (s) => s.streamingContent[workspaceId] || ""
+    (s) => s.streamingContent[sessionId] || ""
   );
   const pendingText = useAppStore(
-    (s) => s.pendingTypewriter[workspaceId]?.text ?? ""
-  );
-  const isStreaming = useAppStore(
-    (s) => isAgentBusy(s.workspaces.find((w) => w.id === workspaceId)?.agent_status)
+    (s) => s.pendingTypewriter[sessionId]?.text ?? ""
   );
   const finishTypewriterDrain = useAppStore((s) => s.finishTypewriterDrain);
   const { handleContentChanged } = useContext(ScrollContext);
@@ -1090,9 +1366,9 @@ const StreamingMessage = memo(function StreamingMessage({
   // unmounts atomically with the completed message unhiding.
   useEffect(() => {
     if (!showCaret && !streaming && pendingText) {
-      finishTypewriterDrain(workspaceId);
+      finishTypewriterDrain(sessionId);
     }
-  }, [showCaret, streaming, pendingText, workspaceId, finishTypewriterDrain]);
+  }, [showCaret, streaming, pendingText, sessionId, finishTypewriterDrain]);
 
   if (!displayed) return null;
 
@@ -1103,13 +1379,9 @@ const StreamingMessage = memo(function StreamingMessage({
       aria-busy={isStreaming}
     >
       <div className={styles.content}>
-        <Markdown
-          remarkPlugins={REMARK_PLUGINS}
-          rehypePlugins={REHYPE_PLUGINS}
-          components={MARKDOWN_COMPONENTS}
-        >
-          {preprocessContent(displayed)}
-        </Markdown>
+        <StreamingContext.Provider value={isStreaming || pendingText.length > 0}>
+          <HighlightedMessageMarkdown content={displayed} query={searchQuery} />
+        </StreamingContext.Provider>
         {showCaret && <span className={caretStyles.caret} aria-hidden="true" />}
       </div>
     </div>
@@ -1127,6 +1399,7 @@ function TurnSummary({
   assistantText,
   onFork,
   onRollback,
+  searchQuery,
 }: {
   turn: CompletedTurn;
   collapsed: boolean;
@@ -1141,6 +1414,9 @@ function TurnSummary({
   /** Called when the user clicks rollback. Undefined hides the button
    *  (e.g. turn is running, or no checkpoint exists for this turn). */
   onRollback?: () => void;
+  /** Active chat-search query. Force-expands this card when non-empty and
+   *  the query matches inside any of the contained activity summaries. */
+  searchQuery: string;
 }) {
   const hasElapsed = typeof turn.durationMs === "number" && turn.durationMs > 0;
   const hasTokens =
@@ -1149,6 +1425,18 @@ function TurnSummary({
   const hasFork = !!onFork;
   const hasRollback = !!onRollback;
   const showFooter = hasElapsed || hasTokens || hasCopy || hasFork || hasRollback;
+
+  // Force-expand if the query matches in any activity summary or the
+  // resolved tool-summary fallback. Without this, marks would land in
+  // detached DOM (the collapsed branch never renders), so the bar's
+  // counter would tick up but nothing visible would change.
+  const queryHasMatch =
+    !!searchQuery &&
+    turn.activities.some((a) => {
+      const text = a.summary || extractToolSummary(a.toolName, a.inputJson);
+      return text.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  const isExpanded = !collapsed || queryHasMatch;
 
   return (
     <div className={styles.turnSummaryWrapper}>
@@ -1166,7 +1454,7 @@ function TurnSummary({
       >
         <div className={styles.turnHeader}>
           <span className={styles.toolChevron}>
-            {collapsed ? "›" : "⌄"}
+            {isExpanded ? "⌄" : "›"}
           </span>
           <span className={styles.turnLabel}>
             {turn.activities.length} tool call
@@ -1175,7 +1463,7 @@ function TurnSummary({
               `, ${turn.messageCount} message${turn.messageCount !== 1 ? "s" : ""}`}
           </span>
         </div>
-        {!collapsed && (
+        {isExpanded && (
           <div className={styles.turnActivities}>
             {turn.activities.map((act: ToolActivity) => (
               <div key={act.toolUseId} className={styles.toolActivity}>
@@ -1185,7 +1473,10 @@ function TurnSummary({
                   </span>
                   {(act.summary || act.inputJson) && (
                     <span className={styles.toolSummary}>
-                      {act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                      <HighlightedPlainText
+                        text={act.summary || extractToolSummary(act.toolName, act.inputJson)}
+                        query={searchQuery}
+                      />
                     </span>
                   )}
                 </div>
@@ -1223,6 +1514,7 @@ function TurnFooter({
   assistantText,
   onFork,
   onRollback,
+  className,
 }: {
   durationMs?: number;
   inputTokens?: number;
@@ -1230,6 +1522,7 @@ function TurnFooter({
   assistantText?: string;
   onFork?: () => void;
   onRollback?: () => void;
+  className?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<number | null>(null);
@@ -1341,7 +1634,10 @@ function TurnFooter({
   const hasMetadata = !!(tokensNode || elapsedNode);
 
   return (
-    <div className={styles.turnFooter} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`${styles.turnFooter}${className ? ` ${className}` : ""}`}
+      onClick={(e) => e.stopPropagation()}
+    >
       {tokensNode}
       {tokensNode && elapsedNode && (
         <span className={styles.turnFooterDot} aria-hidden="true">·</span>
@@ -1388,50 +1684,109 @@ function TaskProgressBar({
  */
 const EMPTY_CHECKPOINTS: import("../../types/checkpoint").ConversationCheckpoint[] = [];
 
+type RollbackModalData = {
+  workspaceId: string;
+  sessionId: string;
+  checkpointId: string | null;
+  messageId: string;
+  messagePreview: string;
+  messageContent: string;
+  hasFileChanges: boolean;
+};
+
 const MessagesWithTurns = memo(function MessagesWithTurns({
   messages,
   workspaceId,
+  sessionId,
   isRunning,
   onForkTurn,
+  onAttachmentContextMenu,
+  onAttachmentClick,
+  searchQuery,
 }: {
   messages: ChatMessage[];
+  /** The enclosing workspace id — forwarded into rollback data so the modal
+   *  can target the correct workspace (distinct from the session id after
+   *  the multi-session refactor). */
   workspaceId: string;
+  /** The active chat session id. All per-conversation store reads (turns,
+   *  checkpoints, attachments, etc.) are now keyed by session id. */
+  sessionId: string;
   isRunning: boolean;
   /** Handler invoked when the user forks a turn. Undefined disables the fork
    *  button (e.g. for remote workspaces where the command cannot run). */
   onForkTurn?: (checkpointId: string) => void;
+  /** Right-click handler on message-image attachments. Lifted to ChatPanel so
+   *  the context menu renders at the top of the component tree. The third
+   *  argument is the persisted attachment id, used to lazy-load bytes for
+   *  PDFs (whose data_base64 is stripped on hydration). */
+  onAttachmentContextMenu?: (
+    e: React.MouseEvent,
+    attachment: DownloadableAttachment,
+    attachmentId?: string,
+  ) => void;
+  /** Left-click handler on message-image attachments — opens the lightbox. */
+  onAttachmentClick?: (
+    e: React.MouseEvent,
+    attachment: DownloadableAttachment,
+  ) => void;
+  /** Active chat-search query (Cmd/Ctrl+F). Empty string when the bar is
+   *  closed; non-empty values trigger highlight wrappers on each message. */
+  searchQuery: string;
 }) {
   const completedTurns = useAppStore(
-    (s) => s.completedTurns[workspaceId] ?? EMPTY_COMPLETED_TURNS
+    (s) => s.completedTurns[sessionId] ?? EMPTY_COMPLETED_TURNS
   );
   const toggleCompletedTurn = useAppStore((s) => s.toggleCompletedTurn);
   const checkpoints = useAppStore(
-    (s) => s.checkpoints[workspaceId] ?? EMPTY_CHECKPOINTS
+    (s) => s.checkpoints[sessionId] ?? EMPTY_CHECKPOINTS
   );
   const openModal = useAppStore((s) => s.openModal);
   const showThinkingBlocks = useAppStore(
-    (s) => s.showThinkingBlocks[workspaceId] === true
+    (s) => s.showThinkingBlocks[sessionId] === true
   );
   // While the typewriter is finishing the drain after streamingContent cleared,
   // hide the just-added completed assistant message — StreamingMessage renders
   // it in-place, so showing both would duplicate the text.
   const pendingMessageId = useAppStore(
-    (s) => s.pendingTypewriter[workspaceId]?.messageId ?? null
+    (s) => s.pendingTypewriter[sessionId]?.messageId ?? null
   );
   const chatAttachments = useAppStore(
-    (s) => s.chatAttachments[workspaceId] ?? EMPTY_ATTACHMENTS
+    (s) => s.chatAttachments[sessionId] ?? EMPTY_ATTACHMENTS
   );
 
   // Pre-build a Map keyed by message_id for O(1) lookup in the render loop.
+  //
+  // Agent-origin attachments are persisted with `message_id` set to the *user*
+  // message that triggered the turn (FK-cascade-safe). For display they
+  // belong with the *assistant* message of the same turn — i.e. the next
+  // Assistant message after the FK anchor in chronological order. This
+  // re-route happens here so the storage shape can stay simple.
   const attachmentsByMessage = useMemo(() => {
+    // Single reverse pass: each User message maps to the most recent
+    // Assistant message that follows it. O(n) instead of O(n²).
+    const userToNextAssistant = new Map<string, string>();
+    let nextAssistantId: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "Assistant") {
+        nextAssistantId = m.id;
+      } else if (m.role === "User" && nextAssistantId) {
+        userToNextAssistant.set(m.id, nextAssistantId);
+      }
+    }
     const map = new Map<string, ChatAttachment[]>();
     for (const att of chatAttachments) {
-      const list = map.get(att.message_id);
+      const targetId =
+        att.origin === "agent"
+          ? (userToNextAssistant.get(att.message_id) ?? att.message_id)
+          : att.message_id;
+      const list = map.get(targetId);
       if (list) list.push(att);
-      else map.set(att.message_id, [att]);
+      else map.set(targetId, [att]);
     }
     return map;
-  }, [chatAttachments]);
+  }, [chatAttachments, messages]);
 
   // Build an index: afterMessageIndex → array of (turn, globalIndex) pairs.
   // Only recomputed when completedTurns changes, not on every streaming update.
@@ -1444,66 +1799,35 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
     return map;
   }, [completedTurns]);
 
-  // Joined assistant text per turn, used by the "Copy output" action in the
-  // turn footer. A turn's slice is [prevTurn.afterMessageIndex, afterMessageIndex).
-  const assistantTextByTurnId = useMemo(() => {
-    const map = new Map<string, string>();
-    let prevBoundary = 0;
-    for (const turn of completedTurns) {
-      const text = messages
-        .slice(prevBoundary, turn.afterMessageIndex)
-        .filter((m) => m.role === "Assistant")
-        .map((m) => m.content)
-        .join("\n\n")
-        .trim();
-      map.set(turn.id, text);
-      prevBoundary = turn.afterMessageIndex;
-    }
-    return map;
-  }, [completedTurns, messages]);
+  const completedTurnPositions = useMemo(
+    () => new Set(completedTurns.map((turn) => turn.afterMessageIndex)),
+    [completedTurns],
+  );
 
-  // Map user message index → checkpoint for the preceding turn.
-  // Checks the message immediately before this user message (assistant or
-  // user for tool-only turns) for a matching checkpoint. Index 0 always
-  // maps to null (clear-all) when any checkpoints exist.
+  const findTriggeringUserIdx = useCallback(
+    (afterMessageIndex: number) => {
+      return findTriggeringUserIndex(messages, afterMessageIndex);
+    },
+    [messages],
+  );
+
+  // Map user message index → checkpoint for rollback buttons.
+  // Each user message maps to the latest preceding checkpoint, with the first
+  // user message mapping to null so it can clear the whole conversation.
   const rollbackCheckpointByIdx = useMemo(
     () => buildRollbackMap(messages, checkpoints),
     [messages, checkpoints],
   );
 
-  // Per-turn rollback data, keyed by turn.id. A turn's rollback target is
-  // the checkpoint captured just before the triggering user message ran.
-  // A turn's triggering user message is the first User message in its range
-  // [prevBoundary, afterMessageIndex) — the checkpoint itself is anchored to
-  // the last assistant message of the turn, so we can't use cp.message_id.
-  const rollbackByTurnId = useMemo(() => {
-    const result = new Map<
-      string,
-      {
-        workspaceId: string;
-        checkpointId: string | null;
-        messageId: string;
-        messagePreview: string;
-        messageContent: string;
-        hasFileChanges: boolean;
-      }
-    >();
-    let prevBoundary = 0;
-    for (const turn of completedTurns) {
-      let userIdx = -1;
-      for (let i = prevBoundary; i < turn.afterMessageIndex && i < messages.length; i++) {
-        if (messages[i].role === "User") {
-          userIdx = i;
-          break;
-        }
-      }
-      prevBoundary = turn.afterMessageIndex;
-      if (userIdx === -1) continue;
-      if (!rollbackCheckpointByIdx.has(userIdx)) continue;
+  const buildRollbackData = useCallback(
+    (userIdx: number): RollbackModalData | null => {
+      if (!rollbackCheckpointByIdx.has(userIdx)) return null;
       const target = rollbackCheckpointByIdx.get(userIdx) ?? null;
       const userMsg = messages[userIdx];
-      result.set(turn.id, {
+      if (!userMsg) return null;
+      return {
         workspaceId,
+        sessionId,
         checkpointId: target ? target.id : null,
         messageId: userMsg.id,
         messagePreview: userMsg.content.slice(0, 100),
@@ -1511,16 +1835,99 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
         hasFileChanges: target
           ? checkpointHasFileChanges(target, checkpoints)
           : clearAllHasFileChanges(checkpoints),
-      });
+      };
+    },
+    [checkpoints, messages, rollbackCheckpointByIdx, workspaceId, sessionId],
+  );
+
+  // Joined assistant text per turn, used by the "Copy output" action in the
+  // turn footer. CompletedTurn is only persisted for tool-using turns, so the
+  // slice starts at the nearest preceding user message instead of the previous
+  // CompletedTurn boundary.
+  const assistantTextByTurnId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const turn of completedTurns) {
+      const userIdx = findTriggeringUserIdx(turn.afterMessageIndex);
+      if (userIdx === -1) {
+        map.set(turn.id, "");
+        continue;
+      }
+      map.set(
+        turn.id,
+        assistantTextForTurn(messages, userIdx, turn.afterMessageIndex),
+      );
+    }
+    return map;
+  }, [completedTurns, findTriggeringUserIdx, messages]);
+
+  // Per-turn rollback data, keyed by turn.id. Completed turns are only
+  // persisted for tool-using turns, so the triggering user is the nearest
+  // user message before the completed turn boundary.
+  const rollbackByTurnId = useMemo(() => {
+    const result = new Map<string, RollbackModalData>();
+    for (const turn of completedTurns) {
+      const userIdx = findTriggeringUserIdx(turn.afterMessageIndex);
+      if (userIdx === -1) continue;
+      const data = buildRollbackData(userIdx);
+      if (data) result.set(turn.id, data);
     }
     return result;
-  }, [completedTurns, checkpoints, messages, workspaceId, rollbackCheckpointByIdx]);
+  }, [buildRollbackData, completedTurns, findTriggeringUserIdx]);
 
   const buildOnRollback = (turnId: string) => {
     if (isRunning) return undefined;
     const data = rollbackByTurnId.get(turnId);
     if (!data) return undefined;
     return () => openModal("rollback", data);
+  };
+
+  const plainTurnFootersByPosition = useMemo(() => {
+    return buildPlainTurnFooters(
+      messages,
+      rollbackCheckpointByIdx,
+      completedTurnPositions,
+      checkpoints,
+    );
+  }, [checkpoints, completedTurnPositions, messages, rollbackCheckpointByIdx]);
+
+  const renderPlainTurnFooter = (position: number) => {
+    const data = plainTurnFootersByPosition.get(position);
+    if (!data) return null;
+    const rollbackData = buildRollbackData(data.userIdx);
+    const onRollback =
+      !isRunning && rollbackData
+        ? () => openModal("rollback", rollbackData)
+        : undefined;
+    const onFork =
+      data.forkCheckpointId && onForkTurn
+        ? () => onForkTurn(data.forkCheckpointId!)
+        : undefined;
+    const hasRenderableTokens =
+      typeof data.inputTokens === "number" &&
+      typeof data.outputTokens === "number";
+
+    if (
+      !data.assistantText &&
+      !data.durationMs &&
+      !hasRenderableTokens &&
+      !onFork &&
+      !onRollback
+    ) {
+      return null;
+    }
+
+    return (
+      <TurnFooter
+        key={`plain-turn-footer-${data.position}`}
+        durationMs={data.durationMs}
+        inputTokens={data.inputTokens}
+        outputTokens={data.outputTokens}
+        assistantText={data.assistantText}
+        onFork={onFork}
+        onRollback={onRollback}
+        className={styles.messageTurnFooter}
+      />
+    );
   };
 
   // Compute cumulative task progress at each turn index in a single O(n) pass.
@@ -1549,6 +1956,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
   useEffect(() => {
     debugChat("MessagesWithTurns", "layout", {
       workspaceId,
+      sessionId,
       messageIds: messages.map((msg) => msg.id),
       turnLayout: completedTurns.map((turn) => ({
         id: turn.id,
@@ -1557,7 +1965,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
         toolCount: turn.activities.length,
       })),
     });
-  }, [workspaceId, messages, completedTurns]);
+  }, [workspaceId, sessionId, messages, completedTurns]);
 
   const renderTurns = (position: number) => {
     const entries = turnsByPosition[position];
@@ -1567,11 +1975,12 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
         key={turn.id}
         turn={turn}
         collapsed={turn.collapsed}
-        onToggle={() => toggleCompletedTurn(workspaceId, globalIdx)}
+        onToggle={() => toggleCompletedTurn(sessionId, globalIdx)}
         taskProgress={taskProgressByTurn.get(globalIdx)}
         assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
         onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
         onRollback={buildOnRollback(turn.id)}
+        searchQuery={searchQuery}
       />
     ));
   };
@@ -1620,10 +2029,10 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
               <div className={styles.roleLabel}>You</div>
             )}
             {msg.role === "Assistant" && msg.thinking && showThinkingBlocks && (
-              <ThinkingBlock content={msg.thinking} isStreaming={false} />
+              <ThinkingBlock content={msg.thinking} isStreaming={false} searchQuery={searchQuery} />
             )}
             <div className={styles.content}>
-              {msg.role === "User" && attachmentsByMessage.has(msg.id) && (
+              {attachmentsByMessage.has(msg.id) && (
                 <div className={styles.messageImages}>
                   {attachmentsByMessage.get(msg.id)!.map((att) =>
                     att.media_type === "application/pdf" ? (
@@ -1633,9 +2042,54 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                         attachmentId={att.id}
                         filename={att.filename}
                         className={styles.messageImage}
+                        onClick={() => {
+                          (async () => {
+                            // Persisted attachments strip data_base64 on first
+                            // load to avoid IPC bloat — fetch on demand.
+                            let b64 = att.data_base64;
+                            if (!b64) {
+                              const { loadAttachmentData } = await import(
+                                "../../services/tauri"
+                              );
+                              b64 = await loadAttachmentData(att.id);
+                            }
+                            await openAttachmentWithDefaultApp({
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: b64,
+                            });
+                          })().catch((err) =>
+                            console.error("Failed to open PDF:", err),
+                          );
+                        }}
+                        onContextMenu={(e) =>
+                          onAttachmentContextMenu?.(
+                            e,
+                            {
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: att.data_base64,
+                            },
+                            att.id,
+                          )
+                        }
                       />
                     ) : att.media_type === "text/plain" ? (
-                      <div key={att.id} className={styles.messagePdf}>
+                      <div
+                        key={att.id}
+                        className={styles.messagePdf}
+                        onContextMenu={(e) =>
+                          onAttachmentContextMenu?.(
+                            e,
+                            {
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: att.data_base64,
+                            },
+                            att.id,
+                          )
+                        }
+                      >
                         <FileText size={14} />
                         <span>{att.filename}</span>
                         <span className={styles.textFileSize}>
@@ -1650,6 +2104,24 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                         src={`data:${att.media_type};base64,${att.data_base64}`}
                         alt={att.filename}
                         className={styles.messageImage}
+                        onClick={(e) =>
+                          onAttachmentClick?.(e, {
+                            filename: att.filename,
+                            media_type: att.media_type,
+                            data_base64: att.data_base64,
+                          })
+                        }
+                        onContextMenu={(e) =>
+                          onAttachmentContextMenu?.(
+                            e,
+                            {
+                              filename: att.filename,
+                              media_type: att.media_type,
+                              data_base64: att.data_base64,
+                            },
+                            att.id,
+                          )
+                        }
                       />
                     ),
                   )}
@@ -1660,19 +2132,26 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                 // setup-script output, and other multi-line system notes
                 // preserve headings, lists, and code blocks instead of
                 // collapsing newlines into a single paragraph.
-                <Markdown
-                  remarkPlugins={REMARK_PLUGINS}
-                  rehypePlugins={REHYPE_PLUGINS}
-                  components={MARKDOWN_COMPONENTS}
-                >
-                  {preprocessContent(msg.content)}
-                </Markdown>
+                <HighlightedMessageMarkdown content={msg.content} query={searchQuery} />
+              ) : searchQuery ? (
+                // While the search bar is open, render user messages as plain
+                // highlighted text so matches inside them get marked. The
+                // ultrathink rainbow animation is suppressed in this mode —
+                // searchability wins over the easter egg.
+                <HighlightedPlainText text={msg.content} query={searchQuery} />
               ) : (
-                msg.content
+                renderUltrathinkText(msg.content, {
+                  animated: false,
+                  styles: {
+                    ultrathinkChar: styles.ultrathinkChar,
+                    ultrathinkCharAnimated: styles.ultrathinkCharAnimated,
+                  },
+                })
               )}
             </div>
           </div>
           )}
+          {renderPlainTurnFooter(idx + 1)}
         </React.Fragment>
         );
       })}
@@ -1690,6 +2169,7 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             assistantText={assistantTextByTurnId.get(turn.id) ?? ""}
             onFork={onForkTurn ? () => onForkTurn(turn.id) : undefined}
             onRollback={buildOnRollback(turn.id)}
+            searchQuery={searchQuery}
           />
         ))}
     </>
@@ -1701,14 +2181,16 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
  * Isolated so streaming text changes don't cause re-renders here.
  */
 const ToolActivitiesSection = memo(function ToolActivitiesSection({
-  workspaceId,
+  sessionId,
   isRunning,
+  searchQuery,
 }: {
-  workspaceId: string;
+  sessionId: string;
   isRunning: boolean;
+  searchQuery: string;
 }) {
   const activities = useAppStore(
-    (s) => s.toolActivities[workspaceId] ?? EMPTY_ACTIVITIES
+    (s) => s.toolActivities[sessionId] ?? EMPTY_ACTIVITIES
   );
   const [collapsed, setCollapsed] = useState(true);
 
@@ -1722,6 +2204,18 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
   }, [isRunning, activities.length]);
 
   if (activities.length === 0) return null;
+
+  // Force-expand when the active search query matches inside any of this
+  // section's activity summaries — otherwise marks would be silently
+  // hidden behind the collapsed header and the user would see a non-zero
+  // counter with no visible highlight.
+  const queryHasMatch =
+    !!searchQuery &&
+    activities.some(
+      (a) =>
+        a.summary && a.summary.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  const isExpanded = !collapsed || queryHasMatch;
 
   return (
     <div className={styles.toolActivities} aria-live="polite" aria-atomic="true">
@@ -1739,14 +2233,14 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
           }}
         >
           <span className={styles.toolChevron}>
-            {collapsed ? "›" : "⌄"}
+            {isExpanded ? "⌄" : "›"}
           </span>
           <span className={styles.turnLabel}>
             {activities.length} tool call{activities.length !== 1 ? "s" : ""}
             {isRunning && <span className={styles.inProgressNote}> in progress</span>}
           </span>
         </div>
-        {!collapsed && (
+        {isExpanded && (
           <div className={styles.turnActivities}>
             {activities.map((act: ToolActivity) => (
               <div key={act.toolUseId} className={styles.toolActivity}>
@@ -1754,7 +2248,7 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
                   <span className={styles.toolName} style={{ color: toolColor(act.toolName) }}>{act.toolName}</span>
                   {act.summary && (
                     <span className={styles.toolSummary}>
-                      {act.summary}
+                      <HighlightedPlainText text={act.summary} query={searchQuery} />
                     </span>
                   )}
                 </div>
@@ -1773,15 +2267,15 @@ const ToolActivitiesSection = memo(function ToolActivitiesSection({
  * the turn finalises (tasks move into CompletedTurn rendering).
  */
 const CurrentTurnTaskProgress = memo(function CurrentTurnTaskProgress({
-  workspaceId,
+  sessionId,
 }: {
-  workspaceId: string;
+  sessionId: string;
 }) {
   const completedTurns = useAppStore(
-    (s) => s.completedTurns[workspaceId] ?? EMPTY_COMPLETED_TURNS
+    (s) => s.completedTurns[sessionId] ?? EMPTY_COMPLETED_TURNS
   );
   const toolActivities = useAppStore(
-    (s) => s.toolActivities[workspaceId] ?? EMPTY_ACTIVITIES
+    (s) => s.toolActivities[sessionId] ?? EMPTY_ACTIVITIES
   );
 
   const result = useMemo(
@@ -1831,11 +2325,14 @@ function ChatInputArea({
   isRunning,
   isRemote,
   selectedWorkspaceId,
+  sessionId,
   repoId,
   projectPath,
   historyRef,
   historyIndexRef,
   draftRef,
+  onAttachmentContextMenu,
+  onAttachmentClick,
 }: {
   onSend: (
     content: string,
@@ -1846,14 +2343,24 @@ function ChatInputArea({
   isRunning: boolean;
   isRemote: boolean;
   selectedWorkspaceId: string;
+  sessionId: string;
   repoId: string | undefined;
   projectPath: string | undefined;
   historyRef: React.MutableRefObject<Record<string, string[]>>;
   historyIndexRef: React.MutableRefObject<number>;
   draftRef: React.MutableRefObject<string>;
+  onAttachmentContextMenu?: (
+    e: React.MouseEvent,
+    attachment: DownloadableAttachment,
+  ) => void;
+  onAttachmentClick?: (
+    e: React.MouseEvent,
+    attachment: DownloadableAttachment,
+  ) => void;
 }) {
   const [chatInput, setChatInput] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
+  const [inputScrollTop, setInputScrollTop] = useState(0);
   const [slashPickerIndex, setSlashPickerIndex] = useState(0);
   const [slashPickerDismissed, setSlashPickerDismissed] = useState(false);
   const [slashCommands, setSlashCommandsLocal] = useState<SlashCommand[]>([]);
@@ -1877,37 +2384,100 @@ function ChatInputArea({
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [contextPopoverOpen, setContextPopoverOpen] = useState(false);
   const pluginRefreshToken = useAppStore((s) => s.pluginRefreshToken);
+  const openSettings = useAppStore((s) => s.openSettings);
 
-  // Per-workspace draft storage: save input when switching away,
+  const insertTranscript = useCallback((transcript: string) => {
+    const ta = textareaRef.current;
+    const start = ta?.selectionStart ?? cursorPos;
+    const end = ta?.selectionEnd ?? cursorPos;
+    setChatInput((currentInput) => {
+      const next = insertTranscriptAtSelection(
+        currentInput,
+        transcript,
+        start,
+        end,
+      );
+      setCursorPos(next.cursor);
+      requestAnimationFrame(() => {
+        const current = textareaRef.current;
+        if (!current) return;
+        current.focus();
+        current.selectionStart = current.selectionEnd = next.cursor;
+      });
+      return next.text;
+    });
+  }, [cursorPos]);
+
+  const focusVoiceProvider = useAppStore((s) => s.focusVoiceProvider);
+  const voice = useVoiceInput(
+    insertTranscript,
+    (providerId) => {
+      focusVoiceProvider(providerId);
+      openSettings("plugins");
+    },
+  );
+  const voiceErrorOpensSettings = shouldOpenVoiceSettingsForError(
+    voice.activeProvider,
+  );
+
+  // Esc cancels an active recording regardless of where focus is. The
+  // textarea's onKeyDown also handles Esc when it has focus; clicking
+  // the mic moves focus to the button, where Esc would otherwise just
+  // defocus it instead of stopping the recording.
+  //
+  // While recording, Esc is treated as exclusively "cancel recording" —
+  // we capture it ahead of bubbling handlers and stop propagation so
+  // it doesn't also close an unrelated popover/modal that happens to
+  // be open. Without this, the same keypress could cancel recording
+  // *and* dismiss the surrounding UI, which feels jumpy.
+  useEffect(() => {
+    if (voice.state !== "recording") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      voice.cancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [voice.state, voice.cancel]);
+
+  const handleInsertPinnedCommand = useCallback((commandText: string) => {
+    setChatInput((prev) => commandText + (prev ? " " + prev : ""));
+    textareaRef.current?.focus();
+  }, []);
+
+  // Per-session draft storage: save input when switching away,
   // restore when switching back.
   const draftsRef = useRef<Record<string, string>>({});
-  const prevWorkspaceRef = useRef(selectedWorkspaceId);
+  const prevSessionRef = useRef(sessionId);
   useEffect(() => {
-    const prev = prevWorkspaceRef.current;
-    if (prev !== selectedWorkspaceId) {
-      // Save draft for the workspace we're leaving.
+    const prev = prevSessionRef.current;
+    if (prev !== sessionId) {
+      // Save draft for the session we're leaving.
       draftsRef.current[prev] = chatInput;
-      // Restore draft for the workspace we're entering.
-      setChatInput(draftsRef.current[selectedWorkspaceId] ?? "");
-      prevWorkspaceRef.current = selectedWorkspaceId;
-      // Reset file picker and attachment state for new workspace.
+      // Restore draft for the session we're entering.
+      setChatInput(draftsRef.current[sessionId] ?? "");
+      prevSessionRef.current = sessionId;
+      // Reset file picker and attachment state for new session.
       setFilesLoaded(false);
       setWorkspaceFiles([]);
       mentionedFilesRef.current = new Set();
-      // Clear staged attachments so they don't leak across workspaces.
+      // Clear staged attachments so they don't leak across sessions.
       setPendingAttachments((prev) => {
         for (const a of prev) {
           if (a.preview_url.startsWith("blob:")) URL.revokeObjectURL(a.preview_url);
         }
         return [];
       });
+      voice.cancel();
     }
-  }, [selectedWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-focus the textarea when switching or creating workspaces.
+  // Auto-focus the textarea when switching or creating sessions.
   useEffect(() => {
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [selectedWorkspaceId]);
+  }, [sessionId]);
 
   // Consume prefill text (e.g. from rollback) and focus the textarea.
   const chatInputPrefill = useAppStore((s) => s.chatInputPrefill);
@@ -2132,6 +2702,12 @@ function ChatInputArea({
         // Skip text/plain — pasting text should insert into the textarea,
         // not create a file attachment.
         if (item.type === "text/plain") continue;
+        // Some clipboard writers (notably `navigator.clipboard.write` with
+        // a ClipboardItem) expose the image both as a "string" item (its
+        // data URL) and a "file" item. We must check the file variant —
+        // getAsFile() returns null for string items, which would
+        // silently drop the paste.
+        if (item.kind !== "file") continue;
         if (SUPPORTED_ATTACHMENT_TYPES.has(item.type)) {
           e.preventDefault();
           const file = item.getAsFile();
@@ -2159,6 +2735,7 @@ function ChatInputArea({
   // event is processed by both the old and new listeners, duplicating files.
   const addAttachmentRef = useRef(addAttachment);
   addAttachmentRef.current = addAttachment;
+  const tauriDragListenerActive = useRef(false);
 
   useEffect(() => {
     if (isRemote) return;
@@ -2167,7 +2744,7 @@ function ChatInputArea({
 
     import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => {
       if (cancelled) return;
-      getCurrentWebview()
+      return getCurrentWebview()
         .onDragDropEvent((event) => {
           if (cancelled) return;
           if (event.payload.type === "enter" || event.payload.type === "over") {
@@ -2192,21 +2769,79 @@ function ChatInputArea({
         })
         .then((fn) => {
           if (cancelled) {
-            fn(); // Already cleaned up — unlisten immediately
+            fn();
           } else {
             unlisten = fn;
+            tauriDragListenerActive.current = true;
           }
         });
     }).catch((err) => {
-      console.warn("Failed to register drag-drop listener:", err);
+      console.error(
+        "[drag-drop] Tauri native listener failed, falling back to HTML5:",
+        err,
+      );
+      tauriDragListenerActive.current = false;
       setDragActive(false);
     });
 
     return () => {
       cancelled = true;
+      tauriDragListenerActive.current = false;
       unlisten?.();
     };
-  }, [isRemote]); // Stable dep — no re-registration on callback changes
+  }, [isRemote]);
+
+  // HTML5 file-drop fallback: activates only when the Tauri native handler
+  // failed to register (tauriDragListenerActive is false). The global dragover
+  // preventDefault is always active to suppress the browser's default
+  // file-navigation behavior.
+  useEffect(() => {
+    if (isRemote) return;
+
+    const preventNav = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    const handleDragEnter = (e: DragEvent) => {
+      if (tauriDragListenerActive.current) return;
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      setDragActive(true);
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      if (tauriDragListenerActive.current) return;
+      if (e.relatedTarget) return;
+      setDragActive(false);
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      if (tauriDragListenerActive.current) return;
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+      const files = e.dataTransfer.files;
+      if (files.length === 0) return;
+      for (const file of Array.from(files)) {
+        void addAttachmentRef.current(file, file.name).catch((error) => {
+          console.error("[drag-drop] Failed to add dropped attachment:", error);
+        });
+      }
+    };
+
+    document.addEventListener("dragover", preventNav);
+    document.addEventListener("dragenter", handleDragEnter);
+    document.addEventListener("dragleave", handleDragLeave);
+    document.addEventListener("drop", handleDrop);
+
+    return () => {
+      document.removeEventListener("dragover", preventNav);
+      document.removeEventListener("dragenter", handleDragEnter);
+      document.removeEventListener("dragleave", handleDragLeave);
+      document.removeEventListener("drop", handleDrop);
+    };
+  }, [isRemote]);
 
   const handleAttachClick = useCallback(async () => {
     const selected = await open({ multiple: true });
@@ -2225,6 +2860,7 @@ function ChatInputArea({
   }, [addAttachment]);
 
   const handleSend = () => {
+    voice.cancel();
     // Only include files whose @path tokens are still in the text, so that
     // removed references don't get expanded.
     const activeFiles = new Set<string>();
@@ -2254,15 +2890,21 @@ function ChatInputArea({
   };
 
   const planMode = useAppStore(
-    (s) => s.planMode[selectedWorkspaceId] ?? false,
+    (s) => s.planMode[sessionId] ?? false,
   );
   const setPlanMode = useAppStore((s) => s.setPlanMode);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && voice.state === "recording") {
+      e.preventDefault();
+      voice.cancel();
+      return;
+    }
+
     // Shift+Tab: toggle plan mode
     if (e.key === "Tab" && e.shiftKey) {
       e.preventDefault();
-      setPlanMode(selectedWorkspaceId, !planMode);
+      setPlanMode(sessionId, !planMode);
       return;
     }
 
@@ -2352,7 +2994,7 @@ function ChatInputArea({
     }
 
     // History navigation with arrow keys
-    const history = historyRef.current[selectedWorkspaceId] ?? [];
+    const history = historyRef.current[sessionId] ?? [];
     if (history.length === 0) return;
 
     if (e.key === "ArrowUp") {
@@ -2376,6 +3018,8 @@ function ChatInputArea({
       }
     }
   };
+
+  const showUltrathinkOverlay = hasUltrathink(chatInput);
 
   return (
     <div
@@ -2421,11 +3065,36 @@ function ChatInputArea({
                   </span>
                 </div>
               ) : (
-                <img src={att.preview_url} alt={att.filename} />
+                <img
+                  src={att.preview_url}
+                  alt={att.filename}
+                  onClick={(e) => {
+                    // PDFs also render as an <img> here (preview_url is a blob
+                    // URL of the first-page thumbnail), but their data_base64
+                    // is PDF bytes — not renderable inside an <img>. Only open
+                    // the lightbox for actual image MIME types.
+                    if (!att.media_type.startsWith("image/")) return;
+                    onAttachmentClick?.(e, {
+                      filename: att.filename,
+                      media_type: att.media_type,
+                      data_base64: att.data_base64,
+                    });
+                  }}
+                  onContextMenu={(e) =>
+                    onAttachmentContextMenu?.(e, {
+                      filename: att.filename,
+                      media_type: att.media_type,
+                      data_base64: att.data_base64,
+                    })
+                  }
+                />
               )}
               <button
                 className={styles.attachmentRemove}
-                onClick={() => removeAttachment(att.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeAttachment(att.id);
+                }}
                 title="Remove"
               >
                 <X size={12} />
@@ -2434,25 +3103,51 @@ function ChatInputArea({
           ))}
         </div>
       )}
-      <textarea
-        ref={textareaRef}
-        // data-chat-input is the stable selector used by the global focus
-        // shortcuts (Cmd+` and Cmd+0) in useKeyboardShortcuts.ts to move
-        // focus into the prompt from anywhere in the app.
-        data-chat-input
-        className={`${styles.input}${planMode ? ` ${styles.inputPlanMode}` : ""}`}
-        value={chatInput}
-        onChange={(e) => {
-          setChatInput(e.target.value);
-          setCursorPos(e.target.selectionStart ?? 0);
-        }}
-        onSelect={(e) => {
-          setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? 0);
-        }}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        placeholder={isRunning ? "Type to queue a message..." : "Send a message..."}
+      <PinnedCommandsBar
+        repoId={repoId}
+        slashCommands={slashCommands}
+        onInsertCommand={handleInsertPinnedCommand}
       />
+      <div className={styles.inputTextWrap}>
+        {showUltrathinkOverlay && (
+          <div className={styles.inputHighlight} aria-hidden="true">
+            <div style={{ transform: `translateY(-${inputScrollTop}px)` }}>
+              {renderUltrathinkText(chatInput, {
+                animated: true,
+                styles: {
+                  ultrathinkChar: styles.ultrathinkChar,
+                  ultrathinkCharAnimated: styles.ultrathinkCharAnimated,
+                },
+              })}
+            </div>
+          </div>
+        )}
+        <textarea
+          ref={textareaRef}
+          // data-chat-input is the stable selector used by the global focus
+          // shortcuts (Cmd+` and Cmd+0) in useKeyboardShortcuts.ts to move
+          // focus into the prompt from anywhere in the app.
+          data-chat-input
+          className={`${styles.input}${planMode ? ` ${styles.inputPlanMode}` : ""}${
+            showUltrathinkOverlay ? ` ${styles.inputWithHighlight}` : ""
+          }`}
+          value={chatInput}
+          onChange={(e) => {
+            setChatInput(e.target.value);
+            setCursorPos(e.target.selectionStart ?? 0);
+            setInputScrollTop(e.target.scrollTop);
+          }}
+          onSelect={(e) => {
+            setCursorPos((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+          }}
+          onScroll={(e) => {
+            setInputScrollTop((e.target as HTMLTextAreaElement).scrollTop);
+          }}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          placeholder={isRunning ? "Type to queue a message..." : "Send a message..."}
+        />
+      </div>
       <div className={styles.inputControls}>
         <div className={styles.inputControlsLeft}>
           <div className={styles.attachBtnWrap}>
@@ -2476,15 +3171,112 @@ function ChatInputArea({
             )}
           </div>
           <ComposerToolbar
-            workspaceId={selectedWorkspaceId}
+            sessionId={sessionId}
             disabled={isRunning}
           />
         </div>
         <div className={styles.inputControlsRight}>
           <SegmentedMeter
-            workspaceId={selectedWorkspaceId}
+            sessionId={sessionId}
             onClick={() => setContextPopoverOpen((v) => !v)}
           />
+          {voice.state === "recording" && (
+            <div className={styles.voiceRecordingStatus} aria-live="polite">
+              <span className={styles.voiceWaveform} aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span>{formatElapsedSeconds(voice.elapsedSeconds)}</span>
+            </div>
+          )}
+          {voice.state === "starting" && (
+            <div className={styles.voiceStatusText} aria-live="polite">
+              <LoaderCircle
+                size={12}
+                className={styles.voiceStatusSpinner}
+                aria-hidden="true"
+              />
+              <span>Starting…</span>
+            </div>
+          )}
+          {voice.state === "transcribing" && (
+            <div className={styles.voiceStatusText} aria-live="polite">
+              <LoaderCircle
+                size={12}
+                className={styles.voiceStatusSpinner}
+                aria-hidden="true"
+              />
+              <span>
+                {voice.activeProvider?.name
+                  ? `Transcribing with ${voice.activeProvider.name}`
+                  : "Transcribing"}
+              </span>
+            </div>
+          )}
+          {voice.state === "error" && voice.error && (
+            voiceErrorOpensSettings ? (
+              <button
+                type="button"
+                className={styles.voiceErrorBtn}
+                onClick={() => openSettings("plugins")}
+                title={voice.error}
+              >
+                <AlertCircle size={12} className={styles.voiceErrorIcon} aria-hidden="true" />
+                <span className={styles.voiceErrorText}>{voice.error}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={styles.voiceErrorBtn}
+                onClick={() => voice.cancel()}
+                title={`${voice.error}\n\nClick to dismiss`}
+              >
+                <AlertCircle size={12} className={styles.voiceErrorIcon} aria-hidden="true" />
+                <span className={styles.voiceErrorText}>{voice.error}</span>
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            className={`${styles.voiceBtn} ${voice.state === "recording" ? styles.voiceBtnRecording : ""} ${voice.state === "transcribing" || voice.state === "starting" ? styles.voiceBtnTranscribing : ""}`}
+            onClick={() => {
+              if (voice.state === "recording") voice.stop();
+              else if (
+                voice.state === "transcribing" ||
+                voice.state === "starting"
+              )
+                voice.cancel();
+              else void voice.start();
+            }}
+            disabled={isRunning}
+            title={
+              voice.state === "recording"
+                ? "Stop voice input"
+                : voice.state === "transcribing"
+                  ? "Discard transcription"
+                  : voice.state === "starting"
+                    ? "Cancel"
+                    : "Voice input"
+            }
+            aria-label={
+              voice.state === "recording"
+                ? "Stop voice input"
+                : voice.state === "transcribing"
+                  ? "Discard transcription"
+                  : voice.state === "starting"
+                    ? "Cancel"
+                    : "Voice input"
+            }
+          >
+            {voice.state === "transcribing" ? (
+              <X size={16} />
+            ) : voice.state === "starting" ? (
+              <LoaderCircle size={16} className={styles.voiceStatusSpinner} />
+            ) : (
+              <Mic size={16} />
+            )}
+          </button>
           <button
             className={`${styles.sendBtn} ${isRunning ? styles.sendBtnStop : ""}`}
             onClick={isRunning ? onStop : handleSend}
@@ -2496,7 +3288,7 @@ function ChatInputArea({
           </button>
           {contextPopoverOpen && (
             <ContextPopover
-              workspaceId={selectedWorkspaceId}
+              sessionId={sessionId}
               onClose={() => setContextPopoverOpen(false)}
               onCompact={() => { onSend("/compact"); }}
               onClear={() => { onSend("/clear"); }}

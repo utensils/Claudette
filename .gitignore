@@ -53,8 +53,14 @@ tags
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 
+# OpenAI Codex (skills exported from .claude/skills/ via codex-export)
+.agents/
+
 # Superpowers brainstorm
 .superpowers/
 
 # Documentation
 /docs
+
+# Claudette devshell runtime state (aws-win-* sidecars, etc.)
+/.claudette/

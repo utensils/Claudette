@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   ChatAttachment,
   AttachmentInput,
+  ChatSession,
   DiffFile,
   FileDiff,
   TerminalTab,
@@ -42,6 +43,7 @@ export interface InitialData {
   worktree_base_dir: string;
   default_branches: Record<string, string>;
   last_messages: ChatMessage[];
+  scm_cache: ScmStatusCacheRow[];
 }
 
 export function loadInitialData(): Promise<InitialData> {
@@ -61,7 +63,9 @@ export function updateRepositorySettings(
   setupScript: string | null,
   customInstructions: string | null,
   branchRenamePreferences: string | null,
-  setupScriptAutoRun: boolean
+  setupScriptAutoRun: boolean,
+  baseBranch: string | null,
+  defaultRemote: string | null
 ): Promise<void> {
   return invoke("update_repository_settings", {
     id,
@@ -71,6 +75,8 @@ export function updateRepositorySettings(
     customInstructions,
     branchRenamePreferences,
     setupScriptAutoRun,
+    baseBranch,
+    defaultRemote,
   });
 }
 
@@ -88,6 +94,14 @@ export function getRepoConfig(repoId: string): Promise<RepoConfigInfo> {
 
 export function getDefaultBranch(repoId: string): Promise<string | null> {
   return invoke("get_default_branch", { repoId });
+}
+
+export function listGitRemotes(repoId: string): Promise<string[]> {
+  return invoke("list_git_remotes", { repoId });
+}
+
+export function listGitRemoteBranches(repoId: string): Promise<string[]> {
+  return invoke("list_git_remote_branches", { repoId });
 }
 
 export function reorderRepositories(ids: string[]): Promise<void> {
@@ -126,7 +140,7 @@ export function runWorkspaceSetup(
   return invoke("run_workspace_setup", { workspaceId });
 }
 
-export function archiveWorkspace(id: string): Promise<void> {
+export function archiveWorkspace(id: string): Promise<boolean> {
   return invoke("archive_workspace", { id });
 }
 
@@ -154,6 +168,12 @@ export function generateWorkspaceName(): Promise<GeneratedWorkspaceName> {
 
 export function refreshBranches(): Promise<[string, string][]> {
   return invoke("refresh_branches");
+}
+
+export function refreshWorkspaceBranch(
+  workspaceId: string,
+): Promise<string | null> {
+  return invoke("refresh_workspace_branch", { workspaceId });
 }
 
 export function openWorkspaceInTerminal(worktreePath: string): Promise<void> {
@@ -221,6 +241,41 @@ export function recordSlashCommandUsage(
     workspaceId,
     commandName,
   });
+}
+
+// -- Pinned Commands --
+
+export interface PinnedCommand {
+  id: number;
+  repo_id: string;
+  command_name: string;
+  sort_order: number;
+  created_at: string;
+  use_count: number;
+}
+
+export function getPinnedCommands(
+  repoId: string,
+): Promise<PinnedCommand[]> {
+  return invoke("get_pinned_commands", { repoId });
+}
+
+export function pinCommand(
+  repoId: string,
+  commandName: string,
+): Promise<PinnedCommand> {
+  return invoke("pin_command", { repoId, commandName });
+}
+
+export function unpinCommand(id: number): Promise<void> {
+  return invoke("unpin_command", { id });
+}
+
+export function reorderPinnedCommands(
+  repoId: string,
+  ids: number[],
+): Promise<void> {
+  return invoke("reorder_pinned_commands", { repoId, ids });
 }
 
 // -- Plugins --
@@ -396,12 +451,12 @@ export function listWorkspaceFiles(
 
 // -- Chat --
 
-export function loadChatHistory(workspaceId: string): Promise<ChatMessage[]> {
-  return invoke("load_chat_history", { workspaceId });
+export function loadChatHistory(sessionId: string): Promise<ChatMessage[]> {
+  return invoke("load_chat_history", { sessionId });
 }
 
 export function sendChatMessage(
-  workspaceId: string,
+  sessionId: string,
   content: string,
   mentionedFiles?: string[],
   permissionLevel?: string,
@@ -416,7 +471,7 @@ export function sendChatMessage(
   messageId?: string,
 ): Promise<void> {
   return invoke("send_chat_message", {
-    workspaceId,
+    sessionId,
     messageId: messageId ?? null,
     content,
     mentionedFiles: mentionedFiles ?? null,
@@ -432,10 +487,10 @@ export function sendChatMessage(
   });
 }
 
-export function loadAttachmentsForWorkspace(
-  workspaceId: string,
+export function loadAttachmentsForSession(
+  sessionId: string,
 ): Promise<ChatAttachment[]> {
-  return invoke("load_attachments_for_workspace", { workspaceId });
+  return invoke("load_attachments_for_session", { sessionId });
 }
 
 export function loadAttachmentData(
@@ -448,16 +503,16 @@ export function readFileAsBase64(path: string): Promise<ChatAttachment> {
   return invoke("read_file_as_base64", { path });
 }
 
-export function stopAgent(workspaceId: string): Promise<void> {
-  return invoke("stop_agent", { workspaceId });
+export function stopAgent(sessionId: string): Promise<void> {
+  return invoke("stop_agent", { sessionId });
 }
 
-export function resetAgentSession(workspaceId: string): Promise<void> {
-  return invoke("reset_agent_session", { workspaceId });
+export function resetAgentSession(sessionId: string): Promise<void> {
+  return invoke("reset_agent_session", { sessionId });
 }
 
-export function clearAttention(workspaceId: string): Promise<void> {
-  return invoke("clear_attention", { workspaceId });
+export function clearAttention(sessionId: string): Promise<void> {
+  return invoke("clear_attention", { sessionId });
 }
 
 /**
@@ -466,12 +521,12 @@ export function clearAttention(workspaceId: string): Promise<void> {
  * `updatedInput.answers` and writes a `control_response` to the CLI.
  */
 export function submitAgentAnswer(
-  workspaceId: string,
+  sessionId: string,
   toolUseId: string,
   answers: Record<string, string>,
 ): Promise<void> {
   return invoke("submit_agent_answer", {
-    workspaceId,
+    sessionId,
     toolUseId,
     answers,
     annotations: null,
@@ -483,13 +538,13 @@ export function submitAgentAnswer(
  * runs the tool's `call()` and emits the normal "Plan approved" tool_result.
  */
 export function submitPlanApproval(
-  workspaceId: string,
+  sessionId: string,
   toolUseId: string,
   approved: boolean,
   reason?: string,
 ): Promise<void> {
   return invoke("submit_plan_approval", {
-    workspaceId,
+    sessionId,
     toolUseId,
     approved,
     reason: reason ?? null,
@@ -501,29 +556,29 @@ export function submitPlanApproval(
 import type { ConversationCheckpoint } from "../types/checkpoint";
 
 export function listCheckpoints(
-  workspaceId: string,
+  sessionId: string,
 ): Promise<ConversationCheckpoint[]> {
-  return invoke("list_checkpoints", { workspaceId });
+  return invoke("list_checkpoints", { sessionId });
 }
 
 export function rollbackToCheckpoint(
-  workspaceId: string,
+  sessionId: string,
   checkpointId: string,
   restoreFiles: boolean,
 ): Promise<ChatMessage[]> {
   return invoke("rollback_to_checkpoint", {
-    workspaceId,
+    sessionId,
     checkpointId,
     restoreFiles,
   });
 }
 
 export function clearConversation(
-  workspaceId: string,
+  sessionId: string,
   restoreFiles: boolean,
 ): Promise<ChatMessage[]> {
   return invoke("clear_conversation", {
-    workspaceId,
+    sessionId,
     restoreFiles,
   });
 }
@@ -543,9 +598,44 @@ export function saveTurnToolActivities(
 }
 
 export function loadCompletedTurns(
-  workspaceId: string,
+  sessionId: string,
 ): Promise<CompletedTurnData[]> {
-  return invoke("load_completed_turns", { workspaceId });
+  return invoke("load_completed_turns", { sessionId });
+}
+
+// -- Chat sessions (tabs) --
+
+export function listChatSessions(
+  workspaceId: string,
+  includeArchived: boolean = false,
+): Promise<ChatSession[]> {
+  return invoke("list_chat_sessions", { workspaceId, includeArchived });
+}
+
+export function getChatSession(sessionId: string): Promise<ChatSession> {
+  return invoke("get_chat_session", { sessionId });
+}
+
+export function createChatSession(workspaceId: string): Promise<ChatSession> {
+  return invoke("create_chat_session", { workspaceId });
+}
+
+export function renameChatSession(
+  sessionId: string,
+  name: string,
+): Promise<void> {
+  return invoke("rename_chat_session", { sessionId, name });
+}
+
+/**
+ * Archive a chat session. Returns the freshly auto-created session if this
+ * was the workspace's last active session (so the frontend can select it),
+ * otherwise null.
+ */
+export function archiveChatSession(
+  sessionId: string,
+): Promise<ChatSession | null> {
+  return invoke("archive_chat_session", { sessionId });
 }
 
 // -- Plan --
@@ -589,6 +679,14 @@ export function revertFile(
   status: string
 ): Promise<void> {
   return invoke("revert_file", { worktreePath, mergeBase, filePath, status });
+}
+
+export function discardFile(
+  worktreePath: string,
+  filePath: string,
+  isUntracked: boolean
+): Promise<void> {
+  return invoke("discard_file", { worktreePath, filePath, isUntracked });
 }
 
 // -- Terminal --
@@ -653,6 +751,10 @@ export function getAppSetting(key: string): Promise<string | null> {
 
 export function setAppSetting(key: string, value: string): Promise<void> {
   return invoke("set_app_setting", { key, value });
+}
+
+export function getHostEnvFlags(): Promise<{ disable_1m_context: boolean }> {
+  return invoke("get_host_env_flags");
 }
 
 // -- Updater --
@@ -853,6 +955,16 @@ export function openReleaseNotes(): Promise<void> {
   return invoke("open_release_notes");
 }
 
+// -- Auth --
+
+export function claudeAuthLogin(): Promise<void> {
+  return invoke("claude_auth_login");
+}
+
+export function cancelClaudeAuthLogin(): Promise<void> {
+  return invoke("cancel_claude_auth_login");
+}
+
 // -- Metrics --
 
 export function getDashboardMetrics(): Promise<DashboardMetrics> {
@@ -871,7 +983,7 @@ export function getAnalyticsMetrics(): Promise<AnalyticsMetrics> {
 
 // -- SCM Plugins --
 
-import type { PluginInfo, ScmDetail, PullRequest } from "../types/plugin";
+import type { PluginInfo, ScmDetail, PullRequest, ScmStatusCacheRow } from "../types/plugin";
 
 export function listScmProviders(): Promise<PluginInfo[]> {
   return invoke("list_scm_providers");

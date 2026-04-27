@@ -1,5 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { EXTERNAL_SCHEMES } from "./markdown";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createElement } from "react";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+vi.mock("./highlight", () => ({
+  getCachedHighlight: vi.fn(),
+  highlightCode: vi.fn(),
+}));
+
+import { EXTERNAL_SCHEMES, MARKDOWN_COMPONENTS, HighlightedCode } from "./markdown";
+import { getCachedHighlight, highlightCode } from "./highlight";
 
 describe("EXTERNAL_SCHEMES", () => {
   it("matches http URLs", () => {
@@ -42,5 +52,103 @@ describe("EXTERNAL_SCHEMES", () => {
 
   it("rejects empty string", () => {
     expect(EXTERNAL_SCHEMES.test("")).toBe(false);
+  });
+});
+
+describe("MARKDOWN_COMPONENTS.code wiring", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const CodeOverride = MARKDOWN_COMPONENTS.code as (props: any) => ReactElement;
+
+  it("returns a HighlightedCode element forwarding className and children", () => {
+    const el = CodeOverride({
+      node: undefined,
+      className: "language-rust",
+      children: "fn main() {}",
+    });
+    expect(el.type).toBe(HighlightedCode);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (el as unknown as { props: any }).props;
+    expect(props.className).toBe("language-rust");
+    expect(props.children).toBe("fn main() {}");
+  });
+
+  it("strips the `node` prop before forwarding", () => {
+    const el = CodeOverride({
+      node: { fake: true },
+      className: "language-ts",
+      children: "const x = 1",
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (el as unknown as { props: any }).props;
+    expect(props.node).toBeUndefined();
+  });
+});
+
+describe("HighlightedCode", () => {
+  beforeEach(() => {
+    vi.mocked(getCachedHighlight).mockReset();
+    vi.mocked(highlightCode).mockReset();
+    vi.mocked(getCachedHighlight).mockReturnValue(null);
+    vi.mocked(highlightCode).mockResolvedValue(null);
+  });
+
+  it("renders inline <code> when there is no language class", () => {
+    const html = renderToStaticMarkup(
+      createElement(HighlightedCode, { children: "x" }),
+    );
+    expect(html).toBe("<code>x</code>");
+    expect(getCachedHighlight).not.toHaveBeenCalled();
+  });
+
+  it("renders plain <code> when language is set but no cached highlight", () => {
+    vi.mocked(getCachedHighlight).mockReturnValue(null);
+    const html = renderToStaticMarkup(
+      createElement(HighlightedCode, {
+        className: "language-rust",
+        children: "fn main() {}",
+      }),
+    );
+    expect(html).toBe('<code class="language-rust">fn main() {}</code>');
+    expect(getCachedHighlight).toHaveBeenCalledWith("fn main() {}", "rust");
+  });
+
+  it("renders dangerouslySetInnerHTML when cache returns highlighted HTML", () => {
+    vi.mocked(getCachedHighlight).mockReturnValue('<span style="--shiki-light:black">fn</span>');
+    const html = renderToStaticMarkup(
+      createElement(HighlightedCode, {
+        className: "language-rust",
+        children: "fn",
+      }),
+    );
+    expect(html).toBe('<code class="language-rust"><span style="--shiki-light:black">fn</span></code>');
+  });
+
+  it("preserves className on the rendered code element", () => {
+    const html = renderToStaticMarkup(
+      createElement(HighlightedCode, {
+        className: "language-typescript",
+        children: "const x = 1",
+      }),
+    );
+    expect(html).toContain('class="language-typescript"');
+  });
+
+  it("treats className without language- prefix as inline code", () => {
+    const html = renderToStaticMarkup(
+      createElement(HighlightedCode, { className: "math", children: "1+1" }),
+    );
+    expect(html).toBe('<code class="math">1+1</code>');
+    expect(getCachedHighlight).not.toHaveBeenCalled();
+  });
+
+  it("extracts language with hyphen (language-shell-script)", () => {
+    vi.mocked(getCachedHighlight).mockReturnValue(null);
+    renderToStaticMarkup(
+      createElement(HighlightedCode, {
+        className: "language-shell-script",
+        children: "echo hi",
+      }),
+    );
+    expect(getCachedHighlight).toHaveBeenCalledWith("echo hi", "shell-script");
   });
 });

@@ -12,12 +12,75 @@ use claudette::env::WorkspaceEnv;
 use claudette::git;
 use claudette::mcp_supervisor::McpSupervisor;
 use claudette::model::{
-    Attachment, ChatMessage, ChatRole, CompletedTurnData, ConversationCheckpoint, TurnToolActivity,
+    Attachment, ChatMessage, ChatRole, ChatSession, CompletedTurnData, ConversationCheckpoint,
+    TurnToolActivity,
 };
 use claudette::snapshot;
 use claudette::{base64_decode, base64_encode};
 
+use crate::agent_mcp_sink::ChatBridgeSink;
 use crate::state::{AgentSessionState, AppState, PendingPermission};
+use claudette::agent_mcp::bridge::{BridgeHandle, McpBridgeSession};
+
+/// Build a fresh bridge for a workspace and return an `mcp_config` JSON with
+/// the synthetic `claudette` MCP server entry merged in. The Claude CLI will
+/// spawn `claudette-tauri --agent-mcp` as a stdio child of itself and pass it
+/// the per-session socket address + token via env vars; the grandchild then
+/// connects back to the parent over the local socket.
+async fn start_bridge_and_inject_mcp(
+    app: &AppHandle,
+    db_path: &std::path::Path,
+    workspace_id: &str,
+    base_mcp_config: Option<String>,
+) -> Result<(Arc<McpBridgeSession>, Option<String>), String> {
+    let sink = Arc::new(ChatBridgeSink {
+        app: app.clone(),
+        db_path: db_path.to_path_buf(),
+        workspace_id: workspace_id.to_string(),
+    });
+    let bridge = Arc::new(McpBridgeSession::start(sink).await?);
+    let merged = inject_claudette_mcp_entry(base_mcp_config, bridge.handle())?;
+    Ok((bridge, merged))
+}
+
+fn inject_claudette_mcp_entry(
+    base: Option<String>,
+    handle: &BridgeHandle,
+) -> Result<Option<String>, String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("current_exe: {e}"))?
+        .to_string_lossy()
+        .to_string();
+
+    let entry = serde_json::json!({
+        "type": "stdio",
+        "command": exe,
+        "args": ["--agent-mcp"],
+        "env": {
+            claudette::agent_mcp::server::ENV_SOCKET_ADDR: handle.socket_addr,
+            claudette::agent_mcp::server::ENV_TOKEN: handle.token,
+        }
+    });
+
+    let mut wrapper: serde_json::Value = match base.as_deref() {
+        Some(s) => serde_json::from_str(s).map_err(|e| format!("parse mcp_config: {e}"))?,
+        None => serde_json::json!({"mcpServers": {}}),
+    };
+    let servers = wrapper
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+        .ok_or_else(|| "mcp_config missing `mcpServers` object".to_string())?;
+    servers.insert(claudette::agent_mcp::server::SERVER_NAME.to_string(), entry);
+    Ok(Some(wrapper.to_string()))
+}
+
+/// How long to wait between emitting `agent-permission-prompt` and firing the
+/// attention system notification. This is the window in which the webview
+/// picks up the event, runs the Zustand setter, and paints the question/plan
+/// card. 300ms is a compromise: long enough to cover typical React render
+/// plus a macOS window-show animation (when the user had the window hidden),
+/// short enough that the notification still feels tied to the trigger.
+const ATTENTION_NOTIFY_DELAY_MS: u64 = 300;
 
 async fn fire_completion_notification(
     db_path: &std::path::Path,
@@ -39,16 +102,18 @@ async fn fire_completion_notification(
             .ok()
             .and_then(|wss| wss.into_iter().find(|w| w.id == ws_id))
     {
-        let repo_path = db
-            .get_repository(&fresh_ws.repository_id)
-            .ok()
-            .flatten()
-            .map(|r| r.path)
-            .unwrap_or_default();
-        let default_branch = git::default_branch(&repo_path)
+        let repo = db.get_repository(&fresh_ws.repository_id).ok().flatten();
+        let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or_default();
+        let default_branch = match repo.as_ref().and_then(|r| r.base_branch.as_deref()) {
+            Some(b) => b.to_string(),
+            None => git::default_branch(
+                repo_path,
+                repo.as_ref().and_then(|r| r.default_remote.as_deref()),
+            )
             .await
-            .unwrap_or_else(|_| "main".into());
-        let fresh_env = WorkspaceEnv::from_workspace(&fresh_ws, &repo_path, default_branch);
+            .unwrap_or_else(|_| "main".into()),
+        };
+        let fresh_env = WorkspaceEnv::from_workspace(&fresh_ws, repo_path, default_branch);
         if let Some(mut command) =
             crate::commands::settings::build_notification_command(&cmd, &fresh_env)
             && let Ok(child) = command.spawn()
@@ -79,11 +144,19 @@ pub struct AttachmentResponse {
     pub width: Option<i32>,
     pub height: Option<i32>,
     pub size_bytes: i64,
+    /// `"user"` for composer-supplied attachments, `"agent"` for ones the
+    /// agent delivered via `mcp__claudette__send_to_user`. The frontend
+    /// uses this to re-route agent attachments under the assistant message
+    /// instead of the user message they were FK-anchored to. Without this
+    /// on reload, persisted agent attachments display as "from you".
+    pub origin: claudette::model::AttachmentOrigin,
+    pub tool_use_id: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
 struct AgentStreamPayload {
     workspace_id: String,
+    chat_session_id: String,
     event: AgentEvent,
 }
 
@@ -179,18 +252,18 @@ fn build_permission_response(
 
 #[tauri::command]
 pub async fn load_chat_history(
-    workspace_id: String,
+    session_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<ChatMessage>, String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    db.list_chat_messages(&workspace_id)
+    db.list_chat_messages_for_session(&session_id)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn send_chat_message(
-    workspace_id: String,
+    session_id: String,
     message_id: Option<String>,
     content: String,
     mentioned_files: Option<Vec<String>>,
@@ -207,6 +280,15 @@ pub async fn send_chat_message(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+
+    let chat_session_id = session_id;
+    let chat_session = db
+        .get_chat_session(&chat_session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Chat session not found")?;
+    let workspace_id = chat_session.workspace_id.clone();
+    let _is_first_session = chat_session.sort_order == 0;
+    let session_name_already_edited = chat_session.name_edited;
 
     // Look up workspace for worktree path.
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
@@ -225,6 +307,7 @@ pub async fn send_chat_message(
     let user_msg = ChatMessage {
         id: message_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         workspace_id: workspace_id.clone(),
+        chat_session_id: chat_session_id.clone(),
         role: ChatRole::User,
         content: content.clone(),
         cost_usd: None,
@@ -307,6 +390,8 @@ pub async fn send_chat_message(
                 size_bytes,
                 data,
                 created_at: now_iso(),
+                origin: claudette::model::AttachmentOrigin::User,
+                tool_use_id: None,
             });
             cli_atts.push(FileAttachment {
                 media_type: input.media_type.clone(),
@@ -371,17 +456,24 @@ pub async fn send_chat_message(
         from_config.or_else(|| repo.as_ref().and_then(|r| r.custom_instructions.clone()))
     };
 
+    // Agents are keyed by the `chat_sessions.id` of the target tab. The
+    // workspace id is carried alongside so tray/notification code can group
+    // per workspace.
     let mut agents = state.agents.write().await;
-    let session = agents.entry(workspace_id.clone()).or_insert_with(|| {
-        // Try restoring a persisted session from the database first.
-        if let Ok(Some((sid, tc))) = db.get_agent_session(&workspace_id) {
+    let session = agents.entry(chat_session_id.clone()).or_insert_with(|| {
+        // Try restoring a persisted session from the chat_sessions row.
+        if let Ok(Some(chat_session)) = db.get_chat_session(&chat_session_id)
+            && let Some(claude_sid) = chat_session.session_id.clone()
+        {
             return AgentSessionState {
-                session_id: sid,
-                turn_count: tc,
+                workspace_id: workspace_id.clone(),
+                session_id: claude_sid,
+                turn_count: chat_session.turn_count,
                 active_pid: None,
                 custom_instructions: instructions.clone(),
                 needs_attention: false,
                 attention_kind: None,
+                attention_notification_sent: false,
                 persistent_session: None,
                 mcp_config_dirty: false,
                 session_plan_mode: false,
@@ -389,16 +481,21 @@ pub async fn send_chat_message(
                 session_disable_1m_context: false,
                 pending_permissions: std::collections::HashMap::new(),
                 session_exited_plan: false,
+                session_resolved_env: Default::default(),
+                mcp_bridge: None,
+                last_user_msg_id: None,
             };
         }
 
         AgentSessionState {
+            workspace_id: workspace_id.clone(),
             session_id: uuid::Uuid::new_v4().to_string(),
             turn_count: 0,
             active_pid: None,
             custom_instructions: instructions,
             needs_attention: false,
             attention_kind: None,
+            attention_notification_sent: false,
             persistent_session: None,
             mcp_config_dirty: false,
             session_plan_mode: false,
@@ -406,6 +503,9 @@ pub async fn send_chat_message(
             session_disable_1m_context: false,
             pending_permissions: std::collections::HashMap::new(),
             session_exited_plan: false,
+            session_resolved_env: Default::default(),
+            mcp_bridge: None,
+            last_user_msg_id: None,
         }
     });
 
@@ -431,7 +531,7 @@ pub async fn send_chat_message(
         let _ = agent::stop_agent(old_pid).await;
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         agents = state.agents.write().await;
-        let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+        let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
         session.active_pid = None;
     } else if let Some((ref ps, drained)) = to_deny_new_turn {
         // No stale-pid teardown — release the lock just for the deny sends,
@@ -441,7 +541,12 @@ pub async fn send_chat_message(
             .await;
         agents = state.agents.write().await;
     }
-    let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+    let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
+
+    // The user message has been persisted; record its id as the FK anchor
+    // for any agent-authored attachments produced during this turn (see
+    // `agent_mcp_sink::ChatBridgeSink`).
+    session.last_user_msg_id = Some(user_msg.id.clone());
 
     // MCP config changed while a previous turn was in flight — tear down the
     // persistent session so the next spawn picks up updated --mcp-config.
@@ -451,6 +556,9 @@ pub async fn send_chat_message(
         let to_deny_mcp = drain_pending_permissions(session);
         let stale_pid = session.persistent_session.as_ref().map(|ps| ps.pid());
         session.persistent_session = None;
+        // Tear down the agent-MCP bridge alongside the persistent session.
+        // Drop runs the listener cancellation + socket file unlink.
+        session.mcp_bridge = None;
         // Clear active_pid alongside persistent_session so a failed respawn
         // can't leave the next turn with a stale PID that the kernel may
         // have recycled (would get SIGKILLed by the stale-process branch).
@@ -468,9 +576,28 @@ pub async fn send_chat_message(
             agents = state.agents.write().await;
         }
     }
-    let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+    let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
 
-    let custom_instructions = session.custom_instructions.clone();
+    // The `send_to_user` built-in plugin is user-toggleable in Settings →
+    // Plugins. When disabled we skip both the synthetic MCP injection
+    // (further down, before spawn) and the system-prompt nudge here, so the
+    // agent has neither the tool nor any hint it exists.
+    let send_to_user_enabled = claudette::agent_mcp::is_builtin_plugin_enabled(&db, "send_to_user");
+
+    // Prepend the agent-MCP nudge to the user's repo-level instructions so
+    // the model knows to reach for `mcp__claudette__send_to_user` when the
+    // user asks for an inline file delivery. The nudge is session-level
+    // (only applied on fresh spawns via `--append-system-prompt`); on resume
+    // turns the original spawn's prompt is already in the CLI process.
+    let custom_instructions = if send_to_user_enabled {
+        let nudge = claudette::agent_mcp::SYSTEM_PROMPT_NUDGE;
+        match session.custom_instructions.as_deref() {
+            Some(existing) if !existing.trim().is_empty() => Some(format!("{nudge}\n\n{existing}")),
+            _ => Some(nudge.to_string()),
+        }
+    } else {
+        session.custom_instructions.clone()
+    };
     session.turn_count += 1;
     session.needs_attention = false;
     session.attention_kind = None;
@@ -524,6 +651,7 @@ pub async fn send_chat_message(
         let to_deny_drift = drain_pending_permissions(session);
         let stale_pid = session.persistent_session.as_ref().map(|ps| ps.pid());
         session.persistent_session = None;
+        session.mcp_bridge = None;
         // Clear active_pid alongside persistent_session. A concurrent turn
         // streaming this process at drift time would leave active_pid set;
         // without this clear, a failed respawn + next turn would SIGKILL a
@@ -545,7 +673,7 @@ pub async fn send_chat_message(
             agents = state.agents.write().await;
         }
     }
-    let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+    let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
 
     // Expand @-file mentions into inline file content for the agent prompt.
     let prompt = claudette::file_expand::expand_file_mentions(
@@ -555,12 +683,88 @@ pub async fn send_chat_message(
     )
     .await;
 
-    // Build workspace env vars for the agent subprocess.
     let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
-    let default_branch = git::default_branch(repo_path)
+    let default_branch = match repo.as_ref().and_then(|r| r.base_branch.as_deref()) {
+        Some(b) => b.to_string(),
+        None => git::default_branch(
+            repo_path,
+            repo.as_ref().and_then(|r| r.default_remote.as_deref()),
+        )
         .await
-        .unwrap_or_else(|_| "main".to_string());
+        .unwrap_or_else(|_| "main".to_string()),
+    };
     let ws_env = WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
+
+    // Resolve the env-provider layer (direnv / mise / dotenv / nix-devshell)
+    // once per turn. The mtime-keyed cache makes this essentially free on
+    // turns where nothing changed; on the first turn or after the user
+    // edits `.envrc` / `mise.toml` / etc., it re-runs the affected plugin.
+    let ws_info_for_env = claudette::plugin_runtime::host_api::WorkspaceInfo {
+        id: ws.id.clone(),
+        name: ws.name.clone(),
+        branch: ws.branch_name.clone(),
+        worktree_path: worktree_path.clone(),
+        repo_path: repo_path.to_string(),
+    };
+    let disabled_env_providers = {
+        let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+        let repo_id = repo.as_ref().map(|r| r.id.as_str()).unwrap_or("");
+        crate::commands::env::load_disabled_providers(&db, repo_id)
+    };
+    let resolved_env = {
+        let registry = state.plugins.read().await;
+        claudette::env_provider::resolve_with_registry(
+            &registry,
+            &state.env_cache,
+            std::path::Path::new(&worktree_path),
+            &ws_info_for_env,
+            &disabled_env_providers,
+        )
+        .await
+    };
+    crate::commands::env::register_resolved_with_watcher(
+        &state,
+        std::path::Path::new(&worktree_path),
+        &resolved_env.sources,
+    )
+    .await;
+
+    // Env-provider drift teardown: the env baked into the current
+    // persistent session is fixed at spawn time; Claude's subprocess
+    // won't see `.envrc` / `mise.toml` / `direnv allow` changes until
+    // it's respawned. Compare the freshly-resolved vars against the
+    // snapshot stored at spawn and teardown on any divergence. The
+    // mtime-keyed cache makes this re-resolve nearly free on quiet
+    // turns, so the check costs nothing in the common case.
+    if session.persistent_session.is_some() && session.session_resolved_env != resolved_env.vars {
+        eprintln!(
+            "[chat] env-provider output changed ({} vars before, {} after) — tearing down persistent session for {workspace_id}",
+            session.session_resolved_env.len(),
+            resolved_env.vars.len(),
+        );
+        let to_deny_env = drain_pending_permissions(session);
+        let stale_pid = session.persistent_session.as_ref().map(|ps| ps.pid());
+        session.persistent_session = None;
+        session.mcp_bridge = None;
+        session.active_pid = None;
+        session.session_exited_plan = false;
+        if stale_pid.is_some() || to_deny_env.is_some() {
+            drop(agents);
+            if let Some((ref ps, drained)) = to_deny_env {
+                deny_drained_permissions(
+                    drained,
+                    ps,
+                    "Session restarted because workspace env changed.",
+                )
+                .await;
+            }
+            if let Some(pid) = stale_pid {
+                let _ = agent::stop_agent_graceful(pid).await;
+            }
+            agents = state.agents.write().await;
+        }
+    }
+    let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
 
     // Use persistent session to keep MCP servers alive across turns.
     // First turn or after restart: start a PersistentSession.
@@ -570,28 +774,34 @@ pub async fn send_chat_message(
     let saved_turn_count = session.turn_count;
 
     // Helper: start a persistent session, using --resume for restored sessions.
+    // Routes claude-missing errors through the missing-CLI dialog emitter so
+    // both the initial-start and respawn paths surface the same guidance.
     let ws_env_for_persistent = ws_env.clone();
-    let start_persistent = |worktree: String,
-                            sid: String,
-                            is_resume: bool,
-                            tools: Vec<String>,
-                            instructions: Option<String>,
-                            settings: AgentSettings| {
+    let resolved_env_for_persistent = resolved_env.clone();
+    let app_for_persistent = app.clone();
+    let start_persistent = move |worktree: String,
+                                 sid: String,
+                                 is_resume: bool,
+                                 tools: Vec<String>,
+                                 instructions: Option<String>,
+                                 settings: AgentSettings| {
         let env = ws_env_for_persistent.clone();
+        let resolved = resolved_env_for_persistent.clone();
+        let app = app_for_persistent.clone();
         async move {
-            let ps = Arc::new(
-                PersistentSession::start(
-                    std::path::Path::new(&worktree),
-                    &sid,
-                    is_resume,
-                    &tools,
-                    instructions.as_deref(),
-                    &settings,
-                    Some(&env),
-                )
-                .await?,
-            );
-            Ok::<Arc<PersistentSession>, String>(ps)
+            let started = PersistentSession::start(
+                std::path::Path::new(&worktree),
+                &sid,
+                is_resume,
+                &tools,
+                instructions.as_deref(),
+                &settings,
+                Some(&env),
+                Some(&resolved),
+            )
+            .await
+            .map_err(|e| crate::missing_cli::handle_err(&app, &e).unwrap_or(e))?;
+            Ok::<Arc<PersistentSession>, String>(Arc::new(started))
         }
     };
 
@@ -604,7 +814,23 @@ pub async fn send_chat_message(
                 // avoid blocking other workspaces during process startup.
                 eprintln!("[chat] Persistent session failed, respawning: {e}");
                 session.persistent_session = None;
+                session.mcp_bridge = None;
                 drop(agents);
+
+                let mut respawn_settings = agent_settings.clone();
+                let bridge = if send_to_user_enabled {
+                    let (b, mcp_with_claudette) = start_bridge_and_inject_mcp(
+                        &app,
+                        &state.db_path,
+                        &workspace_id,
+                        agent_settings.mcp_config.clone(),
+                    )
+                    .await?;
+                    respawn_settings.mcp_config = mcp_with_claudette;
+                    Some(b)
+                } else {
+                    None
+                };
 
                 let is_resume = saved_turn_count > 1;
                 let (ps, final_sid) = match start_persistent(
@@ -613,7 +839,7 @@ pub async fn send_chat_message(
                     is_resume,
                     allowed_tools.clone(),
                     custom_instructions.clone(),
-                    agent_settings.clone(),
+                    respawn_settings.clone(),
                 )
                 .await
                 {
@@ -627,21 +853,22 @@ pub async fn send_chat_message(
                             false,
                             allowed_tools.clone(),
                             custom_instructions.clone(),
-                            agent_settings.clone(),
+                            respawn_settings.clone(),
                         )
                         .await?;
                         (ps, fresh)
                     }
                     Err(e2) => {
-                        let _ = db.clear_agent_session(&workspace_id);
+                        let _ = db.clear_chat_session_state(&chat_session_id);
                         return Err(e2);
                     }
                 };
                 let handle = ps.send_turn(&prompt, &image_attachments).await?;
 
                 agents = state.agents.write().await;
-                let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+                let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
                 session.persistent_session = Some(ps);
+                session.mcp_bridge = bridge;
                 session.session_id = final_sid;
                 session.session_plan_mode = agent_settings.plan_mode;
                 session.session_allowed_tools = allowed_tools.clone();
@@ -651,6 +878,7 @@ pub async fn send_chat_message(
                 // spawn-time flags above so the latch can't leak across
                 // respawns (including paths that skip the drift branch).
                 session.session_exited_plan = false;
+                session.session_resolved_env = resolved_env.vars.clone();
                 handle
             }
         }
@@ -668,13 +896,33 @@ pub async fn send_chat_message(
         // Drop lock before async process spawn.
         drop(agents);
 
+        // Start the agent-MCP bridge and merge the synthetic `claudette`
+        // server entry into the spawn-time `--mcp-config` JSON when the
+        // built-in `send_to_user` plugin is enabled. The bridge is stored
+        // on the session below so it lives exactly as long as the
+        // persistent CLI process.
+        let mut spawn_settings = agent_settings.clone();
+        let bridge = if send_to_user_enabled {
+            let (b, mcp_with_claudette) = start_bridge_and_inject_mcp(
+                &app,
+                &state.db_path,
+                &workspace_id,
+                agent_settings.mcp_config.clone(),
+            )
+            .await?;
+            spawn_settings.mcp_config = mcp_with_claudette;
+            Some(b)
+        } else {
+            None
+        };
+
         let (ps, final_sid) = match start_persistent(
             worktree_path.clone(),
             sid.clone(),
             is_resume,
             allowed_tools.clone(),
             custom_instructions.clone(),
-            agent_settings.clone(),
+            spawn_settings.clone(),
         )
         .await
         {
@@ -689,48 +937,52 @@ pub async fn send_chat_message(
                     false,
                     allowed_tools.clone(),
                     custom_instructions.clone(),
-                    agent_settings.clone(),
+                    spawn_settings.clone(),
                 )
                 .await?;
                 (ps, fresh_sid)
             }
             Err(e) => {
-                // Spawn failed entirely — clear stale session from DB so the
-                // next attempt doesn't try --resume with a dead session ID.
-                let _ = db.clear_agent_session(&workspace_id);
+                // Spawn failed entirely — clear the per-session Claude state
+                // so the next attempt doesn't try --resume with a dead
+                // session ID. Must be per-session (not workspace-scoped)
+                // because other tabs in this workspace may still be live.
+                let _ = db.clear_chat_session_state(&chat_session_id);
                 agents = state.agents.write().await;
-                if let Some(session) = agents.get_mut(&workspace_id) {
+                if let Some(session) = agents.get_mut(&chat_session_id) {
                     session.turn_count = 0;
                     session.session_id = String::new();
                 }
                 drop(agents);
+                let e = crate::missing_cli::handle_err(&app, &e).unwrap_or(e);
                 return Err(e);
             }
         };
         let handle = ps.send_turn(&prompt, &image_attachments).await?;
 
         agents = state.agents.write().await;
-        let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+        let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
         session.persistent_session = Some(ps);
+        session.mcp_bridge = bridge;
         session.session_id = final_sid.clone();
         session.session_plan_mode = agent_settings.plan_mode;
         session.session_allowed_tools = allowed_tools.clone();
         session.session_disable_1m_context = agent_settings.disable_1m_context;
         // See the sibling reset above — fresh process, fresh latch.
         session.session_exited_plan = false;
-        let _ = db.save_agent_session(&workspace_id, &final_sid, session.turn_count);
+        session.session_resolved_env = resolved_env.vars.clone();
+        let _ = db.save_chat_session_state(&chat_session_id, &final_sid, session.turn_count);
         handle
     };
 
     let spawned_pid = turn_handle.pid;
     {
-        let session = agents.get_mut(&workspace_id).ok_or("Session lost")?;
+        let session = agents.get_mut(&chat_session_id).ok_or("Session lost")?;
         session.active_pid = Some(spawned_pid);
-        let _ = db.save_agent_session(&workspace_id, &session.session_id, session.turn_count);
-        // Metrics: register session on first turn (idempotent via INSERT OR
-        // IGNORE), then bump turn_count + last_message_at. Runs for every
-        // turn so resumed-from-DB sessions get their row lazily created too.
+        let _ =
+            db.save_chat_session_state(&chat_session_id, &session.session_id, session.turn_count);
         let _ = db.insert_agent_session(&session.session_id, &workspace_id, &ws.repository_id);
+        let _ = db.reopen_agent_session(&session.session_id);
         let _ = db.update_agent_session_turn(&session.session_id, session.turn_count);
         if db
             .get_app_setting("first_session_at")
@@ -738,9 +990,6 @@ pub async fn send_chat_message(
             .flatten()
             .is_none()
         {
-            // RFC3339 UTC to match `install_date` — both share `app_settings`
-            // and will be compared/displayed side-by-side. `now_iso` (despite
-            // the name) returns UNIX seconds, which would diverge.
             let _ = db.set_app_setting("first_session_at", &chrono::Utc::now().to_rfc3339());
         }
     }
@@ -781,6 +1030,7 @@ pub async fn send_chat_message(
 
     // Bridge: read from mpsc receiver, emit Tauri events.
     let ws_id = workspace_id.clone();
+    let chat_session_id_for_stream = chat_session_id.clone();
     let db_path = state.db_path.clone();
     let wt_path = worktree_path.clone();
     let user_msg_id = user_msg.id.clone();
@@ -813,6 +1063,23 @@ pub async fn send_chat_message(
             });
         }
 
+        // Also spawn a background task to generate a human-readable session
+        // name for the tab. Fires on every new session's first turn (not just
+        // the first session of the workspace). Skipped if the user already
+        // renamed the session manually.
+        if saved_turn_count <= 1 && !session_name_already_edited {
+            let sid2 = chat_session_id_for_stream.clone();
+            let wt_path2 = wt_path.clone();
+            let prompt2 = rename_prompt.clone();
+            let db_path2 = db_path.clone();
+            let app2 = app.clone();
+            let ws_env2 = rename_ws_env.clone();
+            tokio::spawn(async move {
+                try_generate_session_name(&sid2, &wt_path2, &prompt2, &db_path2, &app2, &ws_env2)
+                    .await;
+            });
+        }
+
         let mut rx = turn_handle.event_rx;
         let mut got_init = false;
         // MCP monitoring: map tool_use_id → tool_name for MCP error detection.
@@ -831,10 +1098,8 @@ pub async fn send_chat_message(
         // to None after each persistence so per-message counts stay distinct
         // across multi-message turns.
         let mut latest_usage: Option<claudette::agent::TokenUsage> = None;
-        let mut pending_attention_kind: Option<crate::state::AttentionKind>;
         let mut notified_via_result = false;
         while let Some(event) = rx.recv().await {
-            pending_attention_kind = None;
             // Track whether the CLI initialized successfully.
             if let AgentEvent::Stream(StreamEvent::System { subtype, .. }) = &event
                 && subtype == "init"
@@ -863,6 +1128,7 @@ pub async fn send_chat_message(
                 let msg = ChatMessage {
                     id: uuid::Uuid::new_v4().to_string(),
                     workspace_id: ws_id.clone(),
+                    chat_session_id: chat_session_id_for_stream.clone(),
                     role: ChatRole::System,
                     content: sentinel,
                     cost_usd: None,
@@ -904,7 +1170,7 @@ pub async fn send_chat_message(
                 if matches!(tool_name.as_str(), "AskUserQuestion" | "ExitPlanMode") {
                     let app_state = app.state::<AppState>();
                     let mut agents = app_state.agents.write().await;
-                    if let Some(session) = agents.get_mut(&ws_id) {
+                    if let Some(session) = agents.get_mut(&chat_session_id_for_stream) {
                         session.pending_permissions.insert(
                             tool_use_id.clone(),
                             PendingPermission {
@@ -917,17 +1183,80 @@ pub async fn send_chat_message(
                     drop(agents);
                     let payload = serde_json::json!({
                         "workspace_id": &ws_id,
+                        "chat_session_id": &chat_session_id_for_stream,
                         "tool_use_id": tool_use_id,
                         "tool_name": tool_name,
                         "input": input,
                     });
                     let _ = app.emit("agent-permission-prompt", &payload);
+
+                    // Fire the system notification after the frontend has the
+                    // data it needs to render the card. We emit
+                    // `agent-permission-prompt` synchronously above; the
+                    // short sleep gives the webview time to pick up the event
+                    // and paint before the notification sound/banner arrives.
+                    // Tied to ControlRequest (not the earlier ContentBlockStart)
+                    // because the card is driven by this event, not the
+                    // streaming tool_use block.
+                    //
+                    // The task is detached, so it must defend against state
+                    // changes during the sleep:
+                    //   - If the user already responded (or the session was
+                    //     stopped/cleared), the matching pending_permission is
+                    //     gone and a notification would be misleading.
+                    //   - If a different pending prompt in the same cycle has
+                    //     already triggered the notification, dedupe via
+                    //     `attention_notification_sent`.
+                    let kind = if tool_name == "AskUserQuestion" {
+                        crate::state::AttentionKind::Ask
+                    } else {
+                        crate::state::AttentionKind::Plan
+                    };
+                    let app_for_notify = app.clone();
+                    let ws_id_for_notify = ws_id.clone();
+                    let session_id_for_notify = chat_session_id_for_stream.clone();
+                    let tool_use_id_for_notify = tool_use_id.clone();
+                    let request_id_for_notify = request_id.clone();
+                    let tool_name_for_notify = tool_name.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            ATTENTION_NOTIFY_DELAY_MS,
+                        ))
+                        .await;
+
+                        let app_state = app_for_notify.state::<AppState>();
+                        let should_notify = {
+                            let mut agents = app_state.agents.write().await;
+                            let Some(session) = agents.get_mut(&session_id_for_notify) else {
+                                return;
+                            };
+                            if session.attention_notification_sent {
+                                false
+                            } else {
+                                let still_pending = session
+                                    .pending_permissions
+                                    .get(&tool_use_id_for_notify)
+                                    .is_some_and(|p| {
+                                        p.request_id == request_id_for_notify
+                                            && p.tool_name == tool_name_for_notify
+                                    });
+                                if still_pending {
+                                    session.attention_notification_sent = true;
+                                }
+                                still_pending
+                            }
+                        };
+
+                        if should_notify {
+                            crate::tray::notify_attention(&app_for_notify, &ws_id_for_notify, kind);
+                        }
+                    });
                 } else {
                     let app_state = app.state::<AppState>();
                     let agents = app_state.agents.read().await;
                     let (ps, session_allowed_tools, session_plan_mode, session_exited_plan) =
                         agents
-                            .get(&ws_id)
+                            .get(&chat_session_id_for_stream)
                             .map(|s| {
                                 (
                                     s.persistent_session.clone(),
@@ -956,9 +1285,10 @@ pub async fn send_chat_message(
             }
 
             // Detect tool calls that require user input (question, plan approval).
-            // Capture whether we need to notify — the actual notification is
-            // deferred until after the event is emitted to the frontend so the
-            // UI updates before the system notification appears.
+            // The tray state flip happens here (on ContentBlockStart) so the
+            // icon/menu update is immediate. The *notification* itself fires
+            // later, from the ControlRequest branch, once the frontend has the
+            // data it needs to render the question/plan card.
             if let AgentEvent::Stream(StreamEvent::Stream {
                 event:
                     InnerStreamEvent::ContentBlockStart {
@@ -975,8 +1305,7 @@ pub async fn send_chat_message(
                 };
                 let app_state = app.state::<AppState>();
                 let mut agents = app_state.agents.write().await;
-                let already_notified = agents.get(&ws_id).is_some_and(|s| s.needs_attention);
-                if let Some(session) = agents.get_mut(&ws_id) {
+                if let Some(session) = agents.get_mut(&chat_session_id_for_stream) {
                     session.needs_attention = true;
                     session.attention_kind = Some(kind);
                     // Observed ExitPlanMode — the plan phase is ending. Mark
@@ -985,12 +1314,6 @@ pub async fn send_chat_message(
                     if name == "ExitPlanMode" {
                         session.session_exited_plan = true;
                     }
-                }
-                drop(agents);
-                // Only send notification once per attention cycle — skip if
-                // we already notified the user about this workspace.
-                if !already_notified {
-                    pending_attention_kind = Some(kind);
                 }
             }
 
@@ -1024,6 +1347,7 @@ pub async fn send_chat_message(
                 let msg = ChatMessage {
                     id: uuid::Uuid::new_v4().to_string(),
                     workspace_id: ws_id.clone(),
+                    chat_session_id: chat_session_id_for_stream.clone(),
                     role: ChatRole::System,
                     content: sentinel,
                     cost_usd: None,
@@ -1075,17 +1399,19 @@ pub async fn send_chat_message(
                 let app_state = app.state::<AppState>();
                 let (session_id_for_capture, needs_attention) = {
                     let mut agents = app_state.agents.write().await;
-                    if let Some(session) = agents.get_mut(&ws_id)
+                    if let Some(session) = agents.get_mut(&chat_session_id_for_stream)
                         && session.active_pid == Some(spawned_pid)
                         && session.persistent_session.is_some()
                     {
                         session.active_pid = None;
                     }
                     let sid = agents
-                        .get(&ws_id)
+                        .get(&chat_session_id_for_stream)
                         .map(|s| s.session_id.clone())
                         .unwrap_or_default();
-                    let attn = agents.get(&ws_id).is_some_and(|s| s.needs_attention);
+                    let attn = agents
+                        .get(&chat_session_id_for_stream)
+                        .is_some_and(|s| s.needs_attention);
                     (sid, attn)
                 };
                 // Rebuild tray so it reflects the idle state. Without this,
@@ -1136,32 +1462,40 @@ pub async fn send_chat_message(
                 let mut agents = app_state.agents.write().await;
                 // Snapshot session_id before any mutation so metrics hooks
                 // below can reference the session we just finished.
-                let ended_session_id: Option<String> =
-                    agents.get(&ws_id).map(|s| s.session_id.clone());
+                let ended_session_id: Option<String> = agents
+                    .get(&chat_session_id_for_stream)
+                    .map(|s| s.session_id.clone());
                 // Track whether this exit actually belongs to the live session
                 // in `agents` — if a newer turn has replaced `active_pid`, the
                 // old exit is stale and we must not end the (now-new) session
                 // row. Only set when we own the exit.
                 let mut ended_own_session = false;
                 if !got_init {
-                    // Failed to initialize — clear the entire session so the
-                    // next attempt starts fresh instead of trying --resume.
-                    agents.remove(&ws_id);
+                    // Failed to initialize — clear the per-session Claude
+                    // state so the next attempt starts fresh instead of
+                    // trying --resume. Must be per-session (not
+                    // workspace-scoped) because other tabs in this
+                    // workspace may still be live.
+                    agents.remove(&chat_session_id_for_stream);
                     if let Ok(db) = Database::open(&db_path) {
-                        let _ = db.clear_agent_session(&ws_id);
+                        let _ = db.clear_chat_session_state(&chat_session_id_for_stream);
                         if let Some(ref sid) = ended_session_id {
                             let _ = db.end_agent_session(sid, false);
                         }
                     }
-                } else if let Some(session) = agents.get_mut(&ws_id)
+                } else if let Some(session) = agents.get_mut(&chat_session_id_for_stream)
                     && session.active_pid == Some(spawned_pid)
                 {
                     // Only clear active_pid if it still matches the process that
                     // exited. A new turn may have already replaced it.
                     session.active_pid = None;
                     // Process died — clear persistent session so the next turn
-                    // spawns a fresh one.
+                    // spawns a fresh one. Drop the agent-MCP bridge alongside
+                    // (RAII unlinks the socket file) so a subsequent spawn
+                    // gets a fresh socket + token rather than reusing a bridge
+                    // whose grandchild is gone.
                     session.persistent_session = None;
+                    session.mcp_bridge = None;
                     ended_own_session = true;
                 }
                 // Close out the agent_sessions row for post-init exits too, so
@@ -1193,7 +1527,9 @@ pub async fn send_chat_message(
                     )
                     .await;
                 }
-                let needs_attention_now = agents.get(&ws_id).is_some_and(|s| s.needs_attention);
+                let needs_attention_now = agents
+                    .get(&chat_session_id_for_stream)
+                    .is_some_and(|s| s.needs_attention);
                 let app_state = app.state::<crate::state::AppState>();
                 if !needs_attention_now && !notified_via_result {
                     let event = if exit_code == Some(0) {
@@ -1266,6 +1602,7 @@ pub async fn send_chat_message(
                     let msg = ChatMessage {
                         id: msg_id.clone(),
                         workspace_id: ws_id.clone(),
+                        chat_session_id: chat_session_id_for_stream.clone(),
                         role: ChatRole::Assistant,
                         content: full_text,
                         cost_usd: None,
@@ -1316,6 +1653,7 @@ pub async fn send_chat_message(
                 let checkpoint = ConversationCheckpoint {
                     id: uuid::Uuid::new_v4().to_string(),
                     workspace_id: ws_id.clone(),
+                    chat_session_id: chat_session_id_for_stream.clone(),
                     message_id: anchor_msg_id.to_string(),
                     commit_hash: None,
                     has_file_state: false, // Updated after snapshot succeeds
@@ -1342,6 +1680,7 @@ pub async fn send_chat_message(
                     cp_payload.has_file_state = has_files;
                     let payload = serde_json::json!({
                         "workspace_id": &ws_id,
+                        "chat_session_id": &chat_session_id_for_stream,
                         "checkpoint": &cp_payload,
                     });
                     let _ = app.emit("checkpoint-created", &payload);
@@ -1350,45 +1689,65 @@ pub async fn send_chat_message(
 
             let payload = AgentStreamPayload {
                 workspace_id: ws_id.clone(),
+                chat_session_id: chat_session_id_for_stream.clone(),
                 event,
             };
             let _ = app.emit("agent-stream", &payload);
-
-            // Send attention notification AFTER emitting the event to the
-            // frontend — this gives the UI time to update before the system
-            // notification / sound fires, so the badge is already visible
-            // when the user sees the notification.
-            if let Some(kind) = pending_attention_kind {
-                crate::tray::notify_attention(&app, &ws_id, kind);
-            }
         }
     });
 
     Ok(())
 }
 
+/// What `take_stop_snapshot` hands back: permissions to deny, pid to kill,
+/// and the session id to mark ended in the DB.
+type StopSnapshot = (
+    Option<(Arc<PersistentSession>, Vec<PendingPermission>)>,
+    Option<u32>,
+    Option<String>,
+);
+
+/// Mutations performed on an agent session when the user clicks Stop.
+///
+/// Stop interrupts the in-flight turn — it takes `active_pid` so the caller
+/// can kill the process and drains pending permission requests so the caller
+/// can deny them. It deliberately does NOT clear `session_id`, `turn_count`,
+/// or `persistent_session`: those are owned by `reset_agent_session` and
+/// `clear_conversation`. Preserving them is what lets the next
+/// `send_chat_message` resume via `--resume` instead of spawning a fresh
+/// conversation. The now-dead `persistent_session` handle is fine — on the
+/// next turn `send_turn` detects the broken pipe and respawns with
+/// `--resume <session_id>`.
+fn take_stop_snapshot(session: &mut AgentSessionState) -> StopSnapshot {
+    let drained = drain_pending_permissions(session);
+    let ended_sid = Some(session.session_id.clone());
+    let pid = session.active_pid.take();
+    session.needs_attention = false;
+    session.attention_kind = None;
+    (drained, pid, ended_sid)
+}
+
 #[tauri::command]
 pub async fn stop_agent(
-    workspace_id: String,
+    session_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let chat_session_id = session_id;
+    let chat_session = db
+        .get_chat_session(&chat_session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Chat session not found")?;
+    let workspace_id = chat_session.workspace_id.clone();
+
     // Drain pending permissions and snapshot the cleanup state synchronously
     // under the lock; deny sends, the kill, and the DB session-end happen
     // after we release it.
     let (to_deny_stop, pid_to_kill, ended_sid) = {
         let mut agents = state.agents.write().await;
-        match agents.get_mut(&workspace_id) {
-            Some(session) => {
-                let drained = drain_pending_permissions(session);
-                let ended_sid = Some(session.session_id.clone());
-                // Clear persistent session and reset session state so the next
-                // turn starts completely fresh (not --resume with a stale ID).
-                session.persistent_session = None;
-                session.turn_count = 0;
-                session.session_id = String::new();
-                (drained, session.active_pid.take(), ended_sid)
-            }
+        match agents.get_mut(&chat_session_id) {
+            Some(session) => take_stop_snapshot(session),
             None => (None, None, None),
         }
     };
@@ -1400,21 +1759,21 @@ pub async fn stop_agent(
         agent::stop_agent(pid).await?;
     }
 
-    // Clear persisted session from DB too. `stop_agent` aborts an in-flight
-    // turn (SIGTERM on the live pid + deny mid-turn permission prompts), so
-    // the session did not complete successfully — record it as a failure.
-    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    let _ = db.clear_agent_session(&workspace_id);
+    // Stop aborts an in-flight turn but deliberately preserves the persisted
+    // Claude resume UUID and turn count so the next turn can continue the
+    // conversation via `--resume`. Only the agent_sessions audit row is closed
+    // out as a failure.
     if let Some(sid) = ended_sid.as_deref().filter(|s| !s.is_empty()) {
         let _ = db.end_agent_session(sid, false);
     }
 
     crate::tray::rebuild_tray(&app);
 
-    // Log stop message.
+    // Log stop message on this chat session.
     let msg = ChatMessage {
         id: uuid::Uuid::new_v4().to_string(),
         workspace_id,
+        chat_session_id,
         role: ChatRole::System,
         content: "Agent stopped".to_string(),
         cost_usd: None,
@@ -1433,30 +1792,37 @@ pub async fn stop_agent(
 
 #[tauri::command]
 pub async fn reset_agent_session(
-    workspace_id: String,
+    session_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Drain pending permissions under the lock, then remove the session and
-    // capture its id; deny sends + the DB session-end happen after release.
-    let (to_deny_reset, ended_sid) = {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let chat_session_id = session_id;
+
+    // Drain pending permissions under the lock, remove the session, capture
+    // its session_id and any active PID; the deny sends, process kill,
+    // and DB session-end happen after release.
+    let (to_deny_reset, ended_sid, pid_to_kill) = {
         let mut agents = state.agents.write().await;
         let drained = agents
-            .get_mut(&workspace_id)
+            .get_mut(&chat_session_id)
             .and_then(drain_pending_permissions);
-        let ended_sid = agents.remove(&workspace_id).map(|s| s.session_id);
-        (drained, ended_sid)
+        let removed = agents.remove(&chat_session_id);
+        let ended_sid = removed.as_ref().map(|s| s.session_id.clone());
+        let pid_to_kill = removed.and_then(|s| s.active_pid);
+        (drained, ended_sid, pid_to_kill)
     };
 
     if let Some((ref ps, drained)) = to_deny_reset {
         deny_drained_permissions(drained, ps, "Session reset.").await;
     }
+    if let Some(pid) = pid_to_kill {
+        let _ = agent::stop_agent(pid).await;
+    }
 
-    // Clear persisted session so the next turn starts fresh. Reset discards
-    // in-flight state (pending permissions denied with "Session reset."), so
-    // any interrupted turn did not complete — record as a failure.
-    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    db.clear_agent_session(&workspace_id)
+    // Clear persisted claude state so the next turn starts fresh. Reset
+    // discards in-flight state, so record as a failure.
+    db.clear_chat_session_state(&chat_session_id)
         .map_err(|e| e.to_string())?;
     if let Some(sid) = ended_sid.as_deref().filter(|s| !s.is_empty()) {
         let _ = db.end_agent_session(sid, false);
@@ -1468,40 +1834,53 @@ pub async fn reset_agent_session(
 
 #[tauri::command]
 pub async fn list_checkpoints(
-    workspace_id: String,
+    session_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConversationCheckpoint>, String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    db.list_checkpoints(&workspace_id)
+    db.list_checkpoints_for_session(&session_id)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn rollback_to_checkpoint(
-    workspace_id: String,
+    session_id: String,
     checkpoint_id: String,
     restore_files: bool,
     state: State<'_, AppState>,
 ) -> Result<Vec<ChatMessage>, String> {
-    // Guard: reject if agent is running.
-    {
-        let agents = state.agents.read().await;
-        if let Some(session) = agents.get(&workspace_id)
-            && session.active_pid.is_some()
-        {
-            return Err("Cannot rollback while the agent is running".into());
-        }
-    }
-
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let chat_session_id = session_id;
 
     // Load the target checkpoint and verify ownership.
     let checkpoint = db
         .get_checkpoint(&checkpoint_id)
         .map_err(|e| e.to_string())?
         .ok_or("Checkpoint not found")?;
-    if checkpoint.workspace_id != workspace_id {
-        return Err("Checkpoint does not belong to this workspace".into());
+    // Scope the rollback to the given session — prevents a rollback in tab A
+    // from pruning messages in tab B. For pre-v20 checkpoints (empty
+    // chat_session_id) we accept the caller's chat_session_id as
+    // authoritative, since the backfill would have assigned all such
+    // messages to a single session.
+    if !checkpoint.chat_session_id.is_empty() && checkpoint.chat_session_id != chat_session_id {
+        return Err("Checkpoint does not belong to this session".into());
+    }
+
+    // Look up the workspace for the file-restore branch below.
+    let chat_session = db
+        .get_chat_session(&chat_session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Chat session not found")?;
+    let workspace_id = chat_session.workspace_id.clone();
+
+    // Guard: reject if agent is running.
+    {
+        let agents = state.agents.read().await;
+        if let Some(session) = agents.get(&chat_session_id)
+            && session.active_pid.is_some()
+        {
+            return Err("Cannot rollback while the agent is running".into());
+        }
     }
 
     // Attempt file restore BEFORE any destructive DB writes so that a
@@ -1532,27 +1911,27 @@ pub async fn rollback_to_checkpoint(
     }
 
     // Now perform the destructive DB writes — safe because the risky git
-    // operation (if requested) has already succeeded above.
-    db.delete_messages_after(&workspace_id, &checkpoint.message_id)
+    // operation (if requested) has already succeeded above. Scoped to this
+    // session so sibling tabs are untouched.
+    db.delete_session_messages_after(&chat_session_id, &checkpoint.message_id)
         .map_err(|e| e.to_string())?;
-    db.delete_checkpoints_after(&workspace_id, checkpoint.turn_index)
+    db.delete_session_checkpoints_after(&chat_session_id, checkpoint.turn_index)
         .map_err(|e| e.to_string())?;
 
-    // Reset agent session so the next turn starts fresh. Rollback discards
-    // the session's prior work, so it did not run to completion — record as
-    // a failure.
+    // Reset the per-session agent state so the next turn starts fresh.
+    // Rollback discards the session's prior work — record as a failure.
     let ended_sid = {
         let mut agents = state.agents.write().await;
-        agents.remove(&workspace_id).map(|s| s.session_id)
+        agents.remove(&chat_session_id).map(|s| s.session_id)
     };
     if let Some(sid) = ended_sid.as_deref() {
         let _ = db.end_agent_session(sid, false);
     }
-    db.clear_agent_session(&workspace_id)
+    db.clear_chat_session_state(&chat_session_id)
         .map_err(|e| e.to_string())?;
 
-    // Return the truncated message list.
-    db.list_chat_messages(&workspace_id)
+    // Return the truncated message list for this session.
+    db.list_chat_messages_for_session(&chat_session_id)
         .map_err(|e| e.to_string())
 }
 
@@ -1560,21 +1939,27 @@ pub async fn rollback_to_checkpoint(
 /// to the merge-base (initial state before any agent work).
 #[tauri::command]
 pub async fn clear_conversation(
-    workspace_id: String,
+    session_id: String,
     restore_files: bool,
     state: State<'_, AppState>,
 ) -> Result<Vec<ChatMessage>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let chat_session_id = session_id;
+    let chat_session = db
+        .get_chat_session(&chat_session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Chat session not found")?;
+    let workspace_id = chat_session.workspace_id.clone();
+
     // Guard: reject if agent is running.
     {
         let agents = state.agents.read().await;
-        if let Some(session) = agents.get(&workspace_id)
+        if let Some(session) = agents.get(&chat_session_id)
             && session.active_pid.is_some()
         {
             return Err("Cannot clear conversation while the agent is running".into());
         }
     }
-
-    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
 
     // Optionally restore files to the merge-base before clearing.
     if restore_files {
@@ -1592,9 +1977,12 @@ pub async fn clear_conversation(
             .iter()
             .find(|r| r.id == ws.repository_id)
             .ok_or("Repository not found")?;
-        let base = git::default_branch(&repo.path)
-            .await
-            .map_err(|e| e.to_string())?;
+        let base = match repo.base_branch.as_deref() {
+            Some(b) => b.to_string(),
+            None => git::default_branch(&repo.path, repo.default_remote.as_deref())
+                .await
+                .map_err(|e| e.to_string())?,
+        };
         let merge_base = claudette::diff::merge_base(wt, &ws.branch_name, &base)
             .await
             .map_err(|e| e.to_string())?;
@@ -1603,27 +1991,27 @@ pub async fn clear_conversation(
             .map_err(|e| e.to_string())?;
     }
 
-    // Delete all messages and checkpoints.
-    db.delete_chat_messages_for_workspace(&workspace_id)
+    // Delete all messages and checkpoints for this session.
+    db.delete_chat_messages_for_session(&chat_session_id)
         .map_err(|e| e.to_string())?;
     // Checkpoints cascade via FK, but delete explicitly for clarity.
-    db.delete_checkpoints_after(&workspace_id, -1)
+    db.delete_session_checkpoints_after(&chat_session_id, -1)
         .map_err(|e| e.to_string())?;
 
     // Reset agent session. Clearing the conversation discards the session's
     // prior work, so it did not run to completion — record as a failure.
     let ended_sid = {
         let mut agents = state.agents.write().await;
-        agents.remove(&workspace_id).map(|s| s.session_id)
+        agents.remove(&chat_session_id).map(|s| s.session_id)
     };
     if let Some(sid) = ended_sid.as_deref() {
         let _ = db.end_agent_session(sid, false);
     }
-    db.clear_agent_session(&workspace_id)
+    db.clear_chat_session_state(&chat_session_id)
         .map_err(|e| e.to_string())?;
 
     // Return empty list.
-    db.list_chat_messages(&workspace_id)
+    db.list_chat_messages_for_session(&chat_session_id)
         .map_err(|e| e.to_string())
 }
 
@@ -1642,11 +2030,11 @@ pub async fn save_turn_tool_activities(
 
 #[tauri::command]
 pub async fn load_completed_turns(
-    workspace_id: String,
+    session_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<CompletedTurnData>, String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    db.list_completed_turns(&workspace_id)
+    db.list_completed_turns_for_session(&session_id)
         .map_err(|e| e.to_string())
 }
 
@@ -1732,14 +2120,48 @@ async fn try_auto_rename(
     }
 }
 
+/// Background task: ask Haiku for a short session name and persist it. All
+/// failures are non-fatal — if Haiku is unavailable or the user has already
+/// renamed the session, the `New chat` default stays in place.
+async fn try_generate_session_name(
+    session_id: &str,
+    worktree_path: &str,
+    prompt: &str,
+    db_path: &std::path::Path,
+    app: &AppHandle,
+    ws_env: &WorkspaceEnv,
+) {
+    let name = match agent::generate_session_name(prompt, worktree_path, Some(ws_env)).await {
+        Ok(n) => n,
+        Err(_) => return,
+    };
+
+    let db = match Database::open(db_path) {
+        Ok(db) => db,
+        Err(_) => return,
+    };
+
+    // The helper only writes when `name_edited == 0`, so a concurrent user
+    // rename between spawn and write is handled correctly — we become a no-op.
+    if let Ok(true) = db.set_session_name_from_haiku(session_id, &name) {
+        let payload = serde_json::json!({
+            "session_id": session_id,
+            "name": name,
+        });
+        let _ = app.emit("session-renamed", &payload);
+    }
+}
+
 #[tauri::command]
 pub async fn clear_attention(
-    workspace_id: String,
+    session_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let chat_session_id = session_id;
+
     let mut agents = state.agents.write().await;
-    if let Some(session) = agents.get_mut(&workspace_id)
+    if let Some(session) = agents.get_mut(&chat_session_id)
         && session.needs_attention
     {
         session.needs_attention = false;
@@ -1756,7 +2178,7 @@ pub async fn clear_attention(
 /// `call(updatedInput)` which produces the real tool_result.
 #[tauri::command]
 pub async fn submit_agent_answer(
-    workspace_id: String,
+    session_id: String,
     tool_use_id: String,
     answers: std::collections::HashMap<String, String>,
     annotations: Option<serde_json::Value>,
@@ -1767,7 +2189,7 @@ pub async fn submit_agent_answer(
     // stay so the user (or the correct submit_* command) can still see it.
     let (pending, ps) = {
         let mut agents = state.agents.write().await;
-        let session = agents.get_mut(&workspace_id).ok_or("Session not found")?;
+        let session = agents.get_mut(&session_id).ok_or("Session not found")?;
         // 1. Persistent session must be alive — otherwise nobody is reading
         //    stdin and the response would be discarded.
         let ps = session
@@ -1798,6 +2220,7 @@ pub async fn submit_agent_answer(
             .expect("checked above");
         session.needs_attention = false;
         session.attention_kind = None;
+        session.attention_notification_sent = false;
         (pending, ps)
     };
 
@@ -1829,7 +2252,7 @@ pub async fn submit_agent_answer(
 /// `approved=false` → deny with the given reason (or a sensible default).
 #[tauri::command]
 pub async fn submit_plan_approval(
-    workspace_id: String,
+    session_id: String,
     tool_use_id: String,
     approved: bool,
     reason: Option<String>,
@@ -1839,7 +2262,7 @@ pub async fn submit_plan_approval(
     // function for the rationale.
     let (pending, ps) = {
         let mut agents = state.agents.write().await;
-        let session = agents.get_mut(&workspace_id).ok_or("Session not found")?;
+        let session = agents.get_mut(&session_id).ok_or("Session not found")?;
         let ps = session
             .persistent_session
             .clone()
@@ -1866,6 +2289,7 @@ pub async fn submit_plan_approval(
             .expect("checked above");
         session.needs_attention = false;
         session.attention_kind = None;
+        session.attention_notification_sent = false;
         (pending, ps)
     };
 
@@ -1931,19 +2355,19 @@ async fn deny_drained_permissions(
     }
 }
 
-/// Load attachment metadata for a workspace's chat history.
+/// Load attachment metadata for a single session's chat history.
 ///
 /// Images (< ~5 MB base64) include inline data for immediate rendering.
 /// Documents (PDFs, potentially 20+ MB) omit the body — use
 /// [`load_attachment_data`] to fetch on demand.
 #[tauri::command]
-pub async fn load_attachments_for_workspace(
-    workspace_id: String,
+pub async fn load_attachments_for_session(
+    session_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<AttachmentResponse>, String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     let messages = db
-        .list_chat_messages(&workspace_id)
+        .list_chat_messages_for_session(&session_id)
         .map_err(|e| e.to_string())?;
     let message_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
     let att_map = db
@@ -1976,6 +2400,8 @@ pub async fn load_attachments_for_workspace(
                 width: a.width,
                 height: a.height,
                 size_bytes: a.size_bytes,
+                origin: a.origin,
+                tool_use_id: a.tool_use_id,
             });
         }
     }
@@ -2079,6 +2505,8 @@ pub async fn read_file_as_base64(path: String) -> Result<AttachmentResponse, Str
             width: None,
             height: None,
             size_bytes,
+            origin: claudette::model::AttachmentOrigin::User,
+            tool_use_id: None,
         })
     } else {
         // Unknown extension — attempt to read as text.
@@ -2099,6 +2527,8 @@ pub async fn read_file_as_base64(path: String) -> Result<AttachmentResponse, Str
                     width: None,
                     height: None,
                     size_bytes,
+                    origin: claudette::model::AttachmentOrigin::User,
+                    tool_use_id: None,
                 })
             }
             Err(_) => Err(format!("Unsupported binary file type: .{ext}")),
@@ -2119,6 +2549,204 @@ fn now_iso() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}", dur.as_secs())
+}
+
+/// Overlay live runtime fields (agent_status, needs_attention, attention_kind)
+/// from `AppState.agents` onto a `ChatSession` loaded from the DB. The DB
+/// defaults are `Idle`/`false`/`None`; this replaces them with whatever the
+/// running agent map reports.
+fn hydrate_session(
+    mut session: ChatSession,
+    agents: &std::collections::HashMap<String, AgentSessionState>,
+) -> ChatSession {
+    if let Some(agent) = agents.get(&session.id) {
+        session.agent_status = if agent.active_pid.is_some() {
+            claudette::model::AgentStatus::Running
+        } else {
+            claudette::model::AgentStatus::Idle
+        };
+        session.needs_attention = agent.needs_attention;
+        session.attention_kind = agent.attention_kind.map(|k| match k {
+            crate::state::AttentionKind::Ask => claudette::model::AttentionKind::Ask,
+            crate::state::AttentionKind::Plan => claudette::model::AttentionKind::Plan,
+        });
+    }
+    session
+}
+
+#[tauri::command]
+pub async fn list_chat_sessions(
+    workspace_id: String,
+    include_archived: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChatSession>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let sessions = db
+        .list_chat_sessions_for_workspace(&workspace_id, include_archived.unwrap_or(false))
+        .map_err(|e| e.to_string())?;
+    let agents = state.agents.read().await;
+    Ok(sessions
+        .into_iter()
+        .map(|s| hydrate_session(s, &agents))
+        .collect())
+}
+
+#[tauri::command]
+pub async fn get_chat_session(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<ChatSession, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let session = db
+        .get_chat_session(&session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Session not found")?;
+    let agents = state.agents.read().await;
+    Ok(hydrate_session(session, &agents))
+}
+
+#[tauri::command]
+pub async fn create_chat_session(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> Result<ChatSession, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let session = db
+        .create_chat_session(&workspace_id)
+        .map_err(|e| e.to_string())?;
+    let agents = state.agents.read().await;
+    Ok(hydrate_session(session, &agents))
+}
+
+#[tauri::command]
+pub async fn rename_chat_session(
+    session_id: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let capped = claudette::model::validate_session_name(&name).map_err(String::from)?;
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.rename_chat_session(&session_id, &capped)
+        .map_err(|e| e.to_string())
+}
+
+/// Archive a chat session (soft-delete). Stops its running agent first, then
+/// marks the row archived. If this was the workspace's last active session,
+/// a fresh `New chat` session is created so every workspace always has ≥1
+/// active session. Returns the newly created session in that case, `None`
+/// otherwise — the frontend uses the return value to select the new tab.
+#[tauri::command]
+pub async fn archive_chat_session(
+    app: AppHandle,
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<ChatSession>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let session = db
+        .get_chat_session(&session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Session not found")?;
+    let workspace_id = session.workspace_id.clone();
+
+    // Stop and remove the live agent for this session.
+    // Capture the PID under the lock, then drop the lock before the async stop.
+    let pid_to_stop = {
+        let mut agents = state.agents.write().await;
+        agents
+            .remove(&session_id)
+            .and_then(|mut agent| agent.active_pid.take())
+    };
+    if let Some(pid) = pid_to_stop {
+        let _ = claudette::agent::stop_agent(pid).await;
+    }
+
+    let fresh = db
+        .archive_chat_session_ensuring_active(&session_id, &workspace_id)
+        .map_err(|e| e.to_string())?;
+
+    // Rebuild the tray so per-workspace running/attention aggregates reflect
+    // the removed agent (and, if this was the last session, the auto-created
+    // replacement). Without this, the tray can keep showing stale state until
+    // another action triggers a rebuild.
+    crate::tray::rebuild_tray(&app);
+
+    if let Some(fresh) = fresh {
+        let agents = state.agents.read().await;
+        return Ok(Some(hydrate_session(fresh, &agents)));
+    }
+
+    Ok(None)
+}
+
+#[cfg(test)]
+mod mcp_inject_tests {
+    use super::inject_claudette_mcp_entry;
+    use claudette::agent_mcp::bridge::BridgeHandle;
+
+    fn handle() -> BridgeHandle {
+        BridgeHandle {
+            socket_addr: "/tmp/cmcp/abc.sock".into(),
+            token: "secret".into(),
+        }
+    }
+
+    #[test]
+    fn inject_into_empty_config_creates_wrapper() {
+        let merged = inject_claudette_mcp_entry(None, &handle())
+            .unwrap()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert!(v["mcpServers"]["claudette"]["command"].is_string());
+        let args = v["mcpServers"]["claudette"]["args"].as_array().unwrap();
+        assert_eq!(args[0], "--agent-mcp");
+        let env = &v["mcpServers"]["claudette"]["env"];
+        assert_eq!(env["CLAUDETTE_MCP_SOCKET"], "/tmp/cmcp/abc.sock");
+        assert_eq!(env["CLAUDETTE_MCP_TOKEN"], "secret");
+    }
+
+    #[test]
+    fn inject_preserves_existing_servers() {
+        let base = serde_json::json!({
+            "mcpServers": {
+                "playwright": {"type": "stdio", "command": "npx", "args": ["pw"]}
+            }
+        })
+        .to_string();
+        let merged = inject_claudette_mcp_entry(Some(base), &handle())
+            .unwrap()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert!(v["mcpServers"]["playwright"]["command"].is_string());
+        assert_eq!(
+            v["mcpServers"]["claudette"]["env"]["CLAUDETTE_MCP_TOKEN"],
+            "secret"
+        );
+    }
+
+    #[test]
+    fn inject_overwrites_collision_with_claudette_name() {
+        // If a user happened to define an MCP server called `claudette`, our
+        // injected entry takes precedence — it's not user-configurable and
+        // we control the wire-up.
+        let base = serde_json::json!({
+            "mcpServers": {
+                "claudette": {"type": "stdio", "command": "rogue"}
+            }
+        })
+        .to_string();
+        let merged = inject_claudette_mcp_entry(Some(base), &handle())
+            .unwrap()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(v["mcpServers"]["claudette"]["args"][0], "--agent-mcp");
+        assert_ne!(v["mcpServers"]["claudette"]["command"], "rogue");
+    }
+
+    #[test]
+    fn inject_rejects_malformed_base_json() {
+        let res = inject_claudette_mcp_entry(Some("not-json".into()), &handle());
+        assert!(res.is_err());
+    }
 }
 
 #[cfg(test)]
@@ -2385,5 +3013,83 @@ mod tests {
         let input = json!({});
         let response = build_permission_response(&s(&["*", "Read"]), false, false, "Edit", &input);
         assert_eq!(response["behavior"], "deny");
+    }
+
+    use super::take_stop_snapshot;
+    use crate::state::AgentSessionState;
+    use std::collections::HashMap;
+
+    fn fresh_session(session_id: &str, turn_count: u32, pid: Option<u32>) -> AgentSessionState {
+        AgentSessionState {
+            workspace_id: String::new(),
+            session_id: session_id.to_string(),
+            turn_count,
+            active_pid: pid,
+            custom_instructions: None,
+            needs_attention: false,
+            attention_kind: None,
+            attention_notification_sent: false,
+            persistent_session: None,
+            mcp_config_dirty: false,
+            session_plan_mode: false,
+            session_allowed_tools: Vec::new(),
+            session_disable_1m_context: false,
+            pending_permissions: HashMap::new(),
+            session_exited_plan: false,
+            session_resolved_env: Default::default(),
+            mcp_bridge: None,
+            last_user_msg_id: None,
+        }
+    }
+
+    #[test]
+    fn take_stop_snapshot_preserves_session_identity_for_resume() {
+        // Regression guard for the bug where Stop wiped session_id/turn_count,
+        // causing the next send to start a brand-new conversation instead of
+        // resuming. Stop must leave those fields intact so send_chat_message
+        // can spawn the CLI with --resume <session_id>.
+        let mut session = fresh_session("sess-abc", 7, Some(12345));
+
+        let (drained, pid, ended_sid) = take_stop_snapshot(&mut session);
+
+        // Caller receives the pid to kill and the sid to log.
+        assert!(drained.is_none(), "no pending permissions to drain");
+        assert_eq!(pid, Some(12345));
+        assert_eq!(ended_sid.as_deref(), Some("sess-abc"));
+
+        // Session identity is preserved — this is the fix.
+        assert_eq!(session.session_id, "sess-abc");
+        assert_eq!(session.turn_count, 7);
+        assert!(session.persistent_session.is_none());
+
+        // active_pid is consumed so the caller can kill without racing.
+        assert!(session.active_pid.is_none());
+    }
+
+    #[test]
+    fn take_stop_snapshot_is_idempotent_when_already_stopped() {
+        // A double-stop (e.g. user clicks Stop twice) must not corrupt state.
+        let mut session = fresh_session("sess-abc", 7, None);
+
+        let (_, pid, ended_sid) = take_stop_snapshot(&mut session);
+
+        assert!(pid.is_none());
+        assert_eq!(ended_sid.as_deref(), Some("sess-abc"));
+        assert_eq!(session.session_id, "sess-abc");
+        assert_eq!(session.turn_count, 7);
+    }
+
+    #[test]
+    fn take_stop_snapshot_clears_attention_flags() {
+        use crate::state::AttentionKind;
+
+        let mut session = fresh_session("sess-abc", 3, Some(999));
+        session.needs_attention = true;
+        session.attention_kind = Some(AttentionKind::Ask);
+
+        take_stop_snapshot(&mut session);
+
+        assert!(!session.needs_attention);
+        assert!(session.attention_kind.is_none());
     }
 }

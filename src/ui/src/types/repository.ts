@@ -10,6 +10,8 @@ export interface Repository {
   sort_order: number;
   branch_rename_preferences: string | null;
   setup_script_auto_run: boolean;
+  base_branch: string | null;
+  default_remote: string | null;
   path_valid: boolean;
   /** Non-null when this repo belongs to a remote connection. */
   remote_connection_id: string | null;
@@ -26,6 +28,12 @@ export interface SetupResult {
 
 export interface CreateWorkspaceResult {
   workspace: import("./workspace").Workspace;
+  /**
+   * Id of the chat session auto-created alongside the workspace. Use this
+   * when posting initial system messages — after the multi-session refactor,
+   * chat state is keyed by session id, not workspace id.
+   */
+  default_session_id: string;
   setup_result: SetupResult | null;
 }
 

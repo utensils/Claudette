@@ -2,9 +2,13 @@ use std::collections::HashMap;
 use std::io::Write as IoWrite;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use claudette::env_provider::EnvCache;
+use claudette::env_provider::types::EnvMap;
+use claudette::plugin_runtime::PluginRegistry;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
@@ -22,13 +26,34 @@ pub struct ServerState {
     pub agents: RwLock<HashMap<String, AgentSessionState>>,
     pub ptys: RwLock<HashMap<u64, PtyHandle>>,
     pub next_pty_id: AtomicU64,
+    /// Plugin registry for env-provider (and SCM) dispatch. `None` when
+    /// the host opted out of plugin discovery — the handler falls back to
+    /// a no-op resolution path so existing tests (and bare deployments
+    /// without bundled plugins) keep working.
+    pub plugins: Option<RwLock<PluginRegistry>>,
+    /// mtime-keyed env cache shared across all env-provider resolutions.
+    /// Wrapped in an `Arc` to match the Tauri-side `AppState` shape and
+    /// keep ownership cheap when the handler hands a reference into
+    /// `resolve_with_registry`.
+    pub env_cache: Arc<EnvCache>,
 }
 
 pub struct AgentSessionState {
+    /// The workspace this session belongs to.
+    pub workspace_id: String,
+    /// Claude CLI `--resume` UUID for this agent session. This is the CLI
+    /// session ID; the `chat_sessions.id` that keys `ServerState.agents`
+    /// is referred to as `chat_session_id` to keep the two distinct.
     pub session_id: String,
     pub turn_count: u32,
     pub active_pid: Option<u32>,
     pub custom_instructions: Option<String>,
+    /// Env baked into the agent's spawn at the start of this session.
+    /// Subsequent turns compare freshly-resolved env against this
+    /// snapshot; on drift, the session is evicted so the next turn
+    /// respawns with the new env. Mirrors `AppState::session_resolved_env`
+    /// on the Tauri side.
+    pub session_resolved_env: EnvMap,
 }
 
 pub struct PtyHandle {
@@ -38,6 +63,9 @@ pub struct PtyHandle {
 }
 
 impl ServerState {
+    /// Construct a `ServerState` without plugin discovery. Used by tests
+    /// that don't exercise the env-provider path; production callers
+    /// should use `new_with_plugins`.
     pub fn new(db_path: PathBuf, worktree_base_dir: PathBuf) -> Self {
         Self {
             db_path,
@@ -45,6 +73,28 @@ impl ServerState {
             agents: RwLock::new(HashMap::new()),
             ptys: RwLock::new(HashMap::new()),
             next_pty_id: AtomicU64::new(1),
+            plugins: None,
+            env_cache: Arc::new(EnvCache::new()),
+        }
+    }
+
+    /// Construct a `ServerState` with a discovered plugin registry, so
+    /// agents launched via the remote server pick up `.envrc` / mise /
+    /// dotenv / nix-devshell env activation the same way the Tauri path
+    /// does.
+    pub fn new_with_plugins(
+        db_path: PathBuf,
+        worktree_base_dir: PathBuf,
+        plugins: PluginRegistry,
+    ) -> Self {
+        Self {
+            db_path,
+            worktree_base_dir: RwLock::new(worktree_base_dir),
+            agents: RwLock::new(HashMap::new()),
+            ptys: RwLock::new(HashMap::new()),
+            next_pty_id: AtomicU64::new(1),
+            plugins: Some(RwLock::new(plugins)),
+            env_cache: Arc::new(EnvCache::new()),
         }
     }
 

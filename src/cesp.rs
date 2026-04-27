@@ -6,6 +6,11 @@ use std::time::{Duration, Instant};
 use rand::seq::SliceRandom;
 
 use crate::model::cesp::{CespManifest, CespSound, InstalledPack, InstalledPackMeta, RegistryPack};
+// Sound-playback spawns only live under macOS/Linux cfg branches — the
+// trait import is likewise macOS/Linux-only so Windows doesn't flag it
+// as unused.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use crate::process::CommandWindowExt as _;
 
 const MANIFEST_FILE: &str = "openpeon.json";
 const META_FILE: &str = "_meta.json";
@@ -244,7 +249,7 @@ fn extract_tarball(data: &[u8], target_dir: &Path, source_path: &str) -> Result<
         for component in relative.components() {
             match component {
                 std::path::Component::Normal(_) => {}
-                _ => return Err(format!("Path traversal detected: {}", inner_str)),
+                _ => return Err(format!("Path traversal detected: {inner_str}")),
             }
         }
 
@@ -420,6 +425,7 @@ pub fn play_audio_file(path: &Path, volume: f64) {
             .to_lowercase();
         let result = if ext == "ogg" || ext == "oga" {
             std::process::Command::new("ffplay")
+                .no_console_window()
                 .args(["-nodisp", "-autoexit", "-volume"])
                 .arg(format!("{}", (volume * 100.0) as u32))
                 .arg(path)
@@ -428,6 +434,7 @@ pub fn play_audio_file(path: &Path, volume: f64) {
                 .spawn()
         } else {
             std::process::Command::new("afplay")
+                .no_console_window()
                 .arg("-v")
                 .arg(format!("{volume}"))
                 .arg(path)
@@ -447,6 +454,7 @@ pub fn play_audio_file(path: &Path, volume: f64) {
             .to_lowercase();
         let result = if ext == "mp3" {
             std::process::Command::new("ffplay")
+                .no_console_window()
                 .args(["-nodisp", "-autoexit", "-volume"])
                 .arg(format!("{}", (volume * 100.0) as u32))
                 .arg(path)
@@ -456,12 +464,14 @@ pub fn play_audio_file(path: &Path, volume: f64) {
         } else {
             let pa_volume = (volume * 65536.0) as u32;
             std::process::Command::new("paplay")
+                .no_console_window()
                 .arg("--volume")
                 .arg(pa_volume.to_string())
                 .arg(path)
                 .spawn()
                 .or_else(|_| {
                     std::process::Command::new("ffplay")
+                        .no_console_window()
                         .args(["-nodisp", "-autoexit", "-volume"])
                         .arg(format!("{}", (volume * 100.0) as u32))
                         .arg(path)
@@ -481,6 +491,7 @@ pub fn play_audio_file(path: &Path, volume: f64) {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn spawn_and_reap(mut child: std::process::Child) {
     std::thread::spawn(move || {
         let _ = child.wait();

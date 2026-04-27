@@ -4,9 +4,20 @@ export type {
   WorkspaceStatus,
   AgentStatus,
 } from "./workspace";
-export type { ChatMessage, ChatRole, ChatAttachment, AttachmentInput, PendingAttachment } from "./chat";
+export type {
+  ChatMessage,
+  ChatRole,
+  ChatAttachment,
+  AttachmentInput,
+  PendingAttachment,
+  ChatSession,
+  SessionStatus,
+  SessionAttentionKind,
+  SessionAgentStatus,
+} from "./chat";
 export type {
   DiffFile,
+  DiffFileTab,
   DiffLayer,
   FileStatus,
   DiffViewMode,
@@ -18,6 +29,11 @@ export type {
 } from "./diff";
 export type {
   TerminalTab,
+  TerminalLeafPane,
+  TerminalSplitPane,
+  TerminalPaneNode,
+  TerminalPaneNodeId,
+  TerminalSplitDirection,
   WorkspaceCommandState,
   CommandEvent,
   SetupResult,

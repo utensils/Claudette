@@ -5,6 +5,7 @@ use std::path::Path;
 use tokio::process::Command;
 
 use crate::model::CheckpointFile;
+use crate::process::CommandWindowExt as _;
 
 /// Maximum file size to include in a snapshot (10 MB).
 const MAX_SNAPSHOT_FILE_SIZE: u64 = 10 * 1024 * 1024;
@@ -43,7 +44,8 @@ impl From<std::io::Error> for SnapshotError {
 /// Enumerate all files in a worktree that git tracks or would track
 /// (respects .gitignore). Returns NUL-separated paths.
 async fn list_worktree_files(worktree_path: &str) -> Result<Vec<String>, SnapshotError> {
-    let output = Command::new("git")
+    let output = Command::new(crate::git::resolve_git_path_blocking())
+        .no_console_window()
         .args(["-C", worktree_path])
         .args([
             "ls-files",
@@ -270,22 +272,42 @@ mod tests {
     async fn setup_test_repo() -> TempDir {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
-        Command::new("git")
+        Command::new(crate::git::resolve_git_path_blocking())
+            .no_console_window()
             .args(["init", path])
             .output()
             .await
             .unwrap();
-        Command::new("git")
+        Command::new(crate::git::resolve_git_path_blocking())
+            .no_console_window()
             .args(["-C", path, "config", "user.email", "test@test.com"])
             .output()
             .await
             .unwrap();
-        Command::new("git")
+        Command::new(crate::git::resolve_git_path_blocking())
+            .no_console_window()
             .args(["-C", path, "config", "user.name", "Test"])
             .output()
             .await
             .unwrap();
         dir
+    }
+
+    /// Return a fresh SQLite DB in a sibling tempdir to the worktree,
+    /// matching production layout (the app's DB lives under
+    /// `~/.claudette/`, never inside a managed worktree). Putting the
+    /// test DB *inside* `setup_test_repo`'s worktree would make
+    /// `restore_snapshot` — which lists and deletes every non-snapshot
+    /// file under the worktree — try to delete `test.db` while the test
+    /// still holds an open rusqlite connection to it. On Windows that
+    /// triggers `ERROR_USER_MAPPED_FILE` (1224) because SQLite
+    /// memory-maps part of the DB; on Unix the unlink silently
+    /// succeeds and masks the fact that the test was doing something
+    /// unrealistic. Either way, the DB doesn't belong in the worktree.
+    fn make_db_outside_worktree() -> (TempDir, std::path::PathBuf) {
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("test.db");
+        (db_dir, db_path)
     }
 
     #[tokio::test]
@@ -297,7 +319,8 @@ mod tests {
         tokio::fs::write(dir.path().join("hello.txt"), b"hello")
             .await
             .unwrap();
-        Command::new("git")
+        Command::new(crate::git::resolve_git_path_blocking())
+            .no_console_window()
             .args(["-C", dir_str, "add", "hello.txt"])
             .output()
             .await
@@ -352,8 +375,10 @@ mod tests {
         INSERT INTO repositories (id, name, path) VALUES ('r1', 'test-repo', '/tmp/test'); \
         INSERT INTO workspaces (id, repository_id, name, branch_name, status) \
         VALUES ('ws1', 'r1', 'test', 'main', 'active'); \
-        INSERT INTO conversation_checkpoints (id, workspace_id, message_id, turn_index, message_count) \
-        VALUES ('cp1', 'ws1', 'm1', 0, 0);";
+        INSERT INTO chat_sessions (id, workspace_id, name, sort_order, status) \
+        VALUES ('s1', 'ws1', 'Main', 0, 'active'); \
+        INSERT INTO conversation_checkpoints (id, workspace_id, chat_session_id, message_id, turn_index, message_count) \
+        VALUES ('cp1', 'ws1', 's1', 'm1', 0, 0);";
 
     #[tokio::test]
     async fn test_save_and_restore_roundtrip() {
@@ -372,7 +397,7 @@ mod tests {
             .unwrap();
 
         // Save snapshot to DB
-        let db_path = dir.path().join("test.db");
+        let (_db_dir, db_path) = make_db_outside_worktree();
         let db = crate::db::Database::open(&db_path).unwrap();
         db.execute_batch(TEST_SEED_SQL).unwrap();
 
@@ -420,7 +445,7 @@ mod tests {
             .await
             .unwrap();
 
-        let db_path = dir.path().join("test.db");
+        let (_db_dir, db_path) = make_db_outside_worktree();
         let db = crate::db::Database::open(&db_path).unwrap();
         db.execute_batch(TEST_SEED_SQL).unwrap();
 
@@ -448,7 +473,7 @@ mod tests {
             .await
             .unwrap();
 
-        let db_path = dir.path().join("test.db");
+        let (_db_dir, db_path) = make_db_outside_worktree();
         let db = crate::db::Database::open(&db_path).unwrap();
         db.execute_batch(TEST_SEED_SQL).unwrap();
 
@@ -483,7 +508,7 @@ mod tests {
             .await
             .unwrap();
 
-        let db_path = dir.path().join("test.db");
+        let (_db_dir, db_path) = make_db_outside_worktree();
         let db = crate::db::Database::open(&db_path).unwrap();
         db.execute_batch(TEST_SEED_SQL).unwrap();
 

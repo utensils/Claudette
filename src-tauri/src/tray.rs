@@ -457,8 +457,11 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str, kind: AttentionKind
                 .ok()
                 .and_then(|rs| rs.into_iter().find(|r| r.id == ws.repository_id));
             let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
-            // notify_attention is sync — can't call async git::default_branch().
-            claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, "main".into())
+            let default_branch = repo
+                .as_ref()
+                .and_then(|r| r.base_branch.clone())
+                .unwrap_or_else(|| "main".into());
+            claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, default_branch)
         } else {
             claudette::env::WorkspaceEnv {
                 workspace_name: ws_name.clone(),
@@ -593,10 +596,17 @@ fn build_tray_menu_with_db(app: &AppHandle, db: &Database) -> Result<Menu<tauri:
         items.push(Box::new(header));
 
         for ws in ws_list {
-            let session = agents.get(&ws.id);
-            let is_running = session.is_some_and(|s| s.active_pid.is_some());
-            let needs_input = session.is_some_and(|s| s.needs_attention);
-            let attention_kind = session.and_then(|s| s.attention_kind);
+            // Aggregate across all sessions in this workspace.
+            let ws_sessions: Vec<_> = agents
+                .values()
+                .filter(|s| s.workspace_id == ws.id)
+                .collect();
+            let is_running = ws_sessions.iter().any(|s| s.active_pid.is_some());
+            let needs_input = ws_sessions.iter().any(|s| s.needs_attention);
+            let attention_kind = ws_sessions
+                .iter()
+                .find(|s| s.needs_attention)
+                .and_then(|s| s.attention_kind);
             let status = if needs_input {
                 match attention_kind {
                     Some(crate::state::AttentionKind::Plan) => "ℹ️ Needs Input",
@@ -712,9 +722,9 @@ pub(crate) fn show_and_focus(app: &AppHandle) {
 pub fn navigate_to_attention(app: &AppHandle) {
     let state = app.state::<AppState>();
     if let Ok(agents) = state.agents.try_read()
-        && let Some((ws_id, _)) = agents.iter().find(|(_, s)| s.needs_attention)
+        && let Some(session) = agents.values().find(|s| s.needs_attention)
     {
-        let _ = app.emit("tray-select-workspace", ws_id.clone());
+        let _ = app.emit("tray-select-workspace", session.workspace_id.clone());
     }
 }
 
@@ -726,6 +736,7 @@ mod tests {
 
     fn session(pid: Option<u32>, attention: bool) -> AgentSessionState {
         AgentSessionState {
+            workspace_id: "ws1".to_string(),
             session_id: "test".to_string(),
             turn_count: 1,
             active_pid: pid,
@@ -736,6 +747,7 @@ mod tests {
             } else {
                 None
             },
+            attention_notification_sent: false,
             persistent_session: None,
             mcp_config_dirty: false,
             session_plan_mode: false,
@@ -743,6 +755,9 @@ mod tests {
             session_disable_1m_context: false,
             pending_permissions: HashMap::new(),
             session_exited_plan: false,
+            session_resolved_env: Default::default(),
+            mcp_bridge: None,
+            last_user_msg_id: None,
         }
     }
 
@@ -969,8 +984,9 @@ mod tests {
     fn fresh_state() -> AppState {
         // Lightweight AppState for unit tests — the db path and worktree
         // dir aren't exercised here, only next_tray_seq.
-        let plugins =
-            claudette::scm_provider::PluginRegistry::discover(std::path::Path::new("/nonexistent"));
+        let plugins = claudette::plugin_runtime::PluginRegistry::discover(std::path::Path::new(
+            "/nonexistent",
+        ));
         AppState::new(
             std::path::PathBuf::from(":memory:"),
             std::path::PathBuf::from("/tmp"),

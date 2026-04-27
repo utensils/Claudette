@@ -15,11 +15,12 @@
         "height": 800,
         "center": true,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "dragDropEnabled": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost https://github.com; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost https://github.com; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' blob:; font-src 'self' data:",
       "capabilities": [
         {
           "identifier": "main-capability",
@@ -56,7 +57,9 @@
         "applicationFolderPosition": { "x": 480, "y": 170 },
         "windowSize": { "width": 660, "height": 400 }
       },
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "entitlements": "Entitlements.plist",
+      "infoPlist": "Info.plist"
     }
   },
   "plugins": {

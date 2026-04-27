@@ -174,10 +174,9 @@ pub async fn cesp_play_for_event(
         .map_err(|e| format!("Lock error: {e}"))?;
     if let Some(sound) =
         playback.pick_sound(category, sounds, std::time::Duration::from_millis(500))
+        && let Some(file_path) = cesp::resolve_sound_file(&pack_dir, sound)
     {
-        if let Some(file_path) = cesp::resolve_sound_file(&pack_dir, sound) {
-            cesp::play_audio_file(&file_path, volume);
-        }
+        cesp::play_audio_file(&file_path, volume);
     }
 
     Ok(())

@@ -97,6 +97,22 @@
   --tool-agent:          #f08080;  /* sub-agent dispatch */
   --tool-task:           #e6c84d;  /* in-progress tasks */
 
+  /* ---- Ultrathink easter egg ---- */
+  --ultrathink-red:             rgb(235,95,87);
+  --ultrathink-orange:          rgb(245,139,87);
+  --ultrathink-yellow:          rgb(250,195,95);
+  --ultrathink-green:           rgb(145,200,130);
+  --ultrathink-blue:            rgb(130,170,220);
+  --ultrathink-indigo:          rgb(155,130,200);
+  --ultrathink-violet:          rgb(200,130,180);
+  --ultrathink-red-shimmer:     rgb(250,155,147);
+  --ultrathink-orange-shimmer:  rgb(255,185,137);
+  --ultrathink-yellow-shimmer:  rgb(255,225,155);
+  --ultrathink-green-shimmer:   rgb(185,230,180);
+  --ultrathink-blue-shimmer:    rgb(180,205,240);
+  --ultrathink-indigo-shimmer:  rgb(195,180,230);
+  --ultrathink-violet-shimmer:  rgb(230,180,210);
+
   /* ---- Diff ---- */
   --diff-added-bg:       rgba(60, 180, 90, 0.12);
   --diff-removed-bg:     rgba(220, 60, 60, 0.12);
@@ -989,6 +1005,11 @@ select:disabled {
   to   { opacity: 1; transform: scale(1); }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* Window drag regions for custom titlebar (Overlay mode) */
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
@@ -1026,4 +1047,29 @@ select:disabled {
 .shortcut-badge-visible {
   opacity: 1;
   transition: opacity 0.5s ease;
+}
+
+/*
+ * Shiki dual-theme code highlighting.
+ *
+ * The Shiki worker emits each token span with both `--shiki-light` and
+ * `--shiki-dark` CSS variables and no inline `color`. The rules below pick
+ * the correct variable based on the active color scheme. Built-in themes
+ * are matched by `[data-theme]`; user themes signal their scheme via an
+ * inline `color-scheme: light|dark` on `<html>` (set in theme.ts:applyTheme).
+ *
+ * Selector targets only the Shiki-emitted token spans (those carrying the
+ * `--shiki-light` custom property inline). The line-wrapper spans Shiki
+ * also emits don't carry that property, so they harmlessly miss this rule
+ * and inherit `currentColor`. Using the inline-style attribute selector
+ * keeps the rule independent of CSS-module class hashing.
+ */
+pre code [style*="--shiki-light"] {
+  color: var(--shiki-dark);
+}
+[data-theme="default-light"] pre code [style*="--shiki-light"],
+[data-theme="rose-pine-dawn"] pre code [style*="--shiki-light"],
+[data-theme="solarized-light"] pre code [style*="--shiki-light"],
+html[style*="color-scheme: light"] pre code [style*="--shiki-light"] {
+  color: var(--shiki-light);
 }

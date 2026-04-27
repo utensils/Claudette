@@ -12,15 +12,28 @@ import type {
   ChatMessage,
   ChatAttachment,
   AttachmentInput,
+  ChatSession,
   DiffFile,
+  DiffFileTab,
   FileDiff,
   DiffViewMode,
   TerminalTab,
+  TerminalPaneNode,
+  TerminalPaneNodeId,
+  TerminalSplitDirection,
   WorkspaceCommandState,
   RemoteConnectionInfo,
   DiscoveredServer,
   ConversationCheckpoint,
 } from "../types";
+import {
+  allLeafIds as allPaneLeafIds,
+  closeLeaf as closeLeafInTree,
+  countLeaves as countPaneLeaves,
+  makeLeaf as makePaneLeaf,
+  splitLeaf as splitLeafInTree,
+  updateSizes as updateSizesInTree,
+} from "./terminalPaneTree";
 import type { McpStatusSnapshot } from "../types/mcp";
 import type { RemoteInitialData } from "../types/remote";
 import type { DetectedApp } from "../types/apps";
@@ -42,6 +55,28 @@ import type {
 } from "../types/plugins";
 
 export type PermissionLevel = "readonly" | "standard" | "full";
+
+/** Return a new sessionsByWorkspace map with `needs_attention` / `attention_kind`
+ *  cleared for the given session id. Returns the original map when the session
+ *  isn't found so callers can compare referential equality. */
+function clearSessionAttention(
+  map: Record<string, ChatSession[]>,
+  sessionId: string,
+): Record<string, ChatSession[]> {
+  for (const [wsId, sessions] of Object.entries(map)) {
+    const idx = sessions.findIndex((s) => s.id === sessionId);
+    if (idx >= 0) {
+      const updated = [...sessions];
+      updated[idx] = {
+        ...updated[idx],
+        needs_attention: false,
+        attention_kind: null,
+      };
+      return { ...map, [wsId]: updated };
+    }
+  }
+  return map;
+}
 
 export interface ToolActivity {
   toolUseId: string;
@@ -95,16 +130,29 @@ export interface AgentQuestionItem {
 }
 
 export interface AgentQuestion {
-  workspaceId: string;
+  sessionId: string;
   toolUseId: string;
   questions: AgentQuestionItem[];
 }
 
 export interface PlanApproval {
-  workspaceId: string;
+  sessionId: string;
   toolUseId: string;
   planFilePath: string | null;
   allowedPrompts: Array<{ tool: string; prompt: string }>;
+}
+
+/**
+ * Per-workspace state for the in-chat Cmd/Ctrl+F search bar.
+ * `query` is preserved when the bar is closed so re-opening with the same
+ * workspace selected restores the previous search.
+ * `matchIndex` is the active match's 0-based index across all hits in the
+ * current workspace; -1 when there are no matches yet.
+ */
+export interface ChatSearchState {
+  open: boolean;
+  query: string;
+  matchIndex: number;
 }
 
 /**
@@ -138,6 +186,18 @@ interface AppState {
   updateWorkspace: (id: string, updates: Partial<Workspace>) => void;
   removeWorkspace: (id: string) => void;
   selectWorkspace: (id: string | null) => void;
+
+  // -- Chat sessions (tabs) --
+  sessionsByWorkspace: Record<string, ChatSession[]>;
+  selectedSessionIdByWorkspaceId: Record<string, string>;
+  setSessionsForWorkspace: (wsId: string, sessions: ChatSession[]) => void;
+  addChatSession: (session: ChatSession) => void;
+  updateChatSession: (
+    sessionId: string,
+    updates: Partial<ChatSession>,
+  ) => void;
+  removeChatSession: (sessionId: string) => void;
+  selectSession: (workspaceId: string, sessionId: string) => void;
 
   // -- Chat --
   chatMessages: Record<string, ChatMessage[]>;
@@ -212,15 +272,22 @@ interface AppState {
     partialJson: string,
   ) => void;
 
-  // -- Agent Questions (per-workspace) --
+  // -- Agent Questions (per-session) --
   agentQuestions: Record<string, AgentQuestion>;
   setAgentQuestion: (q: AgentQuestion) => void;
-  clearAgentQuestion: (wsId: string) => void;
+  clearAgentQuestion: (sessionId: string) => void;
 
-  // -- Plan Approvals (per-workspace) --
+  // -- Plan Approvals (per-session) --
   planApprovals: Record<string, PlanApproval>;
   setPlanApproval: (p: PlanApproval) => void;
-  clearPlanApproval: (wsId: string) => void;
+  clearPlanApproval: (sessionId: string) => void;
+
+  // -- Chat Search (per-workspace) --
+  chatSearch: Record<string, ChatSearchState>;
+  openChatSearch: (wsId: string) => void;
+  closeChatSearch: (wsId: string) => void;
+  setChatSearchQuery: (wsId: string, query: string) => void;
+  setChatSearchMatchIndex: (wsId: string, idx: number) => void;
 
   // -- Queued Messages (sent while agent is running, dispatched when idle) --
   queuedMessages: Record<
@@ -244,7 +311,8 @@ interface AppState {
   setCheckpoints: (wsId: string, cps: ConversationCheckpoint[]) => void;
   addCheckpoint: (wsId: string, cp: ConversationCheckpoint) => void;
   rollbackConversation: (
-    wsId: string,
+    sessionId: string,
+    workspaceId: string,
     checkpointId: string,
     messages: ChatMessage[],
   ) => void;
@@ -289,6 +357,11 @@ interface AppState {
   diffViewMode: DiffViewMode;
   diffLoading: boolean;
   diffError: string | null;
+  // Per-workspace open diff-file tabs. Ephemeral — not persisted across
+  // restarts. Identity is (path, layer); the same path opened from two
+  // different layers produces two distinct tabs because their diff content
+  // differs.
+  diffTabsByWorkspace: Record<string, DiffFileTab[]>;
   setDiffFiles: (files: DiffFile[], mergeBase: string, stagedFiles?: import("../types/diff").StagedDiffFiles | null) => void;
   setDiffSelectedFile: (path: string | null, layer?: import("../types/diff").DiffLayer | null) => void;
   setDiffContent: (content: FileDiff | null) => void;
@@ -296,6 +369,15 @@ interface AppState {
   setDiffLoading: (loading: boolean) => void;
   setDiffError: (error: string | null) => void;
   clearDiff: () => void;
+  // Open a diff tab for the given file (deduped by path+layer) and make it
+  // the active view. The previously-selected chat session stays selected so
+  // closing all diff tabs restores it.
+  openDiffTab: (workspaceId: string, path: string, layer?: import("../types/diff").DiffLayer | null) => void;
+  // Focus an already-open diff tab without mutating the tab list.
+  selectDiffTab: (path: string, layer?: import("../types/diff").DiffLayer | null) => void;
+  // Close a diff tab. If it was the active diff, the chat session selected
+  // for this workspace becomes active again.
+  closeDiffTab: (workspaceId: string, path: string, layer?: import("../types/diff").DiffLayer | null) => void;
 
   // -- Terminal --
   terminalTabs: Record<string, TerminalTab[]>;
@@ -314,6 +396,47 @@ interface AppState {
     state: WorkspaceCommandState,
   ) => void;
   updateTerminalTabPtyId: (tabId: number, ptyId: number) => void;
+
+  // Per-tab split-pane layout (ephemeral — not persisted). Keyed by tab id.
+  terminalPaneTrees: Record<number, TerminalPaneNode>;
+  // Active leaf id per tab — which pane receives focus and keyboard shortcuts.
+  activeTerminalPaneId: Record<number, TerminalPaneNodeId>;
+  // Maximum leaves per tab before splits are refused. Exposed on state so
+  // the UI can disable the split button at the cap.
+  terminalPaneMaxLeaves: number;
+  // Ensure a tab has a pane tree; no-op if one already exists. Returns the
+  // (possibly pre-existing) root leaf id for convenience.
+  ensurePaneTree: (tabId: number) => TerminalPaneNodeId;
+  setPaneTree: (tabId: number, tree: TerminalPaneNode) => void;
+  // Split the given leaf in two. Returns the id of the newly-created leaf,
+  // or null if the split was refused (cap reached, leaf not in tree, etc).
+  splitPane: (
+    tabId: number,
+    leafId: TerminalPaneNodeId,
+    direction: TerminalSplitDirection,
+  ) => TerminalPaneNodeId | null;
+  // Close a single pane. Returns the id of the newly-focused leaf, or null
+  // if the pane was the sole leaf (caller should close the tab instead).
+  closePane: (
+    tabId: number,
+    leafId: TerminalPaneNodeId,
+  ) => TerminalPaneNodeId | null;
+  setActivePane: (tabId: number, leafId: TerminalPaneNodeId) => void;
+  setPaneSizes: (
+    tabId: number,
+    splitId: TerminalPaneNodeId,
+    sizes: [number, number],
+  ) => void;
+  setPanePtyId: (
+    tabId: number,
+    leafId: TerminalPaneNodeId,
+    ptyId: number,
+  ) => void;
+  setPaneSpawnError: (
+    tabId: number,
+    leafId: TerminalPaneNodeId,
+    error: string | null,
+  ) => void;
 
   // -- SCM --
   scmSummary: Record<string, import("../types/plugin").ScmSummary>;
@@ -368,6 +491,13 @@ interface AppState {
   setPluginSettingsRepoId: (repoId: string | null) => void;
   clearPluginSettingsIntent: () => void;
   bumpPluginRefreshToken: () => void;
+  /** Voice provider whose details panel should be expanded on next render
+   *  of PluginsSettings. Set when the user clicks the mic button and is
+   *  redirected to settings to grant permissions / install models, so the
+   *  user lands directly on the action they need to take. Cleared once the
+   *  panel has consumed the focus. */
+  voiceProviderFocus: string | null;
+  focusVoiceProvider: (providerId: string | null) => void;
 
   // -- Modals --
   activeModal: string | null;
@@ -441,14 +571,12 @@ interface AppState {
   setUsageInsightsEnabled: (enabled: boolean) => void;
   pluginManagementEnabled: boolean;
   setPluginManagementEnabled: (enabled: boolean) => void;
+  disable1mContext: boolean;
+  setDisable1mContext: (v: boolean) => void;
 
   // -- Claude Code Usage --
   claudeCodeUsage: ClaudeCodeUsage | null;
-  claudeCodeUsageLoading: boolean;
-  claudeCodeUsageError: string | null;
   setClaudeCodeUsage: (usage: ClaudeCodeUsage | null) => void;
-  setClaudeCodeUsageLoading: (loading: boolean) => void;
-  setClaudeCodeUsageError: (error: string | null) => void;
 
   // -- Metrics --
   dashboardMetrics: DashboardMetrics | null;
@@ -470,12 +598,14 @@ interface AppState {
   updateDownloading: boolean;
   updateProgress: number;
   updateChannel: "stable" | "nightly";
+  updateError: string | null;
   setUpdateAvailable: (available: boolean, version: string | null) => void;
   setUpdateDismissed: (dismissed: boolean) => void;
   setUpdateInstallWhenIdle: (enabled: boolean) => void;
   setUpdateDownloading: (downloading: boolean) => void;
   setUpdateProgress: (progress: number) => void;
   setUpdateChannel: (channel: "stable" | "nightly") => void;
+  setUpdateError: (error: string | null) => void;
 
   // -- App info --
   appVersion: string | null;
@@ -488,7 +618,7 @@ interface AppState {
 
 const toastTimers = new Map<string, number>();
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   // -- Repositories --
   repositories: [],
   setRepositories: (repos) => set({ repositories: repos }),
@@ -510,11 +640,25 @@ export const useAppStore = create<AppState>((set) => ({
       const newActiveTerminalTabId = { ...s.activeTerminalTabId };
       const newWorkspaceTerminalCommands = { ...s.workspaceTerminalCommands };
       const newUnreadCompletions = new Set(s.unreadCompletions);
+      // Collect all tab ids we're about to orphan, then drop their pane
+      // trees and active-pane entries alongside the workspace-keyed maps.
+      const orphanedTabIds = new Set<number>();
       for (const wsId of removedWsIds) {
+        for (const tab of s.terminalTabs[wsId] ?? []) orphanedTabIds.add(tab.id);
         delete newTerminalTabs[wsId];
         delete newActiveTerminalTabId[wsId];
         delete newWorkspaceTerminalCommands[wsId];
         newUnreadCompletions.delete(wsId);
+      }
+      const newPaneTrees = { ...s.terminalPaneTrees };
+      const newActivePane = { ...s.activeTerminalPaneId };
+      for (const tabId of orphanedTabIds) {
+        delete newPaneTrees[tabId];
+        delete newActivePane[tabId];
+      }
+      const newDiffTabs = { ...s.diffTabsByWorkspace };
+      for (const wsId of removedWsIds) {
+        delete newDiffTabs[wsId];
       }
       return {
         repositories: s.repositories.filter((r) => r.id !== id),
@@ -529,6 +673,9 @@ export const useAppStore = create<AppState>((set) => ({
         activeTerminalTabId: newActiveTerminalTabId,
         workspaceTerminalCommands: newWorkspaceTerminalCommands,
         unreadCompletions: newUnreadCompletions,
+        terminalPaneTrees: newPaneTrees,
+        activeTerminalPaneId: newActivePane,
+        diffTabsByWorkspace: newDiffTabs,
       };
     }),
 
@@ -551,12 +698,21 @@ export const useAppStore = create<AppState>((set) => ({
       // The cleanup effect in TerminalPanel watches `terminalTabs` and tears
       // down xterm instances and PTYs whose tab ids no longer exist in any
       // workspace; the other maps are value-keyed by workspace id.
+      const orphanedTabIds = (s.terminalTabs[id] ?? []).map((t) => t.id);
       const newTerminalTabs = { ...s.terminalTabs };
       delete newTerminalTabs[id];
       const newActiveTerminalTabId = { ...s.activeTerminalTabId };
       delete newActiveTerminalTabId[id];
       const newWorkspaceTerminalCommands = { ...s.workspaceTerminalCommands };
       delete newWorkspaceTerminalCommands[id];
+      const newPaneTrees = { ...s.terminalPaneTrees };
+      const newActivePane = { ...s.activeTerminalPaneId };
+      for (const tabId of orphanedTabIds) {
+        delete newPaneTrees[tabId];
+        delete newActivePane[tabId];
+      }
+      const newDiffTabs = { ...s.diffTabsByWorkspace };
+      delete newDiffTabs[id];
       return {
         workspaces: s.workspaces.filter((w) => w.id !== id),
         selectedWorkspaceId:
@@ -565,11 +721,118 @@ export const useAppStore = create<AppState>((set) => ({
         terminalTabs: newTerminalTabs,
         activeTerminalTabId: newActiveTerminalTabId,
         workspaceTerminalCommands: newWorkspaceTerminalCommands,
+        terminalPaneTrees: newPaneTrees,
+        activeTerminalPaneId: newActivePane,
+        diffTabsByWorkspace: newDiffTabs,
       };
     }),
-  selectWorkspace: (id) => {
-    set({ selectedWorkspaceId: id, rightSidebarTab: "changes" });
-  },
+  selectWorkspace: (id) =>
+    set((s) => {
+      const updates: Partial<AppState> = {
+        selectedWorkspaceId: id,
+        rightSidebarTab: "changes",
+        // diffSelectedFile/Layer are workspace-global pointers; switching
+        // workspaces must drop them so the new workspace's tab strip and
+        // content render cleanly. Per-workspace diff *tabs* live in
+        // diffTabsByWorkspace and are preserved.
+        diffSelectedFile: null,
+        diffSelectedLayer: null,
+        diffContent: null,
+        diffError: null,
+      };
+      if (id && s.unreadCompletions.has(id)) {
+        const next = new Set(s.unreadCompletions);
+        next.delete(id);
+        updates.unreadCompletions = next;
+      }
+      return updates;
+    }),
+
+  // -- Chat sessions (tabs) --
+  sessionsByWorkspace: {},
+  selectedSessionIdByWorkspaceId: {},
+  setSessionsForWorkspace: (wsId, sessions) =>
+    set((s) => {
+      const next = { ...s.sessionsByWorkspace, [wsId]: sessions };
+      const nextSelected = { ...s.selectedSessionIdByWorkspaceId };
+      const selected = nextSelected[wsId];
+      const activeSessions = sessions.filter((x) => x.status === "Active");
+      const selectedIsActive =
+        selected && activeSessions.some((x) => x.id === selected);
+      if (!selectedIsActive && activeSessions.length > 0) {
+        nextSelected[wsId] = activeSessions[0].id;
+      }
+      return {
+        sessionsByWorkspace: next,
+        selectedSessionIdByWorkspaceId: nextSelected,
+      };
+    }),
+  addChatSession: (session) =>
+    set((s) => {
+      const existing = s.sessionsByWorkspace[session.workspace_id] ?? [];
+      if (existing.some((x) => x.id === session.id)) {
+        return s;
+      }
+      return {
+        sessionsByWorkspace: {
+          ...s.sessionsByWorkspace,
+          [session.workspace_id]: [...existing, session],
+        },
+      };
+    }),
+  updateChatSession: (sessionId, updates) =>
+    set((s) => {
+      for (const [wsId, sessions] of Object.entries(s.sessionsByWorkspace)) {
+        const idx = sessions.findIndex((x) => x.id === sessionId);
+        if (idx >= 0) {
+          const updated = [...sessions];
+          updated[idx] = { ...updated[idx], ...updates };
+          return {
+            sessionsByWorkspace: {
+              ...s.sessionsByWorkspace,
+              [wsId]: updated,
+            },
+          };
+        }
+      }
+      return s;
+    }),
+  removeChatSession: (sessionId) =>
+    set((s) => {
+      const next = { ...s.sessionsByWorkspace };
+      const nextSelected = { ...s.selectedSessionIdByWorkspaceId };
+      for (const [wsId, sessions] of Object.entries(next)) {
+        if (sessions.some((x) => x.id === sessionId)) {
+          next[wsId] = sessions.filter((x) => x.id !== sessionId);
+          if (nextSelected[wsId] === sessionId) {
+            const firstActive = next[wsId].find(
+              (x) => x.status === "Active",
+            );
+            if (firstActive) {
+              nextSelected[wsId] = firstActive.id;
+            } else {
+              delete nextSelected[wsId];
+            }
+          }
+          break;
+        }
+      }
+      return {
+        sessionsByWorkspace: next,
+        selectedSessionIdByWorkspaceId: nextSelected,
+      };
+    }),
+  selectSession: (workspaceId, sessionId) =>
+    set((s) => ({
+      selectedSessionIdByWorkspaceId: {
+        ...s.selectedSessionIdByWorkspaceId,
+        [workspaceId]: sessionId,
+      },
+      // Clicking a chat tab is an explicit "show me chat" intent, so any
+      // active diff view yields. Diff tabs themselves remain in the strip.
+      diffSelectedFile: null,
+      diffSelectedLayer: null,
+    })),
 
   // -- Chat --
   chatMessages: {},
@@ -854,28 +1117,93 @@ export const useAppStore = create<AppState>((set) => ({
       },
     })),
 
-  // -- Agent Questions (per-workspace) --
+  // -- Agent Questions (per-session) --
   agentQuestions: {},
   setAgentQuestion: (q) =>
     set((s) => ({
-      agentQuestions: { ...s.agentQuestions, [q.workspaceId]: q },
+      agentQuestions: { ...s.agentQuestions, [q.sessionId]: q },
     })),
-  clearAgentQuestion: (wsId) =>
+  clearAgentQuestion: (sessionId) =>
     set((s) => {
-      const { [wsId]: _, ...rest } = s.agentQuestions;
-      return { agentQuestions: rest };
+      const { [sessionId]: _, ...rest } = s.agentQuestions;
+      // Also clear the corresponding ChatSession attention flag so the tab
+      // icon + sidebar aggregate update immediately, without waiting for a
+      // list_chat_sessions refresh.
+      const nextSessions = clearSessionAttention(s.sessionsByWorkspace, sessionId);
+      return { agentQuestions: rest, sessionsByWorkspace: nextSessions };
     }),
 
-  // -- Plan Approvals (per-workspace) --
+  // -- Plan Approvals (per-session) --
   planApprovals: {},
   setPlanApproval: (p) =>
     set((s) => ({
-      planApprovals: { ...s.planApprovals, [p.workspaceId]: p },
+      planApprovals: { ...s.planApprovals, [p.sessionId]: p },
     })),
-  clearPlanApproval: (wsId) =>
+  clearPlanApproval: (sessionId) =>
     set((s) => {
-      const { [wsId]: _, ...rest } = s.planApprovals;
-      return { planApprovals: rest };
+      const { [sessionId]: _, ...rest } = s.planApprovals;
+      const nextSessions = clearSessionAttention(s.sessionsByWorkspace, sessionId);
+      return { planApprovals: rest, sessionsByWorkspace: nextSessions };
+    }),
+
+  // -- Chat Search (per-workspace) --
+  chatSearch: {},
+  openChatSearch: (wsId) =>
+    set((s) => {
+      const prev = s.chatSearch[wsId];
+      return {
+        chatSearch: {
+          ...s.chatSearch,
+          [wsId]: {
+            open: true,
+            query: prev?.query ?? "",
+            matchIndex: prev?.matchIndex ?? -1,
+          },
+        },
+      };
+    }),
+  closeChatSearch: (wsId) =>
+    set((s) => {
+      const prev = s.chatSearch[wsId];
+      // Preserve query/matchIndex so re-opening restores the previous search.
+      // Return the existing state reference for no-op paths so Zustand's
+      // identity check skips the listener notification entirely.
+      if (!prev) return s;
+      if (!prev.open) return s;
+      return {
+        chatSearch: {
+          ...s.chatSearch,
+          [wsId]: { ...prev, open: false },
+        },
+      };
+    }),
+  setChatSearchQuery: (wsId, query) =>
+    set((s) => {
+      const prev = s.chatSearch[wsId] ?? {
+        open: true,
+        query: "",
+        matchIndex: -1,
+      };
+      // Reset matchIndex on every query change — the new query produces a
+      // fresh match set, so any prior index is meaningless.
+      return {
+        chatSearch: {
+          ...s.chatSearch,
+          [wsId]: { ...prev, query, matchIndex: -1 },
+        },
+      };
+    }),
+  setChatSearchMatchIndex: (wsId, idx) =>
+    set((s) => {
+      const prev = s.chatSearch[wsId];
+      if (!prev) return s;
+      if (prev.matchIndex === idx) return s;
+      return {
+        chatSearch: {
+          ...s.chatSearch,
+          [wsId]: { ...prev, matchIndex: idx },
+        },
+      };
     }),
 
   // -- Queued Messages --
@@ -906,16 +1234,17 @@ export const useAppStore = create<AppState>((set) => ({
         [wsId]: [...(s.checkpoints[wsId] || []), cp],
       },
     })),
-  rollbackConversation: (wsId, checkpointId, messages) =>
+  rollbackConversation: (sessionId, workspaceId, checkpointId, messages) =>
     set((s) => {
-      const { [wsId]: _q, ...restQuestions } = s.agentQuestions;
-      const { [wsId]: _p, ...restApprovals } = s.planApprovals;
+      const { [sessionId]: _q, ...restQuestions } = s.agentQuestions;
+      const { [sessionId]: _p, ...restApprovals } = s.planApprovals;
+      const { [workspaceId]: _cs, ...restChatSearch } = s.chatSearch;
       // Update lastMessages so workspace preview cards stay in sync.
       const lastMsg =
         messages.length > 0 ? messages[messages.length - 1] : undefined;
-      const { [wsId]: _lm, ...restLastMessages } = s.lastMessages;
+      const { [workspaceId]: _lm, ...restLastMessages } = s.lastMessages;
       const updatedLastMessages = lastMsg
-        ? { ...s.lastMessages, [wsId]: lastMsg }
+        ? { ...s.lastMessages, [workspaceId]: lastMsg }
         : restLastMessages;
       // Recompute the meter's latestTurnUsage from the rolled-back message
       // list. Write if the last assistant message has token data; delete
@@ -923,32 +1252,30 @@ export const useAppStore = create<AppState>((set) => ({
       const nextCall = extractLatestCallUsage(messages);
       let latestTurnUsage = s.latestTurnUsage;
       if (nextCall) {
-        latestTurnUsage = { ...s.latestTurnUsage, [wsId]: nextCall };
-      } else if (wsId in s.latestTurnUsage) {
+        latestTurnUsage = { ...s.latestTurnUsage, [sessionId]: nextCall };
+      } else if (sessionId in s.latestTurnUsage) {
         const next = { ...s.latestTurnUsage };
-        delete next[wsId];
+        delete next[sessionId];
         latestTurnUsage = next;
       }
-      // Re-derive compactionEvents too — rollback's message truncation
-      // might drop compactions. Empty array for rolled-back-to-empty is
-      // fine (the slice is additive; empty == no dividers to render).
       const nextCompactionEvents = {
         ...s.compactionEvents,
-        [wsId]: extractCompactionEvents(messages),
+        [sessionId]: extractCompactionEvents(messages),
       };
       return {
-        chatMessages: { ...s.chatMessages, [wsId]: messages },
+        chatMessages: { ...s.chatMessages, [sessionId]: messages },
         lastMessages: updatedLastMessages,
-        completedTurns: { ...s.completedTurns, [wsId]: [] },
-        toolActivities: { ...s.toolActivities, [wsId]: [] },
-        streamingContent: { ...s.streamingContent, [wsId]: "" },
-        streamingThinking: { ...s.streamingThinking, [wsId]: "" },
+        completedTurns: { ...s.completedTurns, [sessionId]: [] },
+        toolActivities: { ...s.toolActivities, [sessionId]: [] },
+        streamingContent: { ...s.streamingContent, [sessionId]: "" },
+        streamingThinking: { ...s.streamingThinking, [sessionId]: "" },
         agentQuestions: restQuestions,
         planApprovals: restApprovals,
+        chatSearch: restChatSearch,
         checkpoints: {
           ...s.checkpoints,
-          [wsId]: (() => {
-            const current = s.checkpoints[wsId] || [];
+          [sessionId]: (() => {
+            const current = s.checkpoints[sessionId] || [];
             const target = current.find((c) => c.id === checkpointId);
             // If target not found (e.g. clear-all sentinel), clear everything.
             if (!target) return [];
@@ -1046,6 +1373,7 @@ export const useAppStore = create<AppState>((set) => ({
   diffViewMode: "Unified",
   diffLoading: false,
   diffError: null,
+  diffTabsByWorkspace: {},
   setDiffFiles: (files, mergeBase, stagedFiles) =>
     set({ diffFiles: files, diffMergeBase: mergeBase, diffStagedFiles: stagedFiles ?? null }),
   setDiffSelectedFile: (path, layer) => set({ diffSelectedFile: path, diffSelectedLayer: layer ?? null }),
@@ -1062,6 +1390,72 @@ export const useAppStore = create<AppState>((set) => ({
       diffStagedFiles: null,
       diffContent: null,
       diffError: null,
+      diffTabsByWorkspace: {},
+    }),
+  openDiffTab: (workspaceId, path, layer) =>
+    set((s) => {
+      const normalizedLayer = layer ?? null;
+      const existing = s.diffTabsByWorkspace[workspaceId] ?? [];
+      const alreadyOpen = existing.some(
+        (t) => t.path === path && t.layer === normalizedLayer,
+      );
+      const nextTabs = alreadyOpen
+        ? s.diffTabsByWorkspace
+        : {
+            ...s.diffTabsByWorkspace,
+            [workspaceId]: [...existing, { path, layer: normalizedLayer }],
+          };
+      // Only clear content when the selection actually changes — clicking the
+      // already-active tab must not blank the viewer (the loader effect
+      // wouldn't refire on identical deps, leaving the user staring at empty).
+      const isSameSelection =
+        s.diffSelectedFile === path && s.diffSelectedLayer === normalizedLayer;
+      return {
+        diffTabsByWorkspace: nextTabs,
+        diffSelectedFile: path,
+        diffSelectedLayer: normalizedLayer,
+        ...(isSameSelection ? {} : { diffContent: null, diffError: null }),
+      };
+    }),
+  selectDiffTab: (path, layer) =>
+    set((s) => {
+      const normalizedLayer = layer ?? null;
+      const isSameSelection =
+        s.diffSelectedFile === path && s.diffSelectedLayer === normalizedLayer;
+      if (isSameSelection) return s;
+      return {
+        diffSelectedFile: path,
+        diffSelectedLayer: normalizedLayer,
+        diffContent: null,
+        diffError: null,
+      };
+    }),
+  closeDiffTab: (workspaceId, path, layer) =>
+    set((s) => {
+      const normalizedLayer = layer ?? null;
+      const existing = s.diffTabsByWorkspace[workspaceId] ?? [];
+      const idx = existing.findIndex(
+        (t) => t.path === path && t.layer === normalizedLayer,
+      );
+      if (idx < 0) return s;
+      const nextWsTabs = existing.slice(0, idx).concat(existing.slice(idx + 1));
+      const wasActive =
+        s.diffSelectedFile === path && s.diffSelectedLayer === normalizedLayer;
+      const updates: Partial<AppState> = {
+        diffTabsByWorkspace: {
+          ...s.diffTabsByWorkspace,
+          [workspaceId]: nextWsTabs,
+        },
+      };
+      if (wasActive) {
+        // Drop active-diff state. AppLayout will fall back to ChatPanel,
+        // which renders whichever session is in selectedSessionIdByWorkspaceId.
+        updates.diffSelectedFile = null;
+        updates.diffSelectedLayer = null;
+        updates.diffContent = null;
+        updates.diffError = null;
+      }
+      return updates;
     }),
 
   // -- SCM --
@@ -1097,11 +1491,28 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const tabs = (s.terminalTabs[wsId] || []).filter((t) => t.id !== tabId);
       const wasActive = s.activeTerminalTabId[wsId] === tabId;
+      // Drop the tab's pane tree and active-pane entry. The terminal panel
+      // cleans up xterm instances by observing the terminalTabs map, and
+      // we never want stale pane state to leak if the tab id is later
+      // reused.
+      const nextTrees = { ...s.terminalPaneTrees };
+      delete nextTrees[tabId];
+      const nextActivePane = { ...s.activeTerminalPaneId };
+      delete nextActivePane[tabId];
+      // When the user closes the last tab in the currently-selected
+      // workspace, collapse the terminal panel — leaving an empty panel
+      // mounted looks broken. If they re-open it later the panel's
+      // tab-load effect will auto-create a fresh tab.
+      const hideBecauseEmpty =
+        tabs.length === 0 && s.selectedWorkspaceId === wsId;
       return {
         terminalTabs: { ...s.terminalTabs, [wsId]: tabs },
         activeTerminalTabId: wasActive
           ? { ...s.activeTerminalTabId, [wsId]: tabs[0]?.id ?? null }
           : s.activeTerminalTabId,
+        terminalPaneTrees: nextTrees,
+        activeTerminalPaneId: nextActivePane,
+        terminalPanelVisible: hideBecauseEmpty ? false : s.terminalPanelVisible,
       };
     }),
   setActiveTerminalTab: (wsId, id) =>
@@ -1126,6 +1537,140 @@ export const useAppStore = create<AppState>((set) => ({
         );
       }
       return { terminalTabs: newTabs };
+    }),
+
+  // Pane-tree slice. State is ephemeral: if the app restarts, every tab
+  // comes back as a single-leaf tree. See `terminalPaneTree.ts` for the
+  // pure tree operations these setters wrap.
+  terminalPaneTrees: {},
+  activeTerminalPaneId: {},
+  terminalPaneMaxLeaves: 6,
+  ensurePaneTree: (tabId) => {
+    const existing = get().terminalPaneTrees[tabId];
+    if (existing && existing.kind === "leaf") {
+      const stored = get().activeTerminalPaneId[tabId];
+      if (stored !== existing.id) {
+        set((s) => ({
+          activeTerminalPaneId: {
+            ...s.activeTerminalPaneId,
+            [tabId]: existing.id,
+          },
+        }));
+      }
+      return existing.id;
+    }
+    if (existing && existing.kind === "split") {
+      // Preserve the existing split layout. Use the stored active leaf if
+      // it still identifies a leaf in the tree; otherwise fall back to the
+      // leftmost leaf (and backfill activeTerminalPaneId so future reads
+      // don't hit this branch again).
+      const leaves = allPaneLeafIds(existing);
+      const stored = get().activeTerminalPaneId[tabId];
+      const pick = stored && leaves.includes(stored) ? stored : leaves[0];
+      if (pick !== stored) {
+        set((s) => ({
+          activeTerminalPaneId: {
+            ...s.activeTerminalPaneId,
+            [tabId]: pick,
+          },
+        }));
+      }
+      return pick;
+    }
+    const leaf = makePaneLeaf();
+    set((s) => ({
+      terminalPaneTrees: { ...s.terminalPaneTrees, [tabId]: leaf },
+      activeTerminalPaneId: { ...s.activeTerminalPaneId, [tabId]: leaf.id },
+    }));
+    return leaf.id;
+  },
+  setPaneTree: (tabId, tree) =>
+    set((s) => ({
+      terminalPaneTrees: { ...s.terminalPaneTrees, [tabId]: tree },
+    })),
+  splitPane: (tabId, leafId, direction) => {
+    const state = get();
+    const tree = state.terminalPaneTrees[tabId];
+    if (!tree) return null;
+    const cap = state.terminalPaneMaxLeaves;
+    if (countPaneLeaves(tree) >= cap) return null;
+    const { tree: nextTree, newLeafId } = splitLeafInTree(tree, leafId, direction);
+    if (!newLeafId) return null;
+    set((s) => ({
+      terminalPaneTrees: { ...s.terminalPaneTrees, [tabId]: nextTree },
+      // Focus the freshly created pane.
+      activeTerminalPaneId: { ...s.activeTerminalPaneId, [tabId]: newLeafId },
+    }));
+    return newLeafId;
+  },
+  closePane: (tabId, leafId) => {
+    const state = get();
+    const tree = state.terminalPaneTrees[tabId];
+    if (!tree) return null;
+    const { tree: nextTree, closed, promotedLeafId } = closeLeafInTree(tree, leafId);
+    if (!closed || !promotedLeafId) return null;
+    set((s) => ({
+      terminalPaneTrees: { ...s.terminalPaneTrees, [tabId]: nextTree },
+      activeTerminalPaneId: {
+        ...s.activeTerminalPaneId,
+        [tabId]: promotedLeafId,
+      },
+    }));
+    return promotedLeafId;
+  },
+  setActivePane: (tabId, leafId) =>
+    set((s) => ({
+      activeTerminalPaneId: { ...s.activeTerminalPaneId, [tabId]: leafId },
+    })),
+  setPaneSizes: (tabId, splitId, sizes) =>
+    set((s) => {
+      const tree = s.terminalPaneTrees[tabId];
+      if (!tree) return {};
+      const next = updateSizesInTree(tree, splitId, sizes);
+      if (next === tree) return {};
+      return { terminalPaneTrees: { ...s.terminalPaneTrees, [tabId]: next } };
+    }),
+  setPanePtyId: (tabId, leafId, ptyId) =>
+    set((s) => {
+      const tree = s.terminalPaneTrees[tabId];
+      if (!tree) return {};
+      const rewrite = (n: TerminalPaneNode): TerminalPaneNode => {
+        if (n.kind === "leaf") {
+          return n.id === leafId ? { ...n, ptyId, spawnError: null } : n;
+        }
+        const l = rewrite(n.children[0]);
+        const r = rewrite(n.children[1]);
+        if (l === n.children[0] && r === n.children[1]) return n;
+        return { ...n, children: [l, r] };
+      };
+      const next = rewrite(tree);
+      if (next === tree) return {};
+      return { terminalPaneTrees: { ...s.terminalPaneTrees, [tabId]: next } };
+    }),
+  setPaneSpawnError: (tabId, leafId, error) =>
+    set((s) => {
+      const tree = s.terminalPaneTrees[tabId];
+      if (!tree) return {};
+      const rewrite = (n: TerminalPaneNode): TerminalPaneNode => {
+        if (n.kind === "leaf") {
+          if (n.id !== leafId) return n;
+          // Clear ptyId whenever an error is recorded — use `!= null` so
+          // an empty-string error still invalidates ptyId (truthy check
+          // would miss `""` and leave the UI talking to a dead PTY).
+          return {
+            ...n,
+            spawnError: error,
+            ...(error != null ? { ptyId: undefined } : {}),
+          };
+        }
+        const l = rewrite(n.children[0]);
+        const r = rewrite(n.children[1]);
+        if (l === n.children[0] && r === n.children[1]) return n;
+        return { ...n, children: [l, r] };
+      };
+      const next = rewrite(tree);
+      if (next === tree) return {};
+      return { terminalPaneTrees: { ...s.terminalPaneTrees, [tabId]: next } };
     }),
 
   // -- UI --
@@ -1198,14 +1743,26 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setSettingsSection: (section) =>
     set((state) => {
-      const nextSection = section === "plugins" && !state.pluginManagementEnabled
-        ? "experimental"
-        : section;
+      // Claude Code Plugins requires plugin management to be on; when
+      // disabled, fall through to the experimental pane so the setting
+      // stays reachable. The new "plugins" section (Claudette's own
+      // Lua plugins) is always available.
+      const nextSection =
+        section === "claude-code-plugins" && !state.pluginManagementEnabled
+          ? "experimental"
+          : section;
+      const resetMarketplaceIntent = nextSection === "claude-code-plugins";
       return {
         settingsSection: nextSection,
-        pluginSettingsIntent: nextSection === "plugins" ? null : state.pluginSettingsIntent,
-        pluginSettingsRepoId: nextSection === "plugins" ? null : state.pluginSettingsRepoId,
-        pluginSettingsTab: nextSection === "plugins" ? "available" : state.pluginSettingsTab,
+        pluginSettingsIntent: resetMarketplaceIntent
+          ? null
+          : state.pluginSettingsIntent,
+        pluginSettingsRepoId: resetMarketplaceIntent
+          ? null
+          : state.pluginSettingsRepoId,
+        pluginSettingsTab: resetMarketplaceIntent
+          ? "available"
+          : state.pluginSettingsTab,
       };
     }),
   pluginSettingsTab: "available",
@@ -1227,7 +1784,7 @@ export const useAppStore = create<AppState>((set) => ({
       };
       return {
         settingsOpen: true,
-        settingsSection: "plugins",
+        settingsSection: "claude-code-plugins",
         pluginSettingsTab: mergedIntent.tab,
         pluginSettingsRepoId: mergedIntent.repoId,
         pluginSettingsIntent: mergedIntent,
@@ -1236,6 +1793,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPluginSettingsTab: (tab) => set({ pluginSettingsTab: tab }),
   setPluginSettingsRepoId: (repoId) => set({ pluginSettingsRepoId: repoId }),
   clearPluginSettingsIntent: () => set({ pluginSettingsIntent: null }),
+  voiceProviderFocus: null,
+  focusVoiceProvider: (providerId) => set({ voiceProviderFocus: providerId }),
   bumpPluginRefreshToken: () =>
     set((state) => ({ pluginRefreshToken: state.pluginRefreshToken + 1 })),
 
@@ -1394,24 +1953,20 @@ export const useAppStore = create<AppState>((set) => ({
   setPluginManagementEnabled: (enabled) =>
     set((state) => ({
       pluginManagementEnabled: enabled,
-      settingsSection: !enabled && state.settingsSection === "plugins"
-        ? "experimental"
-        : state.settingsSection,
+      settingsSection:
+        !enabled && state.settingsSection === "claude-code-plugins"
+          ? "experimental"
+          : state.settingsSection,
       pluginSettingsIntent: enabled ? state.pluginSettingsIntent : null,
       pluginSettingsRepoId: enabled ? state.pluginSettingsRepoId : null,
       pluginSettingsTab: enabled ? state.pluginSettingsTab : "available",
     })),
+  disable1mContext: false,
+  setDisable1mContext: (v) => set({ disable1mContext: v }),
 
   // -- Claude Code Usage --
   claudeCodeUsage: null,
-  claudeCodeUsageLoading: false,
-  claudeCodeUsageError: null,
-  setClaudeCodeUsage: (usage) =>
-    set({ claudeCodeUsage: usage, claudeCodeUsageError: null }),
-  setClaudeCodeUsageLoading: (loading) =>
-    set({ claudeCodeUsageLoading: loading }),
-  setClaudeCodeUsageError: (error) =>
-    set({ claudeCodeUsageError: error, claudeCodeUsageLoading: false }),
+  setClaudeCodeUsage: (usage) => set({ claudeCodeUsage: usage }),
 
   // -- Metrics --
   dashboardMetrics: null,
@@ -1460,18 +2015,23 @@ export const useAppStore = create<AppState>((set) => ({
   updateDownloading: false,
   updateProgress: 0,
   updateChannel: "stable",
+  updateError: null,
   setUpdateAvailable: (available, version) =>
     set((state) => ({
       updateAvailable: available,
       updateVersion: version,
       updateDismissed:
         version === state.updateVersion ? state.updateDismissed : false,
+      updateError: null,
     })),
   setUpdateDismissed: (dismissed) => set({ updateDismissed: dismissed }),
   setUpdateInstallWhenIdle: (enabled) =>
     set({ updateInstallWhenIdle: enabled }),
   setUpdateDownloading: (downloading) =>
-    set({ updateDownloading: downloading }),
+    set((state) => ({
+      updateDownloading: downloading,
+      updateError: downloading ? null : state.updateError,
+    })),
   setUpdateProgress: (progress) => set({ updateProgress: progress }),
   setUpdateChannel: (channel) =>
     set({
@@ -1480,7 +2040,9 @@ export const useAppStore = create<AppState>((set) => ({
       updateVersion: null,
       updateDismissed: false,
       updateInstallWhenIdle: false,
+      updateError: null,
     }),
+  setUpdateError: (error) => set({ updateError: error }),
 
   // -- App info --
   appVersion: null,
@@ -1493,6 +2055,17 @@ export const useAppStore = create<AppState>((set) => ({
       slashCommandsByWorkspace: { ...s.slashCommandsByWorkspace, [wsId]: cmds },
     })),
 }));
+
+/**
+ * Returns the session id currently selected inside the active workspace.
+ * Null when no workspace is selected or when that workspace has no active
+ * session yet (e.g. the sessions list is still loading).
+ */
+export const selectActiveSessionId = (s: AppState): string | null => {
+  const wsId = s.selectedWorkspaceId;
+  if (!wsId) return null;
+  return s.selectedSessionIdByWorkspaceId[wsId] ?? null;
+};
 
 // Expose store on window in dev builds for debug_eval_js access.
 if (import.meta.env.DEV && typeof window !== "undefined") {

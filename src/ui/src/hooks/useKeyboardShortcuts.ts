@@ -22,10 +22,20 @@ export function useKeyboardShortcuts() {
   const setDiffSelectedFile = useAppStore((s) => s.setDiffSelectedFile);
   const diffSelectedFile = useAppStore((s) => s.diffSelectedFile);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
+  const activeSessionId = useAppStore((s) =>
+    s.selectedWorkspaceId
+      ? s.selectedSessionIdByWorkspaceId[s.selectedWorkspaceId] ?? null
+      : null,
+  );
   const setPlanMode = useAppStore((s) => s.setPlanMode);
   const planMode = useAppStore(
-    (s) => (selectedWorkspaceId ? s.planMode[selectedWorkspaceId] ?? false : false),
+    (s) => (activeSessionId ? s.planMode[activeSessionId] ?? false : false),
   );
+  const chatSearchOpen = useAppStore(
+    (s) => (selectedWorkspaceId ? s.chatSearch[selectedWorkspaceId]?.open ?? false : false),
+  );
+  const openChatSearch = useAppStore((s) => s.openChatSearch);
+  const closeChatSearch = useAppStore((s) => s.closeChatSearch);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -38,11 +48,11 @@ export function useKeyboardShortcuts() {
       const isInteractive = activeTag === "input" || activeTag === "textarea" ||
         activeTag === "select" || activeTag === "button";
       if (
-        e.key === "Tab" && e.shiftKey && !mod && selectedWorkspaceId &&
+        e.key === "Tab" && e.shiftKey && !mod && activeSessionId &&
         !activeModal && !commandPaletteOpen && !fuzzyFinderOpen && !isInteractive
       ) {
         e.preventDefault();
-        setPlanMode(selectedWorkspaceId, !planMode);
+        setPlanMode(activeSessionId, !planMode);
         return;
       }
 
@@ -56,6 +66,11 @@ export function useKeyboardShortcuts() {
           toggleFuzzyFinder();
         } else if (useAppStore.getState().settingsOpen) {
           return;
+        } else if (chatSearchOpen && selectedWorkspaceId) {
+          // Close the search bar and put focus back in the composer so
+          // Esc lands the user where they were before Cmd+F.
+          closeChatSearch(selectedWorkspaceId);
+          focusChatPrompt();
         } else if (diffSelectedFile) {
           setDiffSelectedFile(null);
         } else if (selectedWorkspaceId) {
@@ -64,18 +79,27 @@ export function useKeyboardShortcuts() {
             (w) => w.id === selectedWorkspaceId,
           );
           if (ws && isAgentBusy(ws.agent_status)) {
-            // Clear queued message — user is taking manual control.
-            useAppStore.getState().clearQueuedMessage(selectedWorkspaceId);
-            // Route through remote or local stop path.
-            const stopPromise = ws.remote_connection_id
-              ? sendRemoteCommand(ws.remote_connection_id, "stop_agent", {
-                  workspace_id: selectedWorkspaceId,
-                })
-              : stopAgent(selectedWorkspaceId);
-            stopPromise.catch(console.error);
-            useAppStore.getState().updateWorkspace(selectedWorkspaceId, {
-              agent_status: "Stopped",
-            });
+            const sessionId =
+              useAppStore.getState().selectedSessionIdByWorkspaceId[
+                selectedWorkspaceId
+              ];
+            if (sessionId) {
+              // Clear queued message — user is taking manual control.
+              useAppStore.getState().clearQueuedMessage(sessionId);
+              // Route through remote or local stop path. `stop_agent` is a
+              // per-session command now — pass the active session id.
+              const stopPromise = ws.remote_connection_id
+                ? sendRemoteCommand(ws.remote_connection_id, "stop_agent", {
+                    chat_session_id: sessionId,
+                  })
+                : stopAgent(sessionId);
+              stopPromise.catch(console.error);
+              // Don't write workspace-level agent_status here: this stops only
+              // the active session. The backend's ProcessExited event will
+              // mark this session as Stopped, and useAgentStream re-derives
+              // the workspace aggregate from per-session statuses (any session
+              // still Running keeps the workspace as Running).
+            }
           }
         }
         return;
@@ -153,6 +177,25 @@ export function useKeyboardShortcuts() {
       if (e.code === "Minus") {
         e.preventDefault();
         adjustUiFontSize(-1);
+        return;
+      }
+
+      // Cmd/Ctrl + F — open the in-chat search bar for the current workspace.
+      // Suppressed while any overlay owns focus so the hotkey doesn't steal
+      // from settings / fuzzy finder / modal inputs.
+      if (e.code === "KeyF" && !e.shiftKey && !e.altKey) {
+        if (!selectedWorkspaceId) return;
+        const state = useAppStore.getState();
+        if (
+          state.settingsOpen ||
+          state.activeModal ||
+          state.commandPaletteOpen ||
+          state.fuzzyFinderOpen
+        ) {
+          return;
+        }
+        e.preventDefault();
+        openChatSearch(selectedWorkspaceId);
         return;
       }
 
@@ -263,7 +306,11 @@ export function useKeyboardShortcuts() {
     setDiffSelectedFile,
     diffSelectedFile,
     selectedWorkspaceId,
+    activeSessionId,
     setPlanMode,
     planMode,
+    chatSearchOpen,
+    openChatSearch,
+    closeChatSearch,
   ]);
 }
