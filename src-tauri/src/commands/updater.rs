@@ -56,6 +56,9 @@ struct GhRelease {
 /// `latest.json` URLs for the nightly channel, newest first. Pure function so
 /// the filtering/sorting logic is unit-testable without HTTP.
 fn nightly_candidate_urls_from_json(body: &str, limit: usize) -> Vec<Url> {
+    if limit == 0 {
+        return Vec::new();
+    }
     let releases: Vec<GhRelease> = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(_) => return Vec::new(),
@@ -391,6 +394,15 @@ mod tests {
     #[test]
     fn malformed_json_returns_empty() {
         assert!(nightly_candidate_urls_from_json("not json", NIGHTLY_CANDIDATE_LIMIT).is_empty());
+    }
+
+    #[test]
+    fn limit_zero_returns_empty() {
+        let body = format!(
+            "[{}]",
+            release_json("nightly", false, true, Some("2026-04-26T15:00:00Z"))
+        );
+        assert!(nightly_candidate_urls_from_json(&body, 0).is_empty());
     }
 
     #[test]
