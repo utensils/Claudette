@@ -644,6 +644,13 @@
   50% { opacity: 1; }
 }
 
+.inlineSegments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0;
+}
+
 /* Tool activities — compact inline annotations */
 .toolActivities {
   display: flex;
@@ -712,6 +719,115 @@
 
 .turnSummaryWrapper > .turnSummary {
   margin: 0;
+}
+
+/*
+ * Segmented body: when a turn contains more than one tool-group (because text
+ * or thinking interleaved) or any subagent call, each segment renders as its
+ * own mini sub-box under the turn-level header.
+ */
+.turnSegments {
+  border-top: 1px solid var(--divider);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toolGroupBox {
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toolGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.toolGroupHeader:hover {
+  background: var(--hover-bg-subtle);
+}
+
+.toolGroupBody {
+  border-top: 1px solid var(--divider);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.subagentCard {
+  border: 1px solid var(--accent-dim, var(--divider));
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--hover-bg-subtle);
+}
+
+.subagentHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.subagentHeader:hover {
+  background: var(--hover-bg-subtle);
+}
+
+.subagentLabel {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.subagentSummary {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.subagentSpinner {
+  animation: spin 1s linear infinite;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.subagentBody {
+  border-top: 1px solid var(--divider);
+  padding: 8px 10px;
+  font-size: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.subagentPrompt {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.subagentResult {
+  color: var(--text-primary);
+  line-height: 1.5;
 }
 
 /* Footer below a completed turn: elapsed time + copy + fork actions. */

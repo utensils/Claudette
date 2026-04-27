@@ -18,6 +18,15 @@ export interface TurnToolActivityData {
   result_text: string;
   summary: string;
   sort_order: number;
+  /** Index of the segment this activity belongs to within its turn. Activities
+   *  sharing a `group_id` render as a single tool-group; distinct values
+   *  become distinct groups or subagent cards. Null on legacy rows persisted
+   *  before the segment column existed — the reader treats those as one group. */
+  group_id?: number | null;
+  /** 0-based index of the committed segment group within the turn. The Nth
+   *  group anchors to the Nth assistant message in the turn's message span.
+   *  Null on legacy rows — falls back to aggregated TurnSummary rendering. */
+  anchor_ordinal?: number | null;
 }
 
 export interface CompletedTurnData {

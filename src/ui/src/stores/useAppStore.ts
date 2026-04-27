@@ -87,9 +87,26 @@ export interface ToolActivity {
   summary: string;
 }
 
+/**
+ * Ordered render unit inside a turn. Groups of consecutive non-subagent tool
+ * calls render as a single `tool-group`; subagents (Task/Agent) always get
+ * their own `subagent` segment so per-agent status UI can be attached later.
+ * Text or thinking arriving between tools "breaks" the current group so the
+ * next tool starts a fresh segment. Text and thinking themselves are rendered
+ * via the existing `ChatMessage` bubbles and streaming components — they are
+ * not stored as segments; only their boundary effect on tool grouping matters.
+ */
+export type TurnSegment =
+  | { kind: "tool-group"; id: string; toolUseIds: string[] }
+  | { kind: "subagent"; id: string; toolUseId: string };
+
 export interface CompletedTurn {
   id: string;
   activities: ToolActivity[];
+  /** Ordered segments for this turn. Absent on legacy (pre-segment-column)
+   *  rows — the renderer treats an undefined `segments` as "one tool-group
+   *  containing every activity" so older turns still display sensibly. */
+  segments?: TurnSegment[];
   messageCount: number;
   collapsed: boolean;
   /** Index into chatMessages at the time of finalization — used to render
@@ -120,6 +137,15 @@ export interface CompletedTurn {
   /** Turn-total cache-creation tokens. Same max-based reconstruction semantics
    *  as `cacheReadTokens`. */
   cacheCreationTokens?: number;
+  /** Per-message segment positioning. Each entry maps a committed segment
+   *  group to the assistant message it appeared after. When present, segments
+   *  render inline after their message instead of aggregated in TurnSummary.
+   *  Absent on legacy turns or single-message turns. */
+  segmentGroups?: Array<{
+    afterMessageId: string;
+    segments: TurnSegment[];
+    activityToolUseIds: string[];
+  }>;
 }
 
 export interface AgentQuestionItem {
@@ -209,6 +235,27 @@ interface AppState {
   pendingTypewriter: Record<string, { messageId: string; text: string } | null>;
   showThinkingBlocks: Record<string, boolean>;
   toolActivities: Record<string, ToolActivity[]>;
+  /** Per-workspace ordered segments for the *in-progress* turn. Finalized
+   *  into `CompletedTurn.segments` by `finalizeTurn` and cleared. */
+  turnSegments: Record<string, TurnSegment[]>;
+  /** Transient flag: text or thinking has arrived since the last tool call,
+   *  so the next tool must start a fresh tool-group segment. Cleared when
+   *  the next tool is appended or when the turn finalizes. */
+  segmentBreakPending: Record<string, boolean>;
+  /** Segments that have been "committed" to a specific message position.
+   *  When an assistant message finalizes mid-turn, the current
+   *  `turnSegments` are snapshotted here with their matching activities.
+   *  `MessagesWithTurns` subscribes to this (infrequently-changing) slice
+   *  to render segments inline after the message they belong to.
+   *  Cleared on turn finalization. */
+  committedSegmentGroups: Record<
+    string,
+    Array<{
+      afterMessageId: string;
+      segments: TurnSegment[];
+      activities: ToolActivity[];
+    }>
+  >;
   completedTurns: Record<string, CompletedTurn[]>;
   /** Latest `result.usage` values per workspace — kept in sync with every
    *  turn end, including tool-free turns that don't produce a CompletedTurn.
@@ -271,6 +318,23 @@ interface AppState {
     toolUseId: string,
     partialJson: string,
   ) => void;
+  /** Append a tool call to the in-progress turn's segment list. A subagent
+   *  call, or any call after a pending break, starts a new segment; otherwise
+   *  the call extends the trailing `tool-group`. Clears `segmentBreakPending`. */
+  appendToolSegment: (
+    wsId: string,
+    toolUseId: string,
+    isSubagent: boolean,
+  ) => void;
+  /** Mark that text or thinking has arrived, so the next tool call will
+   *  start a new segment rather than merging into the trailing tool-group. */
+  markSegmentBreak: (wsId: string) => void;
+  /** Snapshot the current `turnSegments` and their matching
+   *  `toolActivities` into `committedSegmentGroups`, anchored to the
+   *  just-finalized assistant message. Called from useAgentStream on the
+   *  `assistant` event. Resets `turnSegments` and `segmentBreakPending`
+   *  so the next message's tool calls start from a clean slate. */
+  commitSegments: (wsId: string, messageId: string) => void;
 
   // -- Agent Questions (per-session) --
   agentQuestions: Record<string, AgentQuestion>;
@@ -847,6 +911,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingTypewriter: {},
   showThinkingBlocks: {},
   toolActivities: {},
+  turnSegments: {},
+  segmentBreakPending: {},
+  committedSegmentGroups: {},
   completedTurns: {},
   latestTurnUsage: {},
   setLatestTurnUsage: (wsId, usage) =>
@@ -974,6 +1041,78 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       },
     })),
+  appendToolSegment: (wsId, toolUseId, isSubagent) =>
+    set((s) => {
+      const segs = s.turnSegments[wsId] ?? [];
+      const last = segs[segs.length - 1];
+      const breakPending = s.segmentBreakPending[wsId] === true;
+      let next: TurnSegment[];
+      if (isSubagent) {
+        next = [
+          ...segs,
+          { kind: "subagent", id: crypto.randomUUID(), toolUseId },
+        ];
+      } else if (!breakPending && last?.kind === "tool-group") {
+        next = segs.slice(0, -1).concat({
+          ...last,
+          toolUseIds: [...last.toolUseIds, toolUseId],
+        });
+      } else {
+        next = [
+          ...segs,
+          {
+            kind: "tool-group",
+            id: crypto.randomUUID(),
+            toolUseIds: [toolUseId],
+          },
+        ];
+      }
+      return {
+        turnSegments: { ...s.turnSegments, [wsId]: next },
+        segmentBreakPending: { ...s.segmentBreakPending, [wsId]: false },
+      };
+    }),
+  markSegmentBreak: (wsId) =>
+    set((s) => {
+      if (s.segmentBreakPending[wsId] === true) return s;
+      return {
+        segmentBreakPending: { ...s.segmentBreakPending, [wsId]: true },
+      };
+    }),
+  commitSegments: (wsId, messageId) =>
+    set((s) => {
+      const segs = s.turnSegments[wsId] ?? [];
+      if (segs.length === 0) return {};
+      const allActivities = s.toolActivities[wsId] ?? [];
+      const toolIdsInSegs = new Set<string>();
+      for (const seg of segs) {
+        if (seg.kind === "tool-group") {
+          for (const id of seg.toolUseIds) toolIdsInSegs.add(id);
+        } else {
+          toolIdsInSegs.add(seg.toolUseId);
+        }
+      }
+      const snapshotActivities = allActivities
+        .filter((a) => toolIdsInSegs.has(a.toolUseId))
+        .map((a) => ({ ...a }));
+      const entry = {
+        afterMessageId: messageId,
+        segments: segs.map((seg) =>
+          seg.kind === "tool-group"
+            ? { ...seg, toolUseIds: [...seg.toolUseIds] }
+            : { ...seg },
+        ),
+        activities: snapshotActivities,
+      };
+      return {
+        committedSegmentGroups: {
+          ...s.committedSegmentGroups,
+          [wsId]: [...(s.committedSegmentGroups[wsId] ?? []), entry],
+        },
+        turnSegments: { ...s.turnSegments, [wsId]: [] },
+        segmentBreakPending: { ...s.segmentBreakPending, [wsId]: false },
+      };
+    }),
   finalizeTurn: (
     wsId,
     messageCount,
@@ -985,12 +1124,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     cacheCreationTokens,
   ) =>
     set((s) => {
-      // Phase 2.5: finalizeTurn no longer writes latestTurnUsage. The
-      // meter needs per-call values, not the turn-aggregate we receive
-      // here — useAgentStream's result handler calls setLatestTurnUsage
-      // separately with the correct per-call data. The tokens we DO
-      // receive here stay as CompletedTurn aggregate fields for the
-      // TurnFooter's "turn-total work" view.
       const activities = s.toolActivities[wsId] || [];
       if (activities.length === 0) {
         debugChat("store", "finalizeTurn skipped", {
@@ -1003,6 +1136,44 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         return {};
       }
+      const committed = s.committedSegmentGroups[wsId] ?? [];
+      const trailing = s.turnSegments[wsId] ?? [];
+      const allSegments: TurnSegment[] = [
+        ...committed.flatMap((g) =>
+          g.segments.map((seg) =>
+            seg.kind === "tool-group"
+              ? { ...seg, toolUseIds: [...seg.toolUseIds] }
+              : { ...seg },
+          ),
+        ),
+        ...trailing.map((seg) =>
+          seg.kind === "tool-group"
+            ? { ...seg, toolUseIds: [...seg.toolUseIds] }
+            : { ...seg },
+        ),
+      ];
+      const segments: TurnSegment[] =
+        allSegments.length > 0
+          ? allSegments
+          : [
+              {
+                kind: "tool-group",
+                id: crypto.randomUUID(),
+                toolUseIds: activities.map((a) => a.toolUseId),
+              },
+            ];
+      const segmentGroups =
+        committed.length > 0
+          ? committed.map((g) => ({
+              afterMessageId: g.afterMessageId,
+              segments: g.segments.map((seg) =>
+                seg.kind === "tool-group"
+                  ? { ...seg, toolUseIds: [...seg.toolUseIds] }
+                  : { ...seg },
+              ),
+              activityToolUseIds: g.activities.map((a) => a.toolUseId),
+            }))
+          : undefined;
       const turn: CompletedTurn = {
         id: turnId ?? crypto.randomUUID(),
         activities: activities.map((a) => ({
@@ -1013,6 +1184,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           collapsed: true,
           summary: a.summary,
         })),
+        segments,
+        segmentGroups,
         messageCount,
         collapsed: true,
         afterMessageIndex: (s.chatMessages[wsId] || []).length,
@@ -1039,6 +1212,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           [wsId]: [...(s.completedTurns[wsId] || []), turn],
         },
         toolActivities: { ...s.toolActivities, [wsId]: [] },
+        turnSegments: { ...s.turnSegments, [wsId]: [] },
+        segmentBreakPending: { ...s.segmentBreakPending, [wsId]: false },
+        committedSegmentGroups: {
+          ...s.committedSegmentGroups,
+          [wsId]: [],
+        },
       };
     }),
   hydrateCompletedTurns: (wsId, turns) =>
@@ -1261,6 +1440,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastMessages: updatedLastMessages,
         completedTurns: { ...s.completedTurns, [sessionId]: [] },
         toolActivities: { ...s.toolActivities, [sessionId]: [] },
+        turnSegments: { ...s.turnSegments, [sessionId]: [] },
+        segmentBreakPending: { ...s.segmentBreakPending, [sessionId]: false },
+        committedSegmentGroups: {
+          ...s.committedSegmentGroups,
+          [sessionId]: [],
+        },
         streamingContent: { ...s.streamingContent, [sessionId]: "" },
         streamingThinking: { ...s.streamingThinking, [sessionId]: "" },
         agentQuestions: restQuestions,

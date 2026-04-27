@@ -35,6 +35,18 @@ pub struct TurnToolActivity {
     pub result_text: String,
     pub summary: String,
     pub sort_order: i32,
+    /// Index of the segment this activity belongs to within its turn. Rows
+    /// sharing a `group_id` are rendered as one tool-group; distinct values
+    /// become distinct groups or subagent cards. `None` on pre-migration rows
+    /// — the reader treats those as a single group covering the whole turn.
+    #[serde(default)]
+    pub group_id: Option<i32>,
+    /// 0-based index of the committed segment group within the turn. The Nth
+    /// group anchors to the Nth assistant message in the turn's message span.
+    /// Used to reconstruct inline segment rendering on reload. `None` on
+    /// legacy rows — falls back to aggregated TurnSummary rendering.
+    #[serde(default)]
+    pub anchor_ordinal: Option<i32>,
 }
 
 /// Grouped checkpoint + activities for loading completed turns.
