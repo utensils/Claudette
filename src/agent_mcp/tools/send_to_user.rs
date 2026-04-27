@@ -29,16 +29,25 @@ pub const ALLOWED_IMAGE_TYPES: &[&str] = &[
 /// Allowed document types — currently PDF only, matches inbound rules.
 pub const ALLOWED_DOCUMENT_TYPES: &[&str] = &["application/pdf"];
 
-/// Allowed text-file MIME type. Inbound currently only allows `text/plain`;
-/// keeping the same set on outbound prevents the agent from injecting
-/// unexpected MIME types.
-pub const ALLOWED_TEXT_TYPES: &[&str] = &["text/plain"];
+/// Allowed text/data MIME types. Each renders with a type-specific preview
+/// card on the frontend (see `src/ui/src/components/chat/MessageAttachment.tsx`).
+/// Adding a type here without a matching preview falls back to the plain-text
+/// card.
+pub const ALLOWED_TEXT_TYPES: &[&str] = &[
+    "text/plain",
+    "text/csv",
+    "text/markdown",
+    "application/json",
+];
 
 /// Per-type size caps (raw bytes, pre-base64). Mirrors the constants in
 /// `src/ui/src/utils/attachmentValidation.ts`.
 pub const MAX_IMAGE_BYTES: u64 = 3_932_160; // 3.75 MiB
 pub const MAX_PDF_BYTES: u64 = 20 * 1024 * 1024;
-pub const MAX_TEXT_BYTES: u64 = 500 * 1024;
+pub const MAX_TEXT_BYTES: u64 = 1024 * 1024;
+pub const MAX_CSV_BYTES: u64 = 2 * 1024 * 1024;
+pub const MAX_MARKDOWN_BYTES: u64 = 1024 * 1024;
+pub const MAX_JSON_BYTES: u64 = 1024 * 1024;
 
 /// Decide whether the agent is allowed to send this file to the user.
 /// Returns `Ok(())` to accept; `Err(reason)` to reject. The `reason` string
@@ -77,20 +86,41 @@ pub fn policy(media_type: &str, size_bytes: u64, filename: &str) -> Result<(), S
         MAX_IMAGE_BYTES
     } else if ALLOWED_DOCUMENT_TYPES.contains(&media_type) {
         MAX_PDF_BYTES
-    } else if ALLOWED_TEXT_TYPES.contains(&media_type) {
-        MAX_TEXT_BYTES
     } else {
-        return Err(format!(
-            "media type {media_type:?} is not allowed; supported: images (png/jpeg/gif/webp/svg), application/pdf, text/plain"
-        ));
+        match max_text_bytes_for(media_type) {
+            Some(m) => m,
+            None => {
+                return Err(format!(
+                    "media type {media_type:?} is not supported inline. Supported: \
+                     images (png/jpeg/gif/webp/svg), application/pdf, text/plain, \
+                     text/csv, text/markdown, application/json. The file at \
+                     {filename:?} is on disk — for unsupported types, just tell \
+                     the user that path so they can retrieve it manually instead \
+                     of calling this tool."
+                ));
+            }
+        }
     };
 
     if size_bytes > max {
         return Err(format!(
-            "file too large for {media_type}: {size_bytes} bytes (max {max})"
+            "file too large for {media_type}: {size_bytes} bytes (max {max}). \
+             The file at {filename:?} is on disk — tell the user that path so \
+             they can open it directly instead of retrying this tool."
         ));
     }
     Ok(())
+}
+
+/// Per-text-type cap, or `None` if the type isn't a recognized text/data type.
+fn max_text_bytes_for(media_type: &str) -> Option<u64> {
+    match media_type {
+        "text/plain" => Some(MAX_TEXT_BYTES),
+        "text/csv" => Some(MAX_CSV_BYTES),
+        "text/markdown" => Some(MAX_MARKDOWN_BYTES),
+        "application/json" => Some(MAX_JSON_BYTES),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -111,14 +141,22 @@ mod tests {
             ("image/svg+xml", 100, "vec.svg", Ok(())),
             ("application/pdf", 1_000_000, "report.pdf", Ok(())),
             ("text/plain", 1024, "notes.txt", Ok(())),
+            ("text/csv", 50_000, "rows.csv", Ok(())),
+            ("text/markdown", 5_000, "README.md", Ok(())),
+            ("application/json", 100, "config.json", Ok(())),
             // --- rejected: disallowed types ---
             ("application/x-msdownload", 100, "evil.exe", Err(())),
             ("application/zip", 100, "bundle.zip", Err(())),
             ("text/html", 100, "page.html", Err(())),
+            ("application/x-tar", 100, "bundle.tar", Err(())),
+            ("text/yaml", 100, "config.yaml", Err(())),
             // --- rejected: oversize ---
             ("image/png", MAX_IMAGE_BYTES + 1, "huge.png", Err(())),
             ("application/pdf", MAX_PDF_BYTES + 1, "huge.pdf", Err(())),
             ("text/plain", MAX_TEXT_BYTES + 1, "huge.txt", Err(())),
+            ("text/csv", MAX_CSV_BYTES + 1, "huge.csv", Err(())),
+            ("text/markdown", MAX_MARKDOWN_BYTES + 1, "huge.md", Err(())),
+            ("application/json", MAX_JSON_BYTES + 1, "huge.json", Err(())),
             // --- rejected: empty filename ---
             ("image/png", 100, "", Err(())),
             // --- rejected: malformed media_type ---
@@ -144,5 +182,33 @@ mod tests {
                 (Err(()), Ok(())) => panic!("expected reject for ({mime:?}, {size}, {name:?})"),
             }
         }
+    }
+
+    /// The model uses the rejection text to decide what to do next. Both
+    /// reject paths must mention the filename so it can fall back to
+    /// "tell the user the path on disk" instead of retrying blindly.
+    #[test]
+    fn rejection_text_is_actionable() {
+        let unsupported = super::policy("application/x-tar", 100, "bundle.tar.gz")
+            .expect_err("unsupported should reject");
+        assert!(
+            unsupported.contains("bundle.tar.gz"),
+            "expected filename in rejection: {unsupported}"
+        );
+        assert!(
+            unsupported.contains("on disk"),
+            "expected fallback hint in rejection: {unsupported}"
+        );
+
+        let oversize = super::policy("text/csv", MAX_CSV_BYTES + 1, "huge.csv")
+            .expect_err("oversize should reject");
+        assert!(
+            oversize.contains("huge.csv"),
+            "expected filename in oversize rejection: {oversize}"
+        );
+        assert!(
+            oversize.contains("on disk"),
+            "expected fallback hint in oversize rejection: {oversize}"
+        );
     }
 }

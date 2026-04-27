@@ -64,6 +64,7 @@ import {
   buildAttachmentMenuLabels,
 } from "./AttachmentContextMenu";
 import { AttachmentLightbox } from "./AttachmentLightbox";
+import { MessageAttachment, isTextDataMediaType } from "./MessageAttachment";
 import {
   downloadAttachment,
   openAttachmentInBrowser,
@@ -2034,71 +2035,59 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
             <div className={styles.content}>
               {attachmentsByMessage.has(msg.id) && (
                 <div className={styles.messageImages}>
-                  {attachmentsByMessage.get(msg.id)!.map((att) =>
-                    att.media_type === "application/pdf" ? (
-                      <PdfThumbnail
-                        key={att.id}
-                        dataBase64={att.data_base64 || undefined}
-                        attachmentId={att.id}
-                        filename={att.filename}
-                        className={styles.messageImage}
-                        onClick={() => {
-                          (async () => {
-                            // Persisted attachments strip data_base64 on first
-                            // load to avoid IPC bloat — fetch on demand.
-                            let b64 = att.data_base64;
-                            if (!b64) {
-                              const { loadAttachmentData } = await import(
-                                "../../services/tauri"
-                              );
-                              b64 = await loadAttachmentData(att.id);
-                            }
-                            await openAttachmentWithDefaultApp({
-                              filename: att.filename,
-                              media_type: att.media_type,
-                              data_base64: b64,
-                            });
-                          })().catch((err) =>
-                            console.error("Failed to open PDF:", err),
-                          );
-                        }}
-                        onContextMenu={(e) =>
-                          onAttachmentContextMenu?.(
-                            e,
-                            {
-                              filename: att.filename,
-                              media_type: att.media_type,
-                              data_base64: att.data_base64,
-                            },
-                            att.id,
-                          )
-                        }
-                      />
-                    ) : att.media_type === "text/plain" ? (
-                      <div
-                        key={att.id}
-                        className={styles.messagePdf}
-                        onContextMenu={(e) =>
-                          onAttachmentContextMenu?.(
-                            e,
-                            {
-                              filename: att.filename,
-                              media_type: att.media_type,
-                              data_base64: att.data_base64,
-                            },
-                            att.id,
-                          )
-                        }
-                      >
-                        <FileText size={14} />
-                        <span>{att.filename}</span>
-                        <span className={styles.textFileSize}>
-                          {att.size_bytes < 1024
-                            ? `${att.size_bytes} B`
-                            : `${(att.size_bytes / 1024).toFixed(0)} KB`}
-                        </span>
-                      </div>
-                    ) : (
+                  {attachmentsByMessage.get(msg.id)!.map((att) => {
+                    if (att.media_type === "application/pdf") {
+                      return (
+                        <PdfThumbnail
+                          key={att.id}
+                          dataBase64={att.data_base64 || undefined}
+                          attachmentId={att.id}
+                          filename={att.filename}
+                          className={styles.messageImage}
+                          onClick={() => {
+                            (async () => {
+                              // Persisted attachments strip data_base64 on first
+                              // load to avoid IPC bloat — fetch on demand.
+                              let b64 = att.data_base64;
+                              if (!b64) {
+                                const { loadAttachmentData } = await import(
+                                  "../../services/tauri"
+                                );
+                                b64 = await loadAttachmentData(att.id);
+                              }
+                              await openAttachmentWithDefaultApp({
+                                filename: att.filename,
+                                media_type: att.media_type,
+                                data_base64: b64,
+                              });
+                            })().catch((err) =>
+                              console.error("Failed to open PDF:", err),
+                            );
+                          }}
+                          onContextMenu={(e) =>
+                            onAttachmentContextMenu?.(
+                              e,
+                              {
+                                filename: att.filename,
+                                media_type: att.media_type,
+                                data_base64: att.data_base64,
+                              },
+                              att.id,
+                            )
+                          }
+                        />
+                      );
+                    }
+                    if (isTextDataMediaType(att.media_type)) {
+                      return (
+                        <MessageAttachment
+                          key={att.id}
+                          attachment={att}
+                          handlers={{ onContextMenu: onAttachmentContextMenu }}
+                        />
+                      );
+                    }
+                    return (
                       <img
                         key={att.id}
                         src={`data:${att.media_type};base64,${att.data_base64}`}
@@ -2123,8 +2112,8 @@ const MessagesWithTurns = memo(function MessagesWithTurns({
                           )
                         }
                       />
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
               )}
               {shouldRenderAsMarkdown(msg.role) ? (

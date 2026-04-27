@@ -1,0 +1,153 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--hover-bg-subtle);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  user-select: none;
+}
+
+.headerIcon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.filename {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.size {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.body {
+  position: relative;
+  max-height: 320px;
+  overflow: hidden;
+}
+
+.bodyExpanded {
+  max-height: none;
+}
+
+.fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--hover-bg-subtle));
+}
+
+.expandToggle {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--divider);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.expandToggle:hover {
+  background: var(--hover-bg-subtle);
+  color: var(--text-primary);
+}
+
+.preBody {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: transparent;
+  white-space: pre;
+  overflow: auto;
+}
+
+.markdownBody {
+  padding: 8px 12px;
+  color: var(--text-primary);
+  overflow: auto;
+}
+
+.markdownBody > :first-child {
+  margin-top: 0;
+}
+
+.markdownBody > :last-child {
+  margin-bottom: 0;
+}
+
+.csvTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.csvTable th,
+.csvTable td {
+  padding: 4px 8px;
+  border-right: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.csvTable th {
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.csvTable tbody tr:nth-child(even) {
+  background: var(--surface-bg);
+}
+
+.csvTruncated {
+  padding: 4px 10px;
+  color: var(--text-faint);
+  font-size: 11px;
+  border-top: 1px solid var(--divider);
+  background: var(--surface-bg);
+}
+
+.error {
+  padding: 8px 10px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-style: italic;
+}

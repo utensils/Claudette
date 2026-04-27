@@ -138,10 +138,15 @@ fn tools_list_result() -> Value {
         "tools": [{
             "name": TOOL_NAME,
             "description": "Deliver a file to the user inline in the Claudette chat surface. \
-                           Use this when the user asks to be sent an artifact (screenshot, \
-                           generated image, PDF, small text file). The file must already exist \
-                           on disk; pass its absolute path. Renders inline; the user can \
-                           click to enlarge or download.",
+                           Supported types: images (PNG/JPEG/GIF/WebP/SVG), PDF, plain text, \
+                           CSV, JSON, and Markdown. Each type has its own size cap; the call \
+                           is rejected for oversized or unsupported types. The file must \
+                           already exist on disk — pass its absolute path. Renders inline \
+                           with a type-aware preview; the user can click to enlarge or \
+                           download. For anything outside the supported set (binaries, \
+                           archives, oversized files), do NOT call this tool — instead, \
+                           tell the user the absolute path on disk so they can open it \
+                           manually.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
