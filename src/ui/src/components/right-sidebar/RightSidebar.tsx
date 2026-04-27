@@ -32,7 +32,7 @@ export const RightSidebar = memo(function RightSidebar() {
   const diffSelectedLayer = useAppStore((s) => s.diffSelectedLayer);
   const diffLoading = useAppStore((s) => s.diffLoading);
   const setDiffFiles = useAppStore((s) => s.setDiffFiles);
-  const setDiffSelectedFile = useAppStore((s) => s.setDiffSelectedFile);
+  const openDiffTab = useAppStore((s) => s.openDiffTab);
   const setDiffLoading = useAppStore((s) => s.setDiffLoading);
   const setDiffViewMode = useAppStore((s) => s.setDiffViewMode);
   const diffViewMode = useAppStore((s) => s.diffViewMode);
@@ -191,7 +191,11 @@ export const RightSidebar = memo(function RightSidebar() {
     <div
       key={`${layer ?? "flat"}-${file.path}`}
       className={`${styles.file} ${isSelected ? styles.fileSelected : ""}`}
-      onClick={() => setDiffSelectedFile(file.path, layer)}
+      onClick={() => {
+        if (selectedWorkspaceId) {
+          openDiffTab(selectedWorkspaceId, file.path, layer);
+        }
+      }}
       onContextMenu={handleContextMenu}
     >
       <span

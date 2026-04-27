@@ -14,6 +14,7 @@ import type {
   AttachmentInput,
   ChatSession,
   DiffFile,
+  DiffFileTab,
   FileDiff,
   DiffViewMode,
   TerminalTab,
@@ -356,6 +357,11 @@ interface AppState {
   diffViewMode: DiffViewMode;
   diffLoading: boolean;
   diffError: string | null;
+  // Per-workspace open diff-file tabs. Ephemeral — not persisted across
+  // restarts. Identity is (path, layer); the same path opened from two
+  // different layers produces two distinct tabs because their diff content
+  // differs.
+  diffTabsByWorkspace: Record<string, DiffFileTab[]>;
   setDiffFiles: (files: DiffFile[], mergeBase: string, stagedFiles?: import("../types/diff").StagedDiffFiles | null) => void;
   setDiffSelectedFile: (path: string | null, layer?: import("../types/diff").DiffLayer | null) => void;
   setDiffContent: (content: FileDiff | null) => void;
@@ -363,6 +369,15 @@ interface AppState {
   setDiffLoading: (loading: boolean) => void;
   setDiffError: (error: string | null) => void;
   clearDiff: () => void;
+  // Open a diff tab for the given file (deduped by path+layer) and make it
+  // the active view. The previously-selected chat session stays selected so
+  // closing all diff tabs restores it.
+  openDiffTab: (workspaceId: string, path: string, layer?: import("../types/diff").DiffLayer | null) => void;
+  // Focus an already-open diff tab without mutating the tab list.
+  selectDiffTab: (path: string, layer?: import("../types/diff").DiffLayer | null) => void;
+  // Close a diff tab. If it was the active diff, the chat session selected
+  // for this workspace becomes active again.
+  closeDiffTab: (workspaceId: string, path: string, layer?: import("../types/diff").DiffLayer | null) => void;
 
   // -- Terminal --
   terminalTabs: Record<string, TerminalTab[]>;
@@ -633,6 +648,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         delete newPaneTrees[tabId];
         delete newActivePane[tabId];
       }
+      const newDiffTabs = { ...s.diffTabsByWorkspace };
+      for (const wsId of removedWsIds) {
+        delete newDiffTabs[wsId];
+      }
       return {
         repositories: s.repositories.filter((r) => r.id !== id),
         workspaces: s.workspaces.filter((w) => w.repository_id !== id),
@@ -648,6 +667,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         unreadCompletions: newUnreadCompletions,
         terminalPaneTrees: newPaneTrees,
         activeTerminalPaneId: newActivePane,
+        diffTabsByWorkspace: newDiffTabs,
       };
     }),
 
@@ -683,6 +703,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         delete newPaneTrees[tabId];
         delete newActivePane[tabId];
       }
+      const newDiffTabs = { ...s.diffTabsByWorkspace };
+      delete newDiffTabs[id];
       return {
         workspaces: s.workspaces.filter((w) => w.id !== id),
         selectedWorkspaceId:
@@ -693,11 +715,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         workspaceTerminalCommands: newWorkspaceTerminalCommands,
         terminalPaneTrees: newPaneTrees,
         activeTerminalPaneId: newActivePane,
+        diffTabsByWorkspace: newDiffTabs,
       };
     }),
   selectWorkspace: (id) =>
     set((s) => {
-      const updates: Partial<AppState> = { selectedWorkspaceId: id, rightSidebarTab: "changes" };
+      const updates: Partial<AppState> = {
+        selectedWorkspaceId: id,
+        rightSidebarTab: "changes",
+        // diffSelectedFile/Layer are workspace-global pointers; switching
+        // workspaces must drop them so the new workspace's tab strip and
+        // content render cleanly. Per-workspace diff *tabs* live in
+        // diffTabsByWorkspace and are preserved.
+        diffSelectedFile: null,
+        diffSelectedLayer: null,
+        diffContent: null,
+        diffError: null,
+      };
       if (id && s.unreadCompletions.has(id)) {
         const next = new Set(s.unreadCompletions);
         next.delete(id);
@@ -786,6 +820,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...s.selectedSessionIdByWorkspaceId,
         [workspaceId]: sessionId,
       },
+      // Clicking a chat tab is an explicit "show me chat" intent, so any
+      // active diff view yields. Diff tabs themselves remain in the strip.
+      diffSelectedFile: null,
+      diffSelectedLayer: null,
     })),
 
   // -- Chat --
@@ -1327,6 +1365,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   diffViewMode: "Unified",
   diffLoading: false,
   diffError: null,
+  diffTabsByWorkspace: {},
   setDiffFiles: (files, mergeBase, stagedFiles) =>
     set({ diffFiles: files, diffMergeBase: mergeBase, diffStagedFiles: stagedFiles ?? null }),
   setDiffSelectedFile: (path, layer) => set({ diffSelectedFile: path, diffSelectedLayer: layer ?? null }),
@@ -1343,6 +1382,55 @@ export const useAppStore = create<AppState>((set, get) => ({
       diffStagedFiles: null,
       diffContent: null,
       diffError: null,
+      diffTabsByWorkspace: {},
+    }),
+  openDiffTab: (workspaceId, path, layer) =>
+    set((s) => {
+      const normalizedLayer = layer ?? null;
+      const existing = s.diffTabsByWorkspace[workspaceId] ?? [];
+      const alreadyOpen = existing.some(
+        (t) => t.path === path && t.layer === normalizedLayer,
+      );
+      const nextTabs = alreadyOpen
+        ? s.diffTabsByWorkspace
+        : {
+            ...s.diffTabsByWorkspace,
+            [workspaceId]: [...existing, { path, layer: normalizedLayer }],
+          };
+      return {
+        diffTabsByWorkspace: nextTabs,
+        diffSelectedFile: path,
+        diffSelectedLayer: normalizedLayer,
+      };
+    }),
+  selectDiffTab: (path, layer) =>
+    set({ diffSelectedFile: path, diffSelectedLayer: layer ?? null }),
+  closeDiffTab: (workspaceId, path, layer) =>
+    set((s) => {
+      const normalizedLayer = layer ?? null;
+      const existing = s.diffTabsByWorkspace[workspaceId] ?? [];
+      const idx = existing.findIndex(
+        (t) => t.path === path && t.layer === normalizedLayer,
+      );
+      if (idx < 0) return s;
+      const nextWsTabs = existing.slice(0, idx).concat(existing.slice(idx + 1));
+      const wasActive =
+        s.diffSelectedFile === path && s.diffSelectedLayer === normalizedLayer;
+      const updates: Partial<AppState> = {
+        diffTabsByWorkspace: {
+          ...s.diffTabsByWorkspace,
+          [workspaceId]: nextWsTabs,
+        },
+      };
+      if (wasActive) {
+        // Drop active-diff state. AppLayout will fall back to ChatPanel,
+        // which renders whichever session is in selectedSessionIdByWorkspaceId.
+        updates.diffSelectedFile = null;
+        updates.diffSelectedLayer = null;
+        updates.diffContent = null;
+        updates.diffError = null;
+      }
+      return updates;
     }),
 
   // -- SCM --

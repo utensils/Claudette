@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// `FileDiff` is also a TS type re-exported from "../../types" — alias the
+// lucide icon to avoid the name collision in this file.
+import { FileDiff as FileDiffIcon, Plus, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   listChatSessions,
@@ -8,8 +10,18 @@ import {
   archiveChatSession,
 } from "../../services/tauri";
 import { SessionStatusIcon, type SessionStatusKind } from "../shared/SessionStatusIcon";
-import type { ChatSession } from "../../types";
+import type { ChatSession, DiffFileTab, DiffLayer } from "../../types";
 import styles from "./SessionTabs.module.css";
+
+type NavDirection = "prev" | "next" | "first" | "last";
+
+// Unified key namespace for the tab strip's keyboard nav and ref map.
+// Sessions and diff tabs occupy a single ordered list; encoding the kind in
+// the key keeps the navigation logic flat without touching the underlying
+// data shapes.
+const sessionNavKey = (id: string) => `s:${id}`;
+const diffNavKey = (path: string, layer: DiffLayer | null) =>
+  `d:${path}:${layer ?? "null"}`;
 
 interface Props {
   workspaceId: string;
@@ -28,6 +40,7 @@ function statusFor(session: ChatSession): SessionStatusKind {
 // consecutive snapshots with `Object.is` and forces a re-render on mismatch;
 // a fresh `[]` every call turns that into an infinite render loop.
 const EMPTY_SESSIONS: ChatSession[] = [];
+const EMPTY_DIFF_TABS: DiffFileTab[] = [];
 
 export function SessionTabs({ workspaceId }: Props) {
   const sessions = useAppStore(
@@ -36,11 +49,18 @@ export function SessionTabs({ workspaceId }: Props) {
   const selectedSessionId = useAppStore(
     (s) => s.selectedSessionIdByWorkspaceId[workspaceId] ?? null,
   );
+  const diffTabs = useAppStore(
+    (s) => s.diffTabsByWorkspace[workspaceId] ?? EMPTY_DIFF_TABS,
+  );
+  const diffSelectedFile = useAppStore((s) => s.diffSelectedFile);
+  const diffSelectedLayer = useAppStore((s) => s.diffSelectedLayer);
   const setSessionsForWorkspace = useAppStore((s) => s.setSessionsForWorkspace);
   const addChatSession = useAppStore((s) => s.addChatSession);
   const updateChatSession = useAppStore((s) => s.updateChatSession);
   const removeChatSession = useAppStore((s) => s.removeChatSession);
   const selectSession = useAppStore((s) => s.selectSession);
+  const selectDiffTab = useAppStore((s) => s.selectDiffTab);
+  const closeDiffTab = useAppStore((s) => s.closeDiffTab);
 
   // Monotonic version token: each local mutation (create/archive) bumps this so
   // an in-flight `listChatSessions` response can detect it's stale and skip the
@@ -96,58 +116,103 @@ export function SessionTabs({ workspaceId }: Props) {
     }
   };
 
-  // Refs keyed by session id so arrow-key navigation can move DOM focus
-  // to the newly-selected tab (the previously-focused element loses
-  // tabIndex=0 once selection moves, so we need to programmatically focus
-  // the new active tab).
+  // Refs keyed by a unified nav key (sessionNavKey / diffNavKey) so arrow-key
+  // navigation can focus any tab in the strip, regardless of kind.
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  // Unified ordered list of focusable tab entries. Sessions first, diffs
+  // second — the layout users see in the strip. Wrapped in useMemo so the
+  // navigateTabs callback identity stays stable across unrelated re-renders.
+  type NavEntry =
+    | { key: string; kind: "session"; sessionId: string }
+    | { key: string; kind: "diff"; path: string; layer: DiffLayer | null };
+  const navEntries = useMemo<NavEntry[]>(() => {
+    const sessionEntries: NavEntry[] = activeSessions.map((s) => ({
+      key: sessionNavKey(s.id),
+      kind: "session",
+      sessionId: s.id,
+    }));
+    const diffEntries: NavEntry[] = diffTabs.map((t) => ({
+      key: diffNavKey(t.path, t.layer),
+      kind: "diff",
+      path: t.path,
+      layer: t.layer,
+    }));
+    return [...sessionEntries, ...diffEntries];
+  }, [activeSessions, diffTabs]);
+
   const navigateTabs = useCallback(
-    (from: string, direction: "prev" | "next" | "first" | "last") => {
-      if (activeSessions.length === 0) return;
-      const idx = activeSessions.findIndex((s) => s.id === from);
+    (fromKey: string, direction: NavDirection) => {
+      if (navEntries.length === 0) return;
+      const idx = navEntries.findIndex((e) => e.key === fromKey);
       if (idx < 0) return;
       let targetIdx: number;
       switch (direction) {
         case "prev":
-          targetIdx = (idx - 1 + activeSessions.length) % activeSessions.length;
+          targetIdx = (idx - 1 + navEntries.length) % navEntries.length;
           break;
         case "next":
-          targetIdx = (idx + 1) % activeSessions.length;
+          targetIdx = (idx + 1) % navEntries.length;
           break;
         case "first":
           targetIdx = 0;
           break;
         case "last":
-          targetIdx = activeSessions.length - 1;
+          targetIdx = navEntries.length - 1;
           break;
       }
-      const target = activeSessions[targetIdx];
-      selectSession(workspaceId, target.id);
-      tabRefs.current.get(target.id)?.focus();
+      const target = navEntries[targetIdx];
+      if (target.kind === "session") {
+        selectSession(workspaceId, target.sessionId);
+      } else {
+        selectDiffTab(target.path, target.layer);
+      }
+      tabRefs.current.get(target.key)?.focus();
     },
-    [activeSessions, selectSession, workspaceId],
+    [navEntries, selectSession, selectDiffTab, workspaceId],
   );
 
   return (
     <div className={styles.tabBar} role="tablist">
-      {activeSessions.map((session) => (
-        <SessionTab
-          key={session.id}
-          session={session}
-          isActive={session.id === selectedSessionId}
-          onSelect={() => selectSession(workspaceId, session.id)}
-          onClose={() => handleArchive(session)}
-          onRename={(name) => {
-            updateChatSession(session.id, { name, name_edited: true });
-          }}
-          onNavigate={(direction) => navigateTabs(session.id, direction)}
-          tabRef={(el) => {
-            if (el) tabRefs.current.set(session.id, el);
-            else tabRefs.current.delete(session.id);
-          }}
-        />
-      ))}
+      {activeSessions.map((session) => {
+        const navKey = sessionNavKey(session.id);
+        return (
+          <SessionTab
+            key={session.id}
+            session={session}
+            isActive={session.id === selectedSessionId && diffSelectedFile === null}
+            onSelect={() => selectSession(workspaceId, session.id)}
+            onClose={() => handleArchive(session)}
+            onRename={(name) => {
+              updateChatSession(session.id, { name, name_edited: true });
+            }}
+            onNavigate={(direction) => navigateTabs(navKey, direction)}
+            tabRef={(el) => {
+              if (el) tabRefs.current.set(navKey, el);
+              else tabRefs.current.delete(navKey);
+            }}
+          />
+        );
+      })}
+      {diffTabs.map((tab) => {
+        const navKey = diffNavKey(tab.path, tab.layer);
+        const isActive =
+          diffSelectedFile === tab.path && diffSelectedLayer === tab.layer;
+        return (
+          <DiffTab
+            key={navKey}
+            tab={tab}
+            isActive={isActive}
+            onSelect={() => selectDiffTab(tab.path, tab.layer)}
+            onClose={() => closeDiffTab(workspaceId, tab.path, tab.layer)}
+            onNavigate={(direction) => navigateTabs(navKey, direction)}
+            tabRef={(el) => {
+              if (el) tabRefs.current.set(navKey, el);
+              else tabRefs.current.delete(navKey);
+            }}
+          />
+        );
+      })}
       <button
         type="button"
         className={styles.addBtn}
@@ -286,6 +351,70 @@ function SessionTab({
         }}
         title="Close session"
         aria-label="Close session"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+}
+
+interface DiffTabProps {
+  tab: DiffFileTab;
+  isActive: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+  onNavigate: (direction: NavDirection) => void;
+  tabRef: (el: HTMLDivElement | null) => void;
+}
+
+function DiffTab({ tab, isActive, onSelect, onClose, onNavigate, tabRef }: DiffTabProps) {
+  // Show just the basename in the tab; the full path goes in the tooltip
+  // (mirrors how editors label file tabs). `path.split("/").pop()` is fine
+  // because diff paths come from git and use forward slashes on every
+  // platform.
+  const basename = tab.path.split("/").pop() || tab.path;
+  return (
+    <div
+      ref={tabRef}
+      role="tab"
+      aria-selected={isActive}
+      tabIndex={isActive ? 0 : -1}
+      className={`${styles.tab} ${isActive ? styles.active : ""}`}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          onNavigate("prev");
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          onNavigate("next");
+        } else if (e.key === "Home") {
+          e.preventDefault();
+          onNavigate("first");
+        } else if (e.key === "End") {
+          e.preventDefault();
+          onNavigate("last");
+        }
+      }}
+    >
+      <span className={styles.icon}>
+        <FileDiffIcon size={12} />
+      </span>
+      <span className={styles.name} title={tab.path}>
+        {basename}
+      </span>
+      <button
+        type="button"
+        className={styles.closeBtn}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        title="Close diff"
+        aria-label="Close diff"
       >
         <X size={12} />
       </button>

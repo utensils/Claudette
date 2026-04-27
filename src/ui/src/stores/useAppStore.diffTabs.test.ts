@@ -1,0 +1,195 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { useAppStore } from "./useAppStore";
+
+const WS_A = "workspace-a";
+const WS_B = "workspace-b";
+
+// Minimal reset so each case starts from a known empty state.
+function reset() {
+  useAppStore.setState({
+    diffTabsByWorkspace: {},
+    diffSelectedFile: null,
+    diffSelectedLayer: null,
+    diffContent: null,
+    diffError: null,
+    sessionsByWorkspace: {},
+    selectedSessionIdByWorkspaceId: {},
+  });
+}
+
+describe("openDiffTab", () => {
+  beforeEach(reset);
+
+  it("appends the tab and sets it active", () => {
+    useAppStore.getState().openDiffTab(WS_A, "src/foo.ts", "unstaged");
+
+    const state = useAppStore.getState();
+    expect(state.diffTabsByWorkspace[WS_A]).toEqual([
+      { path: "src/foo.ts", layer: "unstaged" },
+    ]);
+    expect(state.diffSelectedFile).toBe("src/foo.ts");
+    expect(state.diffSelectedLayer).toBe("unstaged");
+  });
+
+  it("dedupes when re-opening the same (path, layer)", () => {
+    useAppStore.getState().openDiffTab(WS_A, "src/foo.ts", "unstaged");
+    useAppStore.getState().openDiffTab(WS_A, "src/foo.ts", "unstaged");
+
+    expect(useAppStore.getState().diffTabsByWorkspace[WS_A]).toHaveLength(1);
+  });
+
+  it("treats different layers of the same path as distinct tabs", () => {
+    useAppStore.getState().openDiffTab(WS_A, "src/foo.ts", "unstaged");
+    useAppStore.getState().openDiffTab(WS_A, "src/foo.ts", "committed");
+
+    const tabs = useAppStore.getState().diffTabsByWorkspace[WS_A];
+    expect(tabs).toEqual([
+      { path: "src/foo.ts", layer: "unstaged" },
+      { path: "src/foo.ts", layer: "committed" },
+    ]);
+  });
+
+  it("isolates tabs by workspace", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", null);
+    useAppStore.getState().openDiffTab(WS_B, "b.ts", null);
+
+    const state = useAppStore.getState();
+    expect(state.diffTabsByWorkspace[WS_A]).toEqual([{ path: "a.ts", layer: null }]);
+    expect(state.diffTabsByWorkspace[WS_B]).toEqual([{ path: "b.ts", layer: null }]);
+  });
+
+  it("treats omitted layer as null", () => {
+    useAppStore.getState().openDiffTab(WS_A, "x.ts");
+    useAppStore.getState().openDiffTab(WS_A, "x.ts", null);
+
+    expect(useAppStore.getState().diffTabsByWorkspace[WS_A]).toHaveLength(1);
+  });
+});
+
+describe("closeDiffTab", () => {
+  beforeEach(reset);
+
+  it("removes the tab from the strip", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    useAppStore.getState().openDiffTab(WS_A, "b.ts", "unstaged");
+
+    useAppStore.getState().closeDiffTab(WS_A, "a.ts", "unstaged");
+
+    expect(useAppStore.getState().diffTabsByWorkspace[WS_A]).toEqual([
+      { path: "b.ts", layer: "unstaged" },
+    ]);
+  });
+
+  it("clears active-diff state when closing the active tab", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    useAppStore.setState({ diffContent: { path: "a.ts", hunks: [], is_binary: false } });
+
+    useAppStore.getState().closeDiffTab(WS_A, "a.ts", "unstaged");
+
+    const state = useAppStore.getState();
+    expect(state.diffSelectedFile).toBeNull();
+    expect(state.diffSelectedLayer).toBeNull();
+    expect(state.diffContent).toBeNull();
+  });
+
+  it("preserves active-diff state when closing a non-active tab", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    useAppStore.getState().openDiffTab(WS_A, "b.ts", "unstaged");
+    // a.ts is now non-active (b.ts opened last and became active).
+
+    useAppStore.getState().closeDiffTab(WS_A, "a.ts", "unstaged");
+
+    const state = useAppStore.getState();
+    expect(state.diffSelectedFile).toBe("b.ts");
+    expect(state.diffSelectedLayer).toBe("unstaged");
+  });
+
+  it("is a no-op for an unknown (path, layer)", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    const before = useAppStore.getState().diffTabsByWorkspace[WS_A];
+
+    useAppStore.getState().closeDiffTab(WS_A, "missing.ts", "unstaged");
+
+    expect(useAppStore.getState().diffTabsByWorkspace[WS_A]).toBe(before);
+  });
+});
+
+describe("selectDiffTab", () => {
+  beforeEach(reset);
+
+  it("focuses the diff without mutating the tab list", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    useAppStore.getState().openDiffTab(WS_A, "b.ts", "unstaged");
+    const tabsBefore = useAppStore.getState().diffTabsByWorkspace[WS_A];
+
+    useAppStore.getState().selectDiffTab("a.ts", "unstaged");
+
+    const state = useAppStore.getState();
+    expect(state.diffSelectedFile).toBe("a.ts");
+    expect(state.diffSelectedLayer).toBe("unstaged");
+    expect(state.diffTabsByWorkspace[WS_A]).toBe(tabsBefore);
+  });
+});
+
+describe("selectSession clears active diff", () => {
+  beforeEach(reset);
+
+  it("nulls diffSelectedFile so AppLayout swaps back to chat", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    expect(useAppStore.getState().diffSelectedFile).toBe("a.ts");
+
+    useAppStore.getState().selectSession(WS_A, "session-1");
+
+    const state = useAppStore.getState();
+    expect(state.diffSelectedFile).toBeNull();
+    expect(state.diffSelectedLayer).toBeNull();
+    // Diff tabs themselves remain in the strip.
+    expect(state.diffTabsByWorkspace[WS_A]).toHaveLength(1);
+    expect(state.selectedSessionIdByWorkspaceId[WS_A]).toBe("session-1");
+  });
+});
+
+describe("workspace removal cleans up diff tabs", () => {
+  beforeEach(reset);
+
+  it("removeWorkspace drops the workspace's diff tabs", () => {
+    useAppStore.setState({
+      workspaces: [
+        // Minimal stub — only fields touched by removeWorkspace matter here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { id: WS_A } as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { id: WS_B } as any,
+      ],
+    });
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    useAppStore.getState().openDiffTab(WS_B, "b.ts", "unstaged");
+
+    useAppStore.getState().removeWorkspace(WS_A);
+
+    const state = useAppStore.getState();
+    expect(state.diffTabsByWorkspace[WS_A]).toBeUndefined();
+    expect(state.diffTabsByWorkspace[WS_B]).toEqual([
+      { path: "b.ts", layer: "unstaged" },
+    ]);
+  });
+});
+
+describe("selectWorkspace clears active diff pointer", () => {
+  beforeEach(reset);
+
+  it("nulls diffSelectedFile when switching workspaces but preserves per-workspace tabs", () => {
+    useAppStore.getState().openDiffTab(WS_A, "a.ts", "unstaged");
+    expect(useAppStore.getState().diffSelectedFile).toBe("a.ts");
+
+    useAppStore.getState().selectWorkspace(WS_B);
+
+    const state = useAppStore.getState();
+    expect(state.diffSelectedFile).toBeNull();
+    expect(state.diffSelectedLayer).toBeNull();
+    // The original workspace's diff tab list is untouched.
+    expect(state.diffTabsByWorkspace[WS_A]).toEqual([
+      { path: "a.ts", layer: "unstaged" },
+    ]);
+  });
+});

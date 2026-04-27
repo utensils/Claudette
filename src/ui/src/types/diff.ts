@@ -13,6 +13,11 @@ export interface DiffFile {
 
 export type DiffLayer = "committed" | "staged" | "unstaged" | "untracked";
 
+export interface DiffFileTab {
+  path: string;
+  layer: DiffLayer | null;
+}
+
 export interface StagedDiffFiles {
   committed: DiffFile[];
   staged: DiffFile[];

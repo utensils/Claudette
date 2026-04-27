@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useAppStore } from "../../stores/useAppStore";
 import { loadFileDiff } from "../../services/tauri";
 import { PanelToggles } from "../shared/PanelToggles";
+import { SessionTabs } from "../chat/SessionTabs";
 import type { DiffLine } from "../../types/diff";
 import styles from "./DiffViewer.module.css";
 
@@ -53,7 +54,6 @@ export function DiffViewer() {
   const diffLoading = useAppStore((s) => s.diffLoading);
   const setDiffContent = useAppStore((s) => s.setDiffContent);
   const setDiffLoading = useAppStore((s) => s.setDiffLoading);
-  const setDiffSelectedFile = useAppStore((s) => s.setDiffSelectedFile);
   const setDiffError = useAppStore((s) => s.setDiffError);
   const workspaces = useAppStore((s) => s.workspaces);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
@@ -94,16 +94,11 @@ export function DiffViewer() {
     <div className={styles.viewer}>
       <div className={styles.header} data-tauri-drag-region>
         <div className={styles.headerLeft}>
-          <button
-            className={styles.backBtn}
-            onClick={() => setDiffSelectedFile(null)}
-          >
-            ← Back
-          </button>
           <span className={styles.fileName}>{diffSelectedFile}</span>
         </div>
         <PanelToggles />
       </div>
+      {selectedWorkspaceId && <SessionTabs workspaceId={selectedWorkspaceId} />}
       <div className={styles.content}>
         {diffLoading ? (
           <div className={styles.center}>Loading diff...</div>
