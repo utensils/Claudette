@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "./stores/useAppStore";
 import { findPendingPlaceholderForCreatedWorkspace } from "./stores/slices/workspacesSlice";
-import { loadInitialData, getAppSetting, setAppSetting, getHostEnvFlags, listRemoteConnections, listDiscoveredServers, getLocalServerStatus, detectInstalledApps, listSystemFonts, deleteTerminalTab, listAppSettingsWithPrefix, listAgentBackends, autoDetectAgentBackends, refreshAgentBackendModels, bootOk, getClaudeAuthStatus, getChatSession, sendChatMessage } from "./services/tauri";
+import { loadInitialData, getAppSetting, setAppSetting, getHostEnvFlags, listRemoteConnections, listDiscoveredServers, getLocalServerStatus, detectInstalledApps, listSystemFonts, deleteTerminalTab, listAppSettingsWithPrefix, listAgentBackends, autoDetectAgentBackends, refreshAgentBackendModels, bootOk, getClaudeAuthStatus } from "./services/tauri";
 import { applyTheme, applyUserFonts, loadAllThemes, findTheme, cacheThemePreference, getThemeDataAttr } from "./utils/theme";
 import { DEFAULT_THEME_ID, DEFAULT_LIGHT_THEME_ID } from "./styles/themes";
 import type { ThemeDefinition } from "./types/theme";
@@ -14,9 +14,9 @@ import {
   TERMINAL_FONT_SIZE_MIN,
 } from "./utils/fontSettings";
 import { deriveScmCiState } from "./utils/scmChecks";
-import { shouldDisable1mContext } from "./components/chat/chatHelpers";
 import { KEYBINDING_SETTING_PREFIX } from "./hotkeys/bindings";
 import type { WorkspaceOrderModeByRepo } from "./utils/workspaceOrdering";
+import { useCiAutoFixSession } from "./hooks/useCiAutoFixSession";
 import { useMcpStatus } from "./hooks/useMcpStatus";
 import { useChatSessionCreatedEvent } from "./hooks/useChatSessionCreatedEvent";
 import { useUsageInsightsPoller } from "./hooks/useUsageInsightsPoller";
@@ -130,6 +130,7 @@ function App() {
   useMcpStatus();
   useChatSessionCreatedEvent();
   useUsageInsightsPoller();
+  useCiAutoFixSession();
 
   // Boot-health heartbeat for the post-update probation window.
   //
@@ -730,35 +731,6 @@ function App() {
       },
     );
 
-    // Listen for CI auto-fix session creation events.
-    const unlistenCiAutoFix = listen<{ workspace_id: string; session_id: string; prompt: string; failed_checks: import("./types/plugin").CiCheck[]; model: string | null; backend_id: string | null }>("ci-auto-fix-session-created", async (event) => {
-      const { workspace_id, session_id, prompt, model, backend_id } = event.payload;
-      const store = useAppStore.getState();
-      try {
-        const session = await getChatSession(session_id);
-        store.addChatSession(session);
-        store.selectSession(workspace_id, session_id);
-        const disable1mContext = shouldDisable1mContext(model);
-        await sendChatMessage(
-          session_id,
-          prompt,
-          undefined,
-          undefined,
-          model ?? undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          disable1mContext || undefined,
-          backend_id ?? undefined,
-        );
-        store.addToast(i18n.t("settings:ci_auto_fix_session_created"));
-      } catch (e) {
-        console.error("CI auto-fix session creation failed:", e);
-      }
-    });
-
     // Listen for workspace auto-archived events (e.g. PR merged with archive_on_merge).
     // When `deleted` is true the workspace record was fully removed; otherwise it moved to Archived.
     // CLI- and remote-driven workspace mutations emit this event so the
@@ -968,7 +940,6 @@ function App() {
       unlistenWorkspacesChanged.then((fn) => fn());
       unlistenChatTurnSettings.then((fn) => fn());
       unlistenChatTurnStarted.then((fn) => fn());
-      unlistenCiAutoFix.then((fn) => fn());
       unlistenMissingCli.then((fn) => fn());
       unlistenMissingWorktree.then((fn) => fn());
     };
