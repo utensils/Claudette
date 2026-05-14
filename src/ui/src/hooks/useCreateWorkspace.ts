@@ -119,6 +119,19 @@ export async function createWorkspaceOrchestrated(
       return null;
     }
     const inputValues = prompt.values ?? null;
+    // The prompt left the modal mounted so we can replace it atomically
+    // with the next one (or close it explicitly). `closeRequiredInputs`
+    // is the local helper that ensures we only close that modal — never
+    // some unrelated modal a background event opened in the meantime.
+    let modalStillOpen = prompt.modalStillOpen;
+    const closeRequiredInputs = () => {
+      if (!modalStillOpen) return;
+      const store = useAppStore.getState();
+      if (store.activeModal === "requiredInputs") {
+        store.closeModal();
+      }
+      modalStillOpen = false;
+    };
 
     const generated = await generateWorkspaceName();
     // Clear the pre-slug indicator the moment we have a slug, even on
@@ -196,6 +209,8 @@ export async function createWorkspaceOrchestrated(
     }
 
     // Setup script — auto-run if the repo opted in, otherwise prompt.
+    // Either branch either replaces or explicitly closes the still-mounted
+    // requiredInputs modal so the user never sees a transient empty frame.
     try {
       const config = await getRepoConfig(repoId);
       const repo = useAppStore
@@ -219,7 +234,13 @@ export async function createWorkspaceOrchestrated(
               workspaceName: result.workspace.name,
             },
           });
+          closeRequiredInputs();
         } else {
+          // `openModal` overwrites `activeModal` + `modalData` atomically,
+          // so the requiredInputs modal is replaced by the setup-script
+          // modal in a single render. No explicit close needed here, and
+          // `modalStillOpen` is cleared so the finally-handler doesn't
+          // also try to close.
           useAppStore.getState().openModal("confirmSetupScript", {
             workspaceId: result.workspace.id,
             sessionId,
@@ -227,10 +248,15 @@ export async function createWorkspaceOrchestrated(
             script,
             source,
           });
+          modalStillOpen = false;
         }
+      } else {
+        closeRequiredInputs();
       }
     } catch {
-      // No config or unreadable — nothing to prompt.
+      // No config or unreadable — nothing to prompt. Drop the input modal
+      // so the user isn't left looking at a "Creating…" button.
+      closeRequiredInputs();
     }
 
     return { workspaceId: result.workspace.id, sessionId };
@@ -244,6 +270,13 @@ export async function createWorkspaceOrchestrated(
     // recovery surface).
     if (placeholderId) {
       useAppStore.getState().cancelPendingCreate(placeholderId, null);
+    }
+    // Also drop the requiredInputs modal if it's still showing
+    // "Creating…" — otherwise the user is left looking at a frozen
+    // modal whose orchestrator has already thrown.
+    const store = useAppStore.getState();
+    if (store.activeModal === "requiredInputs") {
+      store.closeModal();
     }
     // Re-throw so the caller decides whether to alert / toast.
     throw e;
