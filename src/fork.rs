@@ -250,6 +250,7 @@ async fn fork_after_worktree(
         // assigned (MAX+1 within repo) so callers handing this struct back
         // to the UI render the new fork at the right sidebar position.
         sort_order: 0,
+        input_values: source_ws.input_values.clone(),
     };
     db.insert_workspace(&new_ws)?;
     if let Some(o) = db.lookup_workspace_sort_order(&new_ws.id)? {
@@ -608,6 +609,7 @@ mod tests {
             archive_script_auto_run: false,
             base_branch: None,
             default_remote: None,
+            required_inputs: None,
             path_valid: true,
             created_at: String::new(),
         }
@@ -625,6 +627,7 @@ mod tests {
             status_line: String::new(),
             created_at: String::new(),
             sort_order: 0,
+            input_values: None,
         }
     }
 
@@ -1155,6 +1158,7 @@ mod tests {
             archive_script_auto_run: false,
             base_branch: None,
             default_remote: None,
+            required_inputs: None,
             path_valid: true,
             created_at: String::new(),
         })
@@ -1170,6 +1174,7 @@ mod tests {
             status_line: String::new(),
             created_at: String::new(),
             sort_order: 0,
+            input_values: None,
         };
         db.insert_workspace(&source_ws).unwrap();
 
