@@ -1013,54 +1013,99 @@ pub(crate) async fn delete_workspaces_bulk_inner(
         let _ = claudette::agent::stop_agent(pid).await;
     }
 
-    // Git cleanup: best-effort worktree removal + force branch delete per row.
-    for ws in &targets {
-        let Some(repo) = repos.iter().find(|r| r.id == ws.repository_id) else {
-            continue;
-        };
-        if let Some(ref wt_path) = ws.worktree_path {
-            let _ = git::remove_worktree(&repo.path, wt_path, true).await;
-        }
-        let _ = git::branch_delete(&repo.path, &ws.branch_name).await;
+    // Snapshot per-target git metadata BEFORE the DB delete so we can
+    // still do worktree/branch cleanup for the rows whose DB transaction
+    // succeeded (post-delete the workspaces table no longer carries
+    // these fields).
+    struct TargetMeta {
+        worktree_path: Option<String>,
+        branch_name: String,
+        repo_path: Option<String>,
     }
+    let target_meta: std::collections::HashMap<String, TargetMeta> = targets
+        .iter()
+        .map(|ws| {
+            let repo_path = repos
+                .iter()
+                .find(|r| r.id == ws.repository_id)
+                .map(|r| r.path.clone());
+            (
+                ws.id.clone(),
+                TargetMeta {
+                    worktree_path: ws.worktree_path.clone(),
+                    branch_name: ws.branch_name.clone(),
+                    repo_path,
+                },
+            )
+        })
+        .collect();
 
-    // Env-watcher + cache cleanup in a single watcher acquisition.
-    {
-        let watcher_guard = state.env_watcher.read().await;
-        if let Some(watcher) = watcher_guard.as_ref() {
-            for ws in &targets {
-                if let Some(ref wt_path) = ws.worktree_path {
-                    watcher.unregister(Path::new(wt_path), None);
-                }
-            }
-        }
-    }
-    for ws in &targets {
-        if let Some(ref wt_path) = ws.worktree_path {
-            state.env_cache.invalidate(Path::new(wt_path), None);
-        }
-    }
-
-    // Track affected repos so we can do the "last workspace" MCP cleanup
-    // check exactly once per repo after the batch (delete_workspace runs
-    // this per row — fine for a single delete, wasteful for a batch).
-    let affected_repos: std::collections::HashSet<String> =
-        targets.iter().map(|w| w.repository_id.clone()).collect();
-
-    // DB deletes + summary materialization + Deleted hooks per row.
+    // DB deletes + summary materialization + Deleted hooks per row. Each
+    // row is its own transaction, so per-row failures (e.g. SQLITE_BUSY)
+    // are isolated and reported as `failed` rather than rolling back the
+    // whole batch.
+    //
+    // Important: git/env cleanup runs ONLY after the DB delete succeeds
+    // (see below). Reversing that order made a "failed" outcome
+    // destructive — the row would survive but its worktree and branch
+    // were already gone, leaving the user with an archived workspace
+    // pointing at nothing they could restore.
     let hooks = TauriHooks::new(app.clone());
     let outcomes = claudette::ops::workspace::delete_workspaces_bulk(&db, hooks.as_ref(), ids)
         .map_err(|e| e.to_string())?;
 
     let mut deleted = Vec::with_capacity(outcomes.len());
     let mut failed = Vec::new();
+    let mut affected_repos: std::collections::HashSet<String> = std::collections::HashSet::new();
     for outcome in outcomes {
         match outcome.error {
-            None => deleted.push(outcome.id),
+            None => {
+                affected_repos.insert(outcome.repository_id.clone());
+                deleted.push(outcome.id);
+            }
             Some(err) => failed.push(BulkDeleteFailure {
                 id: outcome.id,
                 error: err,
             }),
+        }
+    }
+
+    // Git cleanup: best-effort worktree removal + force branch delete,
+    // ONLY for rows whose DB delete succeeded. Worktree/branch state for
+    // a failed row stays intact so the user can retry the cleanup.
+    for ws_id in &deleted {
+        let Some(meta) = target_meta.get(ws_id) else {
+            continue;
+        };
+        let Some(ref repo_path) = meta.repo_path else {
+            continue;
+        };
+        if let Some(ref wt_path) = meta.worktree_path {
+            let _ = git::remove_worktree(repo_path, wt_path, true).await;
+        }
+        let _ = git::branch_delete(repo_path, &meta.branch_name).await;
+    }
+
+    // Env-watcher + cache cleanup, also gated on per-row DB success so
+    // we don't drop OS watch slots for paths that still own a live
+    // workspace row.
+    {
+        let watcher_guard = state.env_watcher.read().await;
+        if let Some(watcher) = watcher_guard.as_ref() {
+            for ws_id in &deleted {
+                if let Some(meta) = target_meta.get(ws_id) {
+                    if let Some(ref wt_path) = meta.worktree_path {
+                        watcher.unregister(Path::new(wt_path), None);
+                    }
+                }
+            }
+        }
+    }
+    for ws_id in &deleted {
+        if let Some(meta) = target_meta.get(ws_id) {
+            if let Some(ref wt_path) = meta.worktree_path {
+                state.env_cache.invalidate(Path::new(wt_path), None);
+            }
         }
     }
 
