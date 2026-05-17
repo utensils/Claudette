@@ -61,7 +61,7 @@ pub struct UsageSnapshot {
 pub struct UsageBucket {
     /// Stable key. Sources pick from a small set: `"session_5h"`,
     /// `"week_all"`, `"week_sonnet"`, `"week_opus"`, `"extra_usage"`,
-    /// `"local_session"`, `"local_today"`, `"openrouter_credits"`,
+    /// `"local_session"`, `"local_24h"`, `"openrouter_credits"`,
     /// `"codex_plan"`. New keys are fine — the frontend only switches
     /// on a couple of them for special-case rendering.
     pub key: String,

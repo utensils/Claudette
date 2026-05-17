@@ -51,11 +51,14 @@ export function useSessionUsagePoller({
   const clearSessionUsage = useAppStore((s) => s.clearSessionUsage);
   // Turn-completion signal: when the count for this session changes, an
   // assistant turn landed and the chat_messages aggregate is stale.
+  // We intentionally do NOT depend on streamingContent[sessionId].length:
+  // it changes on every streamed chunk during a turn, which would
+  // re-run this entire effect (and re-fire the synchronous placeholder
+  // below) tens of times per second. The local-aggregate path reads
+  // from persisted `chat_messages` rows that don't update until the
+  // turn finalizes, so `completedTurnCount` is the correct signal.
   const completedTurnCount = useAppStore((s) =>
     sessionId ? (s.completedTurns[sessionId]?.length ?? 0) : 0,
-  );
-  const streamingTokenCount = useAppStore((s) =>
-    sessionId ? (s.streamingContent[sessionId]?.length ?? 0) : 0,
   );
 
   // Track the previous (workspaceId, sessionId) so each switch can
@@ -71,6 +74,14 @@ export function useSessionUsagePoller({
   // that bumps a dep). Cleared implicitly on unmount via the ref's
   // own lifecycle.
   const prefetchedCodexKeysRef = useRef<Set<string>>(new Set());
+
+  // Track the last (sessionId, backend.id) we wrote a synchronous
+  // placeholder for. Without this, every effect re-run (e.g. when a
+  // turn lands and `completedTurnCount` ticks) blanks the existing
+  // snapshot's buckets back to `[]` and the meter flickers empty for
+  // the ~50-200ms it takes the new fetch to land. We only want the
+  // placeholder on actual session/backend transitions.
+  const placeholderKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -100,22 +111,25 @@ export function useSessionUsagePoller({
       return;
     }
 
-    // Synchronous placeholder so the indicator renders the new
-    // backend's chrome immediately on model switch, instead of
-    // disappearing for the ~50-200ms it takes the IPC + DB roundtrip
-    // to land. The first real `fetchOnce()` below overwrites it.
-    // Without this, the meter "blinks" on every backend switch,
-    // which looks like "I have to send a message for it to show up."
-    // (The early-return paths above already covered hidden / disabled
-    // / missing-id, so `sessionId` and `backend` are non-null here.)
-    setSessionUsage(sessionId, {
-      provider_kind: backend.kind,
-      source_label: backend.label,
-      buckets: [],
-      note: null,
-      fetched_at_ms: Date.now(),
-      experimental_disabled: false,
-    });
+    // Synchronous placeholder on real backend transitions so the
+    // indicator renders the new backend's chrome immediately instead
+    // of disappearing for the ~50-200ms it takes the IPC + DB
+    // roundtrip to land. Gate on `placeholderKeyRef` so a re-run
+    // triggered purely by `completedTurnCount` (after a turn lands)
+    // does NOT blank the existing buckets — it just lets `fetchOnce`
+    // refresh them in place.
+    const placeholderKey = `${sessionId}::${backend.id}::${backend.kind}`;
+    if (placeholderKeyRef.current !== placeholderKey) {
+      placeholderKeyRef.current = placeholderKey;
+      setSessionUsage(sessionId, {
+        provider_kind: backend.kind,
+        source_label: backend.label,
+        buckets: [],
+        note: null,
+        fetched_at_ms: Date.now(),
+        experimental_disabled: false,
+      });
+    }
 
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -220,9 +234,11 @@ export function useSessionUsagePoller({
     };
     // `completedTurnCount` is intentionally in the deps so the effect
     // re-runs (and immediately fetches) whenever a new assistant turn
-    // lands for the active session. `streamingTokenCount` covers the
-    // initial-streaming case where a turn isn't yet committed to
-    // `completedTurns` but the meter is already changing.
+    // lands for the active session. We intentionally do not depend on
+    // mid-stream signals — local-aggregate rows aren't written until
+    // the turn finalizes, and remote sources have their own push
+    // (Codex rate-limit notifications) or interval (Anthropic OAuth)
+    // updates that don't need a per-chunk re-poll.
   }, [
     workspaceId,
     sessionId,
@@ -230,7 +246,6 @@ export function useSessionUsagePoller({
     mode,
     usageInsightsEnabled,
     completedTurnCount,
-    streamingTokenCount,
     setSessionUsage,
     clearSessionUsage,
   ]);

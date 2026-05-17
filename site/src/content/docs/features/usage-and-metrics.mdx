@@ -15,8 +15,8 @@ The composer indicator picks a data source per backend:
 
 | Backend kind | Data source | Always-on? |
 |---|---|---|
-| Anthropic / Custom Anthropic / Codex Subscription | Anthropic OAuth Usage API (subscription quotas) | Off by default — gated by the **Claude Code Usage** toggle |
-| Codex Native | Local-aggregate tokens, label from Codex `account/read` plan | Yes |
+| Anthropic / Custom Anthropic | Anthropic OAuth Usage API (subscription quotas) | Off by default — gated by the **Claude Code Usage** toggle |
+| Codex Native / Codex Subscription | Live Codex `account/rateLimits/*` quotas (Session 5h + Weekly) when available; falls back to local-aggregate tokens with a plain `Codex` label until the first rate-limits push lands | Yes |
 | OpenAI API / Custom OpenAI / OpenRouter | Local-aggregate tokens + OpenRouter `/auth/key` credit balance (when applicable) | Yes |
 | Ollama / LM Studio / Pi | Local-aggregate tokens | Yes |
 

@@ -8,7 +8,7 @@
 //!
 //! Two buckets are produced:
 //!  - `local_session` — totals for the active `chat_session_id`.
-//!  - `local_today` — totals for the workspace over the trailing 24h.
+//!  - `local_24h` — totals for the workspace over the trailing 24h.
 //!
 //! Both are unbounded (`is_bounded = false`) — the frontend renders
 //! them as throughput readouts rather than fill-toward-limit bars.
@@ -28,10 +28,13 @@ pub struct LocalAggregate {
     pub output_tokens: i64,
     pub cache_read_tokens: i64,
     pub cache_creation_tokens: i64,
-    /// Sum of populated `cost_usd` rows. May undercount if some rows
-    /// in the range are null (typical for non-Claude harnesses) — the
-    /// snapshot adapter folds in `pricing::lookup`-derived estimates
-    /// for those rows when a default model is known.
+    /// Sum of `cost_usd` rows. SQL `COALESCE(SUM(cost_usd), 0.0)`
+    /// treats NULL rows as zero, so a partially-populated range
+    /// undercounts. The snapshot adapter substitutes a
+    /// `pricing::lookup`-derived estimate only when the SUM is
+    /// exactly zero (no rows recorded a dollar value at all). Mixed
+    /// populated/NULL ranges keep the SUM and silently undercount —
+    /// good enough for the meter's ballpark spend readout.
     pub cost_usd: f64,
     /// Count of rows aggregated. Used to suppress empty buckets.
     pub message_count: i64,
@@ -187,7 +190,9 @@ pub fn snapshot_from_locals(
         };
 
     push_bucket(&mut buckets, "local_session", "This session", &session);
-    push_bucket(&mut buckets, "local_today", "Today", &today);
+    // "Last 24h" rather than "Today" because the SQL window is a
+    // strict trailing 24-hour UTC range, not "since local midnight".
+    push_bucket(&mut buckets, "local_24h", "Last 24h", &today);
 
     let note = if buckets.is_empty() {
         Some(String::from(

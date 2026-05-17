@@ -9,8 +9,10 @@
 
 /// $/Mtok rates for a single model. `prompt` covers regular input
 /// tokens; `completion` covers output tokens. Cache reads / writes
-/// aren't broken out separately — the local aggregator folds them into
-/// `prompt` since the absolute dollar number is approximate anyway.
+/// aren't broken out separately — the meter's [`ModelPricing::cost`]
+/// estimate ignores `cache_*_tokens` entirely, on the assumption that
+/// the dollar figure here is already a ballpark and cache deltas are
+/// a small fraction of the absolute number.
 #[derive(Debug, Clone, Copy)]
 pub struct ModelPricing {
     pub prompt_per_mtok_usd: f64,

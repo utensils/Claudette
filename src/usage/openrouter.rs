@@ -17,6 +17,15 @@ use super::UsageBucket;
 
 const OPENROUTER_KEY_URL: &str = "https://openrouter.ai/api/v1/auth/key";
 
+/// Shared `reqwest::Client` reused across every credit-balance fetch
+/// so the recurring poll doesn't pay TLS/handshake costs on each tick.
+/// Mirrors the static client pattern in
+/// [`anthropic_oauth::http_client`](super::anthropic_oauth).
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct AuthKeyResponse {
     data: AuthKeyData,
@@ -61,8 +70,7 @@ pub fn is_openrouter_base_url(base_url: Option<&str>) -> bool {
 /// — the caller decides whether to still emit a snapshot from local
 /// aggregates alone.
 pub async fn fetch_credit_bucket(api_key: &str) -> Result<Option<UsageBucket>, String> {
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = http_client()
         .get(OPENROUTER_KEY_URL)
         .header("Authorization", format!("Bearer {api_key}"))
         .timeout(std::time::Duration::from_secs(10))

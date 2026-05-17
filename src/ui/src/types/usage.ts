@@ -43,7 +43,7 @@ import type { AgentBackendKind } from "../services/tauri/agentBackends";
  *  the same React component handles every source. */
 export interface UsageBucket {
   /** Stable key. Common values: "session_5h", "week_all", "week_sonnet",
-   *  "week_opus", "extra_usage", "local_session", "local_today",
+   *  "week_opus", "extra_usage", "local_session", "local_24h",
    *  "openrouter_credits". The frontend only switches on a couple. */
   key: string;
   /** User-visible label, e.g. "Session (5h)" or "This session". */

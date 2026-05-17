@@ -1,25 +1,25 @@
 //! Codex usage source.
 //!
-//! Two complementary signals power the Codex meter:
+//! Powered by Codex's v2 protocol rate-limit endpoint:
 //!
-//! 1. **`account/read`** — returns `{ account_type, plan_type, email }`.
-//!    Used to derive the popover header label ("Codex Plus", etc.) when
-//!    a live rate-limit snapshot isn't available.
-//!
-//! 2. **`account/rateLimits/read`** + **`account/rateLimits/updated`**
-//!    notifications (Codex v2 protocol) — return a
-//!    [`CodexRateLimitSnapshot`](crate::agent::codex_app_server::CodexRateLimitSnapshot)
-//!    with `primary` / `secondary` `RateLimitWindow`s plus an optional
-//!    `credits` balance. The Tauri host caches the latest snapshot in
-//!    `AppState.codex_rate_limits` and feeds it through
-//!    [`snapshot_from_rate_limits`] below so the composer indicator
-//!    surfaces real subscription quotas — comparable to what the
-//!    Anthropic OAuth Usage API provides for Claude users.
+//! - **`account/rateLimits/read`** + **`account/rateLimits/updated`**
+//!   notifications return a
+//!   [`CodexRateLimitSnapshot`](crate::agent::codex_app_server::CodexRateLimitSnapshot)
+//!   with `primary` / `secondary` `RateLimitWindow`s, an optional
+//!   `credits` balance, and a `plan_type` ("plus", "pro", …). The
+//!   Tauri host caches the latest snapshot in
+//!   `AppState.codex_rate_limits` and feeds it through
+//!   [`snapshot_from_rate_limits`] below; the popover header is
+//!   derived from `plan_type` via [`format_plan_label`], so the user
+//!   sees "Codex Plus" / "Codex Pro" instead of a bare "Codex".
 //!
 //! When no live snapshot exists yet (cold app, no Codex turn ever
 //! issued this run), the dispatcher falls back to
-//! [`local_aggregate`](super::local_aggregate) so the meter always
-//! shows *something*.
+//! [`local_aggregate`](super::local_aggregate) with a plain "Codex"
+//! label so the meter always shows *something*. We don't currently
+//! issue a separate `account/read` to derive the plan label in that
+//! fallback — the rate-limits snapshot is the single source of
+//! plan-tier truth.
 
 use crate::agent::codex_app_server::{CodexRateLimitSnapshot, CodexRateLimitWindow};
 
@@ -43,12 +43,17 @@ pub fn format_plan_label(plan_type: Option<&str>) -> String {
 /// label, but the standard windows match Anthropic's: 300 min → 5-hour
 /// session, 10080 min → weekly, 43200 min → monthly. Anything else
 /// falls back to a generic minute/hour/day rendering.
+///
+/// For weekly/monthly durations we return the prefix as-is — the
+/// caller already conveys the period in `"Weekly"` / `"Monthly"`,
+/// and `"Weekly (week)"` reads redundant. The 5h/24h cases keep
+/// their parenthetical because the prefix (`"Session"`, `"Daily"`)
+/// doesn't already imply the exact length.
 pub fn format_window_label(prefix: &str, duration_mins: Option<i64>) -> String {
     match duration_mins {
         Some(300) => format!("{prefix} (5h)"),
         Some(1440) => format!("{prefix} (24h)"),
-        Some(10080) => format!("{prefix} (week)"),
-        Some(43200) => format!("{prefix} (month)"),
+        Some(10080) | Some(43200) => prefix.to_string(),
         Some(mins) if mins >= 1440 && mins % 1440 == 0 => {
             format!("{prefix} ({}d)", mins / 1440)
         }
@@ -211,11 +216,10 @@ mod tests {
     #[test]
     fn format_window_label_picks_known_durations() {
         assert_eq!(format_window_label("Session", Some(300)), "Session (5h)");
-        assert_eq!(format_window_label("Weekly", Some(10080)), "Weekly (week)");
-        assert_eq!(
-            format_window_label("Monthly", Some(43200)),
-            "Monthly (month)"
-        );
+        // Weekly / Monthly drop the redundant parenthetical — the prefix
+        // already conveys the period.
+        assert_eq!(format_window_label("Weekly", Some(10080)), "Weekly");
+        assert_eq!(format_window_label("Monthly", Some(43200)), "Monthly");
     }
 
     #[test]
