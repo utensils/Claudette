@@ -21,6 +21,7 @@ use crate::remote::DiscoveredServer;
 use crate::usage::UsageCacheEntry;
 #[cfg(feature = "voice")]
 use crate::voice::VoiceProviderRegistry;
+use claudette::agent::codex_app_server::CodexRateLimitSnapshot;
 
 /// Set during `RunEvent::Exit` before we tear down PTY shells and agent
 /// subprocesses. PTY reader threads use this to avoid reporting shutdown
@@ -534,6 +535,15 @@ pub struct AppState {
     pub next_tray_seq: AtomicU64,
     /// Cached Claude Code OAuth token and usage data.
     pub usage_cache: RwLock<Option<UsageCacheEntry>>,
+    /// Latest Codex `account/rateLimits/read` snapshot, kept fresh by
+    /// a subscriber task spawned alongside each Codex app-server
+    /// session in `commands::chat::send`. Read by `commands::usage`'s
+    /// `get_session_usage` for any `CodexNative` / `CodexSubscription`
+    /// session — when populated it supplies real subscription quotas
+    /// (primary/secondary windows + credits) instead of falling back
+    /// to the local-aggregate token totals. `None` until the first
+    /// Codex session of the app lifetime publishes its seed.
+    pub codex_rate_limits: RwLock<Option<CodexRateLimitSnapshot>>,
     /// SCM + env-provider + language-grammar plugin registry.
     ///
     /// Wrapped as `RwLock<Arc<PluginRegistry>>` (rather than the simpler
@@ -637,6 +647,7 @@ impl AppState {
             tray_handle: Mutex::new(None),
             next_tray_seq: AtomicU64::new(1),
             usage_cache: RwLock::new(None),
+            codex_rate_limits: RwLock::new(None),
             plugins: RwLock::new(Arc::new(plugins)),
             #[cfg(feature = "voice")]
             voice: Arc::new(VoiceProviderRegistry::new(

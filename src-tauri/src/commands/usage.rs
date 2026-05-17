@@ -6,7 +6,9 @@ use crate::usage::{self, ClaudeCodeUsage};
 use claudette::agent_backend::{AgentBackendConfig, AgentBackendKind};
 use claudette::db::Database;
 use claudette::process::CommandWindowExt as _;
-use claudette::usage::{UsageSnapshot, anthropic_oauth, local_aggregate, openrouter};
+use claudette::usage::{
+    UsageSnapshot, anthropic_oauth, codex_account, local_aggregate, openrouter,
+};
 
 #[tauri::command]
 pub async fn get_claude_code_usage(state: State<'_, AppState>) -> Result<ClaudeCodeUsage, String> {
@@ -55,6 +57,27 @@ pub async fn get_session_usage(
             )),
             Err(e) => Err(e),
         };
+    }
+
+    // Codex (Native or Subscription): prefer the live `account/rateLimits`
+    // snapshot when the chat-send loop has populated the cache (see
+    // `commands::chat::send` for the subscriber task wiring). When the
+    // cache is cold — e.g. user hasn't sent a Codex turn this run yet —
+    // fall through to local-aggregate so the meter still shows
+    // something useful.
+    if matches!(
+        backend.kind,
+        AgentBackendKind::CodexNative | AgentBackendKind::CodexSubscription
+    ) {
+        let snapshot = state.codex_rate_limits.read().await.clone();
+        if let Some(snapshot) = snapshot {
+            return Ok(codex_account::snapshot_from_rate_limits(
+                backend.kind,
+                &snapshot,
+                "Codex",
+                now_ms,
+            ));
+        }
     }
 
     // Non-Claude path: every backend gets the local-aggregate baseline,
