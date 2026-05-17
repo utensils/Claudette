@@ -830,12 +830,24 @@ interface RepoArchivedCleanupFieldProps {
 function RepoArchivedCleanupField({ repoId }: RepoArchivedCleanupFieldProps) {
   const { t } = useTranslation("settings");
   const openModal = useAppStore((s) => s.openModal);
+  const isRemote = useAppStore(
+    (s) =>
+      Boolean(
+        s.repositories.find((r) => r.id === repoId)?.remote_connection_id,
+      ),
+  );
   const archivedCount = useAppStore(
     (s) =>
       s.workspaces.filter(
         (w) => w.repository_id === repoId && w.status === "Archived",
       ).length,
   );
+
+  // Bulk cleanup currently dispatches to the local Tauri command, which
+  // only validates IDs in the desktop app's local DB. Remote workspaces
+  // would fail with "Workspace not found"; hide the entry point until
+  // we route through the owning remote connection.
+  if (isRemote) return null;
 
   return (
     <div className={styles.fieldGroup}>

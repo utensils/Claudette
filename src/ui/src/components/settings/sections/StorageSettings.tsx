@@ -16,10 +16,16 @@ export function StorageSettings() {
       if (ws.status !== "Archived") continue;
       counts.set(ws.repository_id, (counts.get(ws.repository_id) ?? 0) + 1);
     }
-    return repositories.map((repo) => ({
-      repo,
-      archivedCount: counts.get(repo.id) ?? 0,
-    }));
+    // Filter to local repos only — bulk cleanup dispatches to the local
+    // Tauri command, which can't reach workspaces owned by a paired
+    // remote connection. Remote repos surface their own cleanup UI in
+    // the paired host's Settings.
+    return repositories
+      .filter((r) => !r.remote_connection_id)
+      .map((repo) => ({
+        repo,
+        archivedCount: counts.get(repo.id) ?? 0,
+      }));
   }, [repositories, workspaces]);
 
   const totalArchived = useMemo(

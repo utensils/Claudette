@@ -33,7 +33,18 @@ export function BulkCleanupArchivedModal() {
   const archived = useMemo<Workspace[]>(
     () =>
       workspaces
-        .filter((w) => w.repository_id === repoId && w.status === "Archived")
+        // Drop rows owned by a paired remote connection — the local
+        // Tauri delete command only validates IDs in the desktop app's
+        // local DB and would reject them. Entry points already gate by
+        // repo, but this is a belt-and-suspenders defense in case a
+        // future surface (command palette, deep link) lands here with a
+        // remote repo id.
+        .filter(
+          (w) =>
+            w.repository_id === repoId &&
+            w.status === "Archived" &&
+            !w.remote_connection_id,
+        )
         .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [workspaces, repoId],
   );

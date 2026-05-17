@@ -439,15 +439,17 @@ export function Dashboard() {
                     {scopedArchivedWorkspaces.length}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  className={styles.archivedCleanupBtn}
-                  onClick={() =>
-                    openModal("bulkCleanupArchived", { repoId: scopedRepo.id })
-                  }
-                >
-                  Clean up…
-                </button>
+                {!scopedRepo.remote_connection_id && (
+                  <button
+                    type="button"
+                    className={styles.archivedCleanupBtn}
+                    onClick={() =>
+                      openModal("bulkCleanupArchived", { repoId: scopedRepo.id })
+                    }
+                  >
+                    Clean up…
+                  </button>
+                )}
               </div>
               {archivedOpen && (
                 <ul className={styles.archivedList}>
