@@ -31,6 +31,12 @@ export function ExperimentalSettings() {
   const setCommunityRegistryEnabled = useAppStore(
     (s) => s.setCommunityRegistryEnabled,
   );
+  const claudeInteractiveEnabled = useAppStore(
+    (s) => s.claudeInteractiveEnabled,
+  );
+  const setClaudeInteractiveEnabled = useAppStore(
+    (s) => s.setClaudeInteractiveEnabled,
+  );
   const [error, setError] = useState<string | null>(null);
   const [usageConfirmOpen, setUsageConfirmOpen] = useState(false);
   const usageRowRef = useRef<HTMLDivElement>(null);
@@ -117,6 +123,21 @@ export function ExperimentalSettings() {
     }
   };
 
+  const handleClaudeInteractiveToggle = async () => {
+    const next = !claudeInteractiveEnabled;
+    setClaudeInteractiveEnabled(next);
+    try {
+      setError(null);
+      await setAppSetting(
+        "claude_interactive_enabled",
+        next ? "true" : "false",
+      );
+    } catch (e) {
+      setClaudeInteractiveEnabled(!next);
+      setError(String(e));
+    }
+  };
+
   return (
     <div>
       <h2 className={styles.sectionTitle}>{t("experimental_title")}</h2>
@@ -161,6 +182,29 @@ export function ExperimentalSettings() {
             aria-label={t("experimental_claude_remote_control_aria")}
             data-checked={claudeRemoteControlEnabled}
             onClick={handleClaudeRemoteControlToggle}
+          >
+            <div className={styles.toggleKnob} />
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.settingRow}>
+        <div className={styles.settingInfo}>
+          <div className={styles.settingLabel}>
+            {t("experimental_claude_interactive")}
+          </div>
+          <div className={styles.settingDescription}>
+            {t("experimental_claude_interactive_desc")}
+          </div>
+        </div>
+        <div className={styles.settingControl}>
+          <button
+            className={styles.toggle}
+            role="switch"
+            aria-checked={claudeInteractiveEnabled}
+            aria-label={t("experimental_claude_interactive_aria")}
+            data-checked={claudeInteractiveEnabled}
+            onClick={handleClaudeInteractiveToggle}
           >
             <div className={styles.toggleKnob} />
           </button>
