@@ -95,6 +95,7 @@ describe("useQueuedMessageAutoDispatch", () => {
       queuedMessages: {},
       queuedMessageAutoDispatchPaused: {},
       queuedMessageEditing: {},
+      queuedMessageSteering: {},
       chatMessages: {},
       chatAttachments: {},
       promptStartTime: {},
@@ -183,10 +184,11 @@ describe("useQueuedMessageAutoDispatch", () => {
     );
   });
 
-  it("does not dispatch a queued message while that session is paused or being edited", async () => {
+  it("does not dispatch a queued message while that session is paused, edited, or steering", async () => {
     useAppStore.getState().setQueuedMessage("session-b", "wait for me");
     useAppStore.getState().setQueuedMessageAutoDispatchPaused("session-b", true);
     useAppStore.getState().setQueuedMessageEditing("session-b", true);
+    useAppStore.getState().setQueuedMessageSteering("session-b", true);
     await mountHook();
 
     await act(async () => {
@@ -198,5 +200,22 @@ describe("useQueuedMessageAutoDispatch", () => {
 
     expect(sendChatMessage).not.toHaveBeenCalled();
     expect(useAppStore.getState().queuedMessages["session-b"]).toHaveLength(1);
+  });
+
+  it("clears queued state for sessions that are no longer present", async () => {
+    useAppStore.getState().setQueuedMessage("ghost-session", "stale follow up");
+    useAppStore.getState().setQueuedMessageAutoDispatchPaused("ghost-session", true);
+    useAppStore.getState().setQueuedMessageEditing("ghost-session", true);
+    useAppStore.getState().setQueuedMessageSteering("ghost-session", true);
+
+    await mountHook();
+    await flushQueuedDispatch();
+
+    const state = useAppStore.getState();
+    expect(sendChatMessage).not.toHaveBeenCalled();
+    expect(state.queuedMessages["ghost-session"]).toBeUndefined();
+    expect(state.queuedMessageAutoDispatchPaused["ghost-session"]).toBeUndefined();
+    expect(state.queuedMessageEditing["ghost-session"]).toBeUndefined();
+    expect(state.queuedMessageSteering["ghost-session"]).toBeUndefined();
   });
 });

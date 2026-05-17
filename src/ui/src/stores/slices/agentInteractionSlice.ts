@@ -146,6 +146,7 @@ export interface AgentInteractionSlice {
   queuedMessages: Record<string, QueuedMessage[]>;
   queuedMessageAutoDispatchPaused: Record<string, boolean>;
   queuedMessageEditing: Record<string, boolean>;
+  queuedMessageSteering: Record<string, boolean>;
   setQueuedMessage: (
     sessionId: string,
     content: string,
@@ -161,6 +162,7 @@ export interface AgentInteractionSlice {
   clearQueuedMessage: (sessionId: string) => void;
   setQueuedMessageAutoDispatchPaused: (sessionId: string, paused: boolean) => void;
   setQueuedMessageEditing: (sessionId: string, editing: boolean) => void;
+  setQueuedMessageSteering: (sessionId: string, steering: boolean) => void;
 }
 
 export const createAgentInteractionSlice: StateCreator<
@@ -273,6 +275,7 @@ export const createAgentInteractionSlice: StateCreator<
   queuedMessages: {},
   queuedMessageAutoDispatchPaused: {},
   queuedMessageEditing: {},
+  queuedMessageSteering: {},
   setQueuedMessage: (sessionId, content, mentionedFiles, attachments) =>
     set((s) => ({
       queuedMessages: {
@@ -324,10 +327,15 @@ export const createAgentInteractionSlice: StateCreator<
           [sessionId]: _editing,
           ...editingRest
         } = s.queuedMessageEditing;
+        const {
+          [sessionId]: _steering,
+          ...steeringRest
+        } = s.queuedMessageSteering;
         return {
           queuedMessages: rest,
           queuedMessageAutoDispatchPaused: pausedRest,
           queuedMessageEditing: editingRest,
+          queuedMessageSteering: steeringRest,
         };
       }
       return {
@@ -348,10 +356,15 @@ export const createAgentInteractionSlice: StateCreator<
         [sessionId]: _editing,
         ...editingRest
       } = s.queuedMessageEditing;
+      const {
+        [sessionId]: _steering,
+        ...steeringRest
+      } = s.queuedMessageSteering;
       return {
         queuedMessages: rest,
         queuedMessageAutoDispatchPaused: pausedRest,
         queuedMessageEditing: editingRest,
+        queuedMessageSteering: steeringRest,
       };
     }),
   setQueuedMessageAutoDispatchPaused: (sessionId, paused) =>
@@ -386,6 +399,24 @@ export const createAgentInteractionSlice: StateCreator<
       return {
         queuedMessageEditing: {
           ...s.queuedMessageEditing,
+          [sessionId]: true,
+        },
+      };
+    }),
+  setQueuedMessageSteering: (sessionId, steering) =>
+    set((s) => {
+      const current = s.queuedMessageSteering[sessionId] === true;
+      if (current === steering) return s;
+      if (!steering) {
+        const {
+          [sessionId]: _,
+          ...rest
+        } = s.queuedMessageSteering;
+        return { queuedMessageSteering: rest };
+      }
+      return {
+        queuedMessageSteering: {
+          ...s.queuedMessageSteering,
           [sessionId]: true,
         },
       };

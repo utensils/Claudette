@@ -16,7 +16,9 @@ export function useQueuedMessageAutoDispatch() {
   const queuedMessages = useAppStore((s) => s.queuedMessages);
   const paused = useAppStore((s) => s.queuedMessageAutoDispatchPaused);
   const editing = useAppStore((s) => s.queuedMessageEditing);
+  const steering = useAppStore((s) => s.queuedMessageSteering);
   const sessionsByWorkspace = useAppStore((s) => s.sessionsByWorkspace);
+  const clearQueuedMessage = useAppStore((s) => s.clearQueuedMessage);
   const removeQueuedMessage = useAppStore((s) => s.removeQueuedMessage);
   const autoDispatchQueuedIdsRef = useRef<Record<string, string>>({});
 
@@ -25,9 +27,12 @@ export function useQueuedMessageAutoDispatch() {
     for (const [sessionId, messages] of Object.entries(queuedMessages)) {
       const nextQueuedMessage = messages[0];
       const isRunning = sessionIsRunning(state, sessionId);
-      if (isRunning === null) continue;
+      if (isRunning === null) {
+        clearQueuedMessage(sessionId);
+        continue;
+      }
       if (!shouldAutoDispatchQueuedMessage({
-        isSteeringQueued: false,
+        isSteeringQueued: steering[sessionId] === true,
         isRunning,
         activeSessionId: sessionId,
         hasNextQueuedMessage: !!nextQueuedMessage,
@@ -59,7 +64,9 @@ export function useQueuedMessageAutoDispatch() {
     queuedMessages,
     paused,
     editing,
+    steering,
     sessionsByWorkspace,
+    clearQueuedMessage,
     removeQueuedMessage,
   ]);
 }

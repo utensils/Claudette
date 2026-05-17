@@ -139,6 +139,7 @@ export function ChatPanel() {
   const [isSteeringQueued, setIsSteeringQueued] = useState(false);
   const [pendingSteerContent, setPendingSteerContent] = useState<string | null>(null);
   const setQueuedMessageEditing = useAppStore((s) => s.setQueuedMessageEditing);
+  const setQueuedMessageSteering = useAppStore((s) => s.setQueuedMessageSteering);
   const isMac = isMacHotkeyPlatform();
   const steerQueuedTooltip = tooltipWithHotkey(
     t("steer_queued"),
@@ -1031,6 +1032,7 @@ export function ChatPanel() {
       : undefined;
     setError(null);
     setIsSteeringQueued(true);
+    setQueuedMessageSteering(sessionId, true);
     setPendingSteerContent(content.trim() || null);
     try {
       const checkpoint = await steerQueuedChatMessage(
@@ -1057,6 +1059,7 @@ export function ChatPanel() {
       setError(errMsg);
     } finally {
       setIsSteeringQueued(false);
+      setQueuedMessageSteering(sessionId, false);
       setPendingSteerContent(null);
     }
   };
@@ -1083,6 +1086,7 @@ export function ChatPanel() {
     }
 
     setIsSteeringQueued(true);
+    setQueuedMessageSteering(sessionId, true);
     setPendingSteerContent(content.trim() || null);
     removeQueuedMessage(sessionId, queuedMessage.id);
     try {
@@ -1108,6 +1112,7 @@ export function ChatPanel() {
       setError(errMsg);
     } finally {
       setIsSteeringQueued(false);
+      setQueuedMessageSteering(sessionId, false);
       setPendingSteerContent(null);
     }
   };
@@ -1401,7 +1406,7 @@ export function ChatPanel() {
       });
     } catch (e) {
       const errMsg = String(e);
-      console.error("sendChatMessage failed:", errMsg);
+      console.error("dispatchChatMessage failed:", errMsg);
       setError(errMsg);
     }
   };
