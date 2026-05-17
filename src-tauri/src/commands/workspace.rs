@@ -793,26 +793,59 @@ pub async fn restore_workspace(
 ) -> Result<String, String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
 
+    // Find the row + repo BEFORE flipping status, so we know what git
+    // restore is about to run against and can roll back cleanly on
+    // failure.
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
     let ws = workspaces
         .iter()
         .find(|w| w.id == id)
         .ok_or("Workspace not found")?;
+    let branch_name = ws.branch_name.clone();
+    let workspace_name = ws.name.clone();
+    let repository_id = ws.repository_id.clone();
 
     let repos = db.list_repositories().map_err(|e| e.to_string())?;
     let repo = repos
         .iter()
-        .find(|r| r.id == ws.repository_id)
+        .find(|r| r.id == repository_id)
         .ok_or("Repository not found")?;
+    let repo_path = repo.path.clone();
+    let path_slug = repo.path_slug.clone();
+
+    // Atomically claim the row out of Archived BEFORE the async git
+    // restore. Bulk delete's `try_delete_archived_workspace_with_summary`
+    // refuses any row whose status isn't 'archived', so once the claim
+    // succeeds the bulk path can't race in and hard-delete this row
+    // while git is restoring its worktree.
+    let claimed = db
+        .try_claim_archived_for_restore(&id)
+        .map_err(|e| e.to_string())?;
+    if !claimed {
+        return Err("Workspace is not archived (already restored or deleted)".to_string());
+    }
 
     let worktree_base = state.worktree_base_dir.read().await;
-    let worktree_path: PathBuf = worktree_base.join(&repo.path_slug).join(&ws.name);
+    let worktree_path: PathBuf = worktree_base.join(&path_slug).join(&workspace_name);
     let worktree_path_str = worktree_path.to_string_lossy().to_string();
 
-    let actual_path = git::restore_worktree(&repo.path, &ws.branch_name, &worktree_path_str)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Run git restore. On failure roll the status back to Archived so a
+    // partial restore doesn't leave the user with an Active row that
+    // has no worktree. The rollback window is tiny (one sync UPDATE)
+    // and the failure path matches the pre-fix behavior the user
+    // expects.
+    let actual_path =
+        match git::restore_worktree(&repo_path, &branch_name, &worktree_path_str).await {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = db.update_workspace_status(&id, &WorkspaceStatus::Archived, None);
+                return Err(e.to_string());
+            }
+        };
 
+    // Persist the resolved worktree path. The claim already set status
+    // to Active; this only fills in the path that the git call just
+    // returned.
     db.update_workspace_status(&id, &WorkspaceStatus::Active, Some(&actual_path))
         .map_err(|e| e.to_string())?;
 

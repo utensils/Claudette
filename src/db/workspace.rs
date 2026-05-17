@@ -474,6 +474,26 @@ impl Database {
         Ok(())
     }
 
+    /// Atomically transition a workspace from `Archived` to `Active`.
+    /// Returns `Ok(true)` if the status flip happened (the row existed
+    /// and was Archived); `Ok(false)` if the row was missing or already
+    /// Active. `Err` only on a real DB error.
+    ///
+    /// Used by `restore_workspace` to claim a row out of Archived
+    /// *before* the async git restore, so that a concurrent bulk-delete
+    /// can't see the row as Archived during the git operation and
+    /// hard-delete it out from under the restore. The
+    /// `try_delete_archived_workspace_with_summary` guard then refuses
+    /// the delete because the SQL precondition (`status =
+    /// 'archived'`) is no longer satisfied.
+    pub fn try_claim_archived_for_restore(&self, id: &str) -> Result<bool, rusqlite::Error> {
+        let updated = self.conn.execute(
+            "UPDATE workspaces SET status = 'active' WHERE id = ?1 AND status = 'archived'",
+            params![id],
+        )?;
+        Ok(updated > 0)
+    }
+
     /// Atomic variant of [`delete_workspace_with_summary`] that runs the
     /// "is this row still Archived?" check inside the same transaction
     /// as the delete. Use this from bulk paths where the gap between
