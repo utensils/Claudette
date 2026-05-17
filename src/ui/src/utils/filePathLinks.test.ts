@@ -295,6 +295,28 @@ describe("extractClaudetteWorktreeRelativePath", () => {
     ).toBeNull();
     expect(extractClaudetteWorktreeRelativePath("src/main.rs")).toBeNull();
   });
+
+  it("rejects captures containing parent-traversal segments", () => {
+    // The captured tail is fed back into the Monaco-opener pipeline, which
+    // would otherwise treat `../other.rs` as a valid workspace-relative
+    // path and escape the worktree. Reject traversal at the helper level
+    // so every consumer is protected by default.
+    expect(
+      extractClaudetteWorktreeRelativePath(
+        "/Users/me/.claudette/workspaces/Claudette/cosmic-birch/../other.rs",
+      ),
+    ).toBeNull();
+    expect(
+      extractClaudetteWorktreeRelativePath(
+        "/Users/me/.claudette/workspaces/Claudette/cosmic-birch/src/../../etc/passwd",
+      ),
+    ).toBeNull();
+    expect(
+      extractClaudetteWorktreeRelativePath(
+        "/Users/me/.claudette/workspaces/Claudette/cosmic-birch/src/..",
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("encode/decode round trip", () => {

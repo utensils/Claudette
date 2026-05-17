@@ -86,4 +86,16 @@ describe("monacoFileLinkPath", () => {
       ),
     ).toBeNull();
   });
+
+  it("rejects cross-worktree paths whose tail contains parent traversal", () => {
+    // A traversal-shaped path under the Claudette workspaces dir would
+    // otherwise extract to `../other.rs` and bypass the existing
+    // `..`/`../` guard on the non-cross-worktree branch.
+    expect(
+      monacoFileLinkPath(
+        "/Users/me/.claudette/workspaces/Claudette/cosmic-birch/../etc/passwd",
+        "/Users/me/.claudette/workspaces/Claudette/jolly-ranunculus",
+      ),
+    ).toBeNull();
+  });
 });

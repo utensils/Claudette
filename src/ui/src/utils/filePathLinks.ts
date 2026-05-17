@@ -292,12 +292,26 @@ const CLAUDETTE_WORKTREE_RELATIVE_REGEX =
  * worktree of a given repo shares the same file structure, the returned
  * relative path is also the equivalent file in any other worktree of that
  * repo — including the one the user is currently viewing.
+ *
+ * Captures containing `..` traversal segments are rejected so a path like
+ * `~/.claudette/workspaces/proj/ws/../other` doesn't slip past callers'
+ * parent-traversal guards as a bare `../other` workspace-relative path.
  */
 export function extractClaudetteWorktreeRelativePath(
   path: string,
 ): string | null {
   const normalized = path.replace(/\\/g, "/");
-  return normalized.match(CLAUDETTE_WORKTREE_RELATIVE_REGEX)?.[1] ?? null;
+  const captured = normalized.match(CLAUDETTE_WORKTREE_RELATIVE_REGEX)?.[1];
+  if (!captured) return null;
+  if (
+    captured === ".." ||
+    captured.startsWith("../") ||
+    captured.endsWith("/..") ||
+    captured.includes("/../")
+  ) {
+    return null;
+  }
+  return captured;
 }
 
 export function formatFilePathDisplayLabel(path: string): string {
