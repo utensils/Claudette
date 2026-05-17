@@ -133,6 +133,7 @@ export default defineConfig({
             { slug: 'features/settings' },
             { slug: 'features/diagnostics' },
             { slug: 'features/experimental-features' },
+            { slug: 'features/interactive-claude' },
             { slug: 'features/community-registry-trust' },
             { slug: 'privacy' },
           ],
