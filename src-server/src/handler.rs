@@ -43,6 +43,19 @@ pub async fn handle_request(
             let chat_session_id = param_chat_session_id(&params);
             handle_load_completed_turns(state, &chat_session_id)
         }
+        "get_chat_snapshot" => {
+            let chat_session_id = param_chat_session_id(&params);
+            let limit = crate::snapshot::clamp_limit(params.get("limit").and_then(|v| v.as_i64()));
+            let before = params
+                .get("before_message_id")
+                .or_else(|| params.get("beforeMessageId"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            match crate::snapshot::build(state, &chat_session_id, limit, before.as_deref()).await {
+                Ok(snapshot) => serde_json::to_value(snapshot).map_err(|e| e.to_string()),
+                Err(e) => Err(e),
+            }
+        }
         "send_chat_message" => {
             let chat_session_id = param_chat_session_id(&params);
             let content = param_str(&params, "content");
