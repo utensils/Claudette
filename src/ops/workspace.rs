@@ -879,23 +879,30 @@ pub struct DeleteWorkspaceOutcome {
 }
 
 /// Hard-delete a batch of workspaces. Each delete runs in its own
-/// transaction (via [`Database::delete_workspace_with_summary`]), so one
-/// row's failure doesn't poison the rest of the batch.
+/// transaction (via
+/// [`Database::try_delete_archived_workspace_with_summary`]) and is
+/// gated on the row still being `Archived` *inside the same
+/// transaction* — caller-side snapshot checks aren't sufficient because
+/// the bulk Tauri command spans many `await` points between
+/// pre-validation and the actual delete, and a concurrent
+/// `restore_workspace` could flip a row to `Active` in that window.
+///
+/// Per-row outcomes:
+/// - DB row deleted → `error: None`, hook emits `Deleted`.
+/// - Row missing or no longer Archived → `error: Some("workspace no
+///   longer archived")`, no hook (a `restore_workspace` already fired
+///   its own).
+/// - SQLite error → `error: Some(...)`, no hook.
 ///
 /// Caller responsibilities (matching the single-workspace
 /// `delete_workspace` Tauri command):
-/// - Validate that each target is `Archived` before invoking. This op
-///   does not check status — it deletes whatever rows are named, so a
-///   buggy caller could hard-delete an Active workspace.
 /// - Stop any running agents whose `workspace_id` matches before invoking.
-/// - Remove worktrees + delete git branches.
+/// - Remove worktrees + delete git branches *for IDs whose outcome
+///   reports success* — never for rows where this op reported a failure.
 /// - Invalidate env-provider watcher entries and cache entries rooted at
-///   each worktree path.
+///   each successful row's worktree path.
 /// - Run the "is this the last workspace in its repo?" MCP supervisor
 ///   cleanup once per affected `repository_id` after this returns.
-///
-/// Fires [`WorkspaceChangeKind::Deleted`] through `hooks` per successful
-/// row.
 pub fn delete_workspaces_bulk(
     db: &Database,
     hooks: &dyn OpsHooks,
@@ -911,11 +918,12 @@ pub fn delete_workspaces_bulk(
             .map(|w| w.repository_id.clone())
             .unwrap_or_default();
 
-        let error = match db.delete_workspace_with_summary(id) {
-            Ok(()) => {
+        let error = match db.try_delete_archived_workspace_with_summary(id) {
+            Ok(true) => {
                 hooks.workspace_changed(id, WorkspaceChangeKind::Deleted);
                 None
             }
+            Ok(false) => Some("workspace no longer archived".to_string()),
             Err(e) => Some(e.to_string()),
         };
 
@@ -1180,9 +1188,9 @@ mod tests {
         );
     }
 
-    /// `delete_workspaces_bulk` on a happy path: every named ID is
-    /// hard-deleted, a summary row materialises for each, and a single
-    /// `Deleted` hook fires per ID.
+    /// `delete_workspaces_bulk` on a happy path: every (archived) named
+    /// ID is hard-deleted, a summary row materialises for each, and a
+    /// single `Deleted` hook fires per ID.
     #[tokio::test]
     async fn delete_workspaces_bulk_deletes_and_emits_hooks() {
         let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
@@ -1203,6 +1211,9 @@ mod tests {
             )
             .await
             .unwrap();
+            // Bulk delete is Archived-only — flip status before invoking.
+            db.update_workspace_status(&created.workspace.id, &WorkspaceStatus::Archived, None)
+                .unwrap();
             ids.push(created.workspace.id);
         }
 
@@ -1231,49 +1242,83 @@ mod tests {
         );
     }
 
-    /// `delete_workspaces_bulk` isolates per-row failures. An unknown ID
-    /// in the batch surfaces as an outcome error (`delete_workspace_with_summary`
-    /// itself is currently lenient on missing rows, so we simulate failure
-    /// by passing duplicate IDs — the second delete still reports success
-    /// because SQLite treats `DELETE` of a missing row as a 0-row no-op).
-    ///
-    /// Concretely we assert: outcomes match input length, all valid rows
-    /// gone, and the function returns `Ok` rather than bailing on first
-    /// trouble.
+    /// The in-transaction Archived guard is the real protection
+    /// against a concurrent restore racing a bulk delete. We can't
+    /// easily race async tasks in a single-threaded test, but we can
+    /// prove the guard itself: pass one Archived row, one Active row
+    /// (simulating a row that flipped after the caller's snapshot
+    /// check), and one missing ID. Only the Archived row should be
+    /// deleted; the others must surface as per-row failures and the
+    /// Active row must survive.
     #[tokio::test]
-    async fn delete_workspaces_bulk_returns_per_row_outcomes() {
+    async fn delete_workspaces_bulk_refuses_non_archived_rows() {
         let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
         let worktree_base = tempfile::tempdir().unwrap();
         let hooks = RecordingHooks::default();
 
-        let created = create(
+        let archived = create(
             &mut db,
             &hooks,
             worktree_base.path(),
             CreateParams {
                 repo_id: &repo.id,
-                name: "feature",
+                name: "archived",
+                branch_prefix: "test/",
+            },
+        )
+        .await
+        .unwrap();
+        let active = create(
+            &mut db,
+            &hooks,
+            worktree_base.path(),
+            CreateParams {
+                repo_id: &repo.id,
+                name: "active",
                 branch_prefix: "test/",
             },
         )
         .await
         .unwrap();
 
-        let ids = vec![created.workspace.id.clone(), "does-not-exist".to_string()];
-        let outcomes = delete_workspaces_bulk(&db, &hooks, &ids).unwrap();
+        db.update_workspace_status(&archived.workspace.id, &WorkspaceStatus::Archived, None)
+            .unwrap();
+        // `active` stays Active — simulates the "raced restore" case
+        // where a row flipped after the caller's snapshot.
 
-        assert_eq!(outcomes.len(), 2);
-        assert_eq!(outcomes[0].id, created.workspace.id);
+        let ids = vec![
+            archived.workspace.id.clone(),
+            active.workspace.id.clone(),
+            "does-not-exist".to_string(),
+        ];
+        let outcomes = delete_workspaces_bulk(&db, &hooks, &ids).unwrap();
+        assert_eq!(outcomes.len(), 3);
+
+        // Archived row deleted.
+        assert_eq!(outcomes[0].id, archived.workspace.id);
         assert!(outcomes[0].error.is_none());
-        assert_eq!(outcomes[0].repository_id, repo.id);
-        assert_eq!(outcomes[1].id, "does-not-exist");
-        // Missing-row deletes are no-ops in SQLite, so this is recorded as
-        // success with an empty repository_id (the row isn't found to
-        // look one up from). The behavior is intentional — the Tauri
-        // command pre-validates the Archived status, so missing IDs
-        // can't reach this path in practice.
-        assert!(outcomes[1].error.is_none());
-        assert_eq!(outcomes[1].repository_id, "");
+
+        // Active row refused — fails closed.
+        assert_eq!(outcomes[1].id, active.workspace.id);
+        assert_eq!(
+            outcomes[1].error.as_deref(),
+            Some("workspace no longer archived"),
+        );
+
+        // Missing row reported the same way — same bucket from the
+        // frontend's perspective ("can't be deleted right now, refresh
+        // and try again").
+        assert_eq!(outcomes[2].id, "does-not-exist");
+        assert_eq!(
+            outcomes[2].error.as_deref(),
+            Some("workspace no longer archived"),
+        );
+
+        let remaining = db.list_workspaces().unwrap();
+        assert!(
+            remaining.iter().any(|w| w.id == active.workspace.id),
+            "active workspace must survive a bulk delete that included its id",
+        );
     }
 
     /// `build_script_command` must produce a Command that actually runs

@@ -474,6 +474,38 @@ impl Database {
         Ok(())
     }
 
+    /// Atomic variant of [`delete_workspace_with_summary`] that runs the
+    /// "is this row still Archived?" check inside the same transaction
+    /// as the delete. Use this from bulk paths where the gap between
+    /// pre-validation and the actual delete spans several `await`
+    /// points — a concurrent `restore_workspace` could otherwise flip
+    /// status to `Active` after the snapshot check and the row would
+    /// still get hard-deleted.
+    ///
+    /// Returns `Ok(true)` if the row existed and was Archived (and so
+    /// was deleted); `Ok(false)` if the row was missing or no longer
+    /// Archived (no rows touched). `Err` only on a real DB error.
+    pub fn try_delete_archived_workspace_with_summary(
+        &self,
+        id: &str,
+    ) -> Result<bool, rusqlite::Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        let status: Option<String> = tx
+            .query_row(
+                "SELECT status FROM workspaces WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if status.as_deref() != Some("archived") {
+            return Ok(false);
+        }
+        Self::materialize_workspace_summary_tx(&tx, id)?;
+        tx.execute("DELETE FROM workspaces WHERE id = ?1", params![id])?;
+        tx.commit()?;
+        Ok(true)
+    }
+
     /// Hard-delete a repository, materializing summaries for all its
     /// workspaces first. One atomic transaction — either every affected
     /// workspace produces a summary or none of the delete happens.
