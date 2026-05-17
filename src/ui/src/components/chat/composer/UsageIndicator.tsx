@@ -4,9 +4,15 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../../stores/useAppStore";
 import { useSessionUsagePoller } from "../../../hooks/useSessionUsagePoller";
 import type { UsageBucket } from "../../../types/usage";
+import { CLAUDE_CODE_USAGE_FOCUS } from "../../settings/sections/ExperimentalSettings";
 import { resolveIndicatorMode } from "./usageIndicatorMode";
 import { UsagePopover } from "./UsagePopover";
 import styles from "./UsageIndicator.module.css";
+
+/** Matches the convention used elsewhere in the chat UI
+ *  (ComposerToolbar, ChatToolbar, ChatPanel, OverflowMenu, applySelectedModel)
+ *  for sessions that haven't explicitly saved a provider yet. */
+const DEFAULT_BACKEND_ID = "anthropic";
 
 interface UsageIndicatorProps {
   workspaceId: string | null;
@@ -57,8 +63,11 @@ export function UsageIndicator({ workspaceId, sessionId }: UsageIndicatorProps) 
 
   const backend = useMemo(() => {
     if (!sessionId) return null;
-    const backendId = selectedModelProvider[sessionId];
-    if (!backendId) return null;
+    // Default to "anthropic" when no explicit provider has been saved
+    // for this session — matches the convention every other chat
+    // composer surface uses, so a brand-new default-Claude session
+    // gets the greyed-out enable affordance instead of nothing.
+    const backendId = selectedModelProvider[sessionId] ?? DEFAULT_BACKEND_ID;
     return agentBackends.find((b) => b.id === backendId) ?? null;
   }, [agentBackends, selectedModelProvider, sessionId]);
 
@@ -102,7 +111,7 @@ export function UsageIndicator({ workspaceId, sessionId }: UsageIndicatorProps) 
           className={`${styles.indicator} ${styles.disabled}`}
           title={label}
           aria-label={label}
-          onClick={() => openSettings("experimental", "claude-code-usage")}
+          onClick={() => openSettings("experimental", CLAUDE_CODE_USAGE_FOCUS)}
         >
           <div className={styles.bar}>
             <div className={styles.barFill} />
@@ -115,27 +124,35 @@ export function UsageIndicator({ workspaceId, sessionId }: UsageIndicatorProps) 
 
   // Active. Wait for the first snapshot before painting — the poller
   // resolves it within a single tick, so the gap is invisible.
-  if (!snapshot || snapshot.buckets.length === 0) return null;
+  if (!snapshot) return null;
 
+  // Empty-bucket case: the snapshot loaded but the source had nothing
+  // to surface yet (e.g. a brand-new Codex session with zero recorded
+  // turns). Render an empty bar so the user can still open the popover
+  // and read `snapshot.note` ("No turns recorded yet…"). Without this
+  // the meter silently disappears on every first turn.
   const bucket = pickIndicatorBucket(snapshot.buckets);
-  if (!bucket) return null;
-
-  const pct = bucket.is_bounded ? Math.min(bucket.utilization, 1.0) : 0;
-  const color = barColor(pct);
-  const fillStyle = bucket.is_bounded
+  const pct = bucket?.is_bounded ? Math.min(bucket.utilization, 1.0) : 0;
+  const color = bucket ? barColor(pct) : "var(--accent-primary)";
+  const fillStyle = bucket?.is_bounded
     ? { height: `${pct * 100}%`, background: color }
-    : { height: "100%", background: "var(--accent-primary)", opacity: 0.4 };
+    : bucket
+      ? { height: "100%", background: "var(--accent-primary)", opacity: 0.4 }
+      : { height: "0%", background: "transparent" };
 
-  const tooltip = bucket.is_bounded
+  const readout = bucket
+    ? bucket.primary_text
+    : t("usage_indicator_no_data", { defaultValue: "—" });
+  const tooltip = bucket
     ? `${bucket.label}: ${bucket.primary_text}`
-    : `${bucket.label}: ${bucket.primary_text}`;
+    : (snapshot.note ?? snapshot.source_label);
 
   return (
     <div className={styles.wrapper}>
       <button
         ref={triggerRef}
         type="button"
-        className={`${styles.indicator} ${bucket.exhausted ? styles.exhausted : ""}`}
+        className={`${styles.indicator} ${bucket?.exhausted ? styles.exhausted : ""}`}
         title={tooltip}
         aria-label={tooltip}
         aria-expanded={open}
@@ -145,14 +162,14 @@ export function UsageIndicator({ workspaceId, sessionId }: UsageIndicatorProps) 
         <div className={styles.bar}>
           <div className={styles.barFill} style={fillStyle} />
         </div>
-        <span className={styles.readout}>{bucket.primary_text}</span>
+        <span className={styles.readout}>{readout}</span>
       </button>
       {open && (
         <UsagePopover
           onClose={() => setOpen(false)}
           triggerRef={triggerRef}
           snapshot={snapshot}
-          activeBucketKey={bucket.key}
+          activeBucketKey={bucket?.key}
         />
       )}
     </div>

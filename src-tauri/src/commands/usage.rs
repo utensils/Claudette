@@ -1,13 +1,12 @@
 use tauri::State;
 
+use crate::commands::agent_backends::load_backend_secret;
 use crate::state::AppState;
 use crate::usage::{self, ClaudeCodeUsage};
 use claudette::agent_backend::{AgentBackendConfig, AgentBackendKind};
 use claudette::db::Database;
 use claudette::process::CommandWindowExt as _;
-use claudette::usage::{
-    UsageSnapshot, anthropic_oauth, codex_account, local_aggregate, openrouter,
-};
+use claudette::usage::{UsageSnapshot, anthropic_oauth, local_aggregate, openrouter};
 
 #[tauri::command]
 pub async fn get_claude_code_usage(state: State<'_, AppState>) -> Result<ClaudeCodeUsage, String> {
@@ -15,13 +14,16 @@ pub async fn get_claude_code_usage(state: State<'_, AppState>) -> Result<ClaudeC
 }
 
 /// Per-session usage snapshot. Dispatches to the right source based on
-/// the backend's kind + effective harness + whether the user has opted
-/// in to the experimental Anthropic OAuth Usage API.
+/// the backend's kind and whether the user has opted in to the
+/// experimental Anthropic OAuth Usage API.
 ///
-/// The frontend passes the active backend config rather than having
-/// Rust look it up from `selectedModelProvider` — that mapping lives
-/// in the Zustand toolbar slice and isn't persisted to SQLite, so the
-/// frontend is the source of truth.
+/// The frontend passes the active backend config (kind, base_url, id,
+/// default_model) rather than letting Rust look it up — the active
+/// `selectedModelProvider` mapping lives in the Zustand toolbar slice
+/// and isn't persisted to SQLite, so the frontend is the source of
+/// truth. Any secret the backend needs (currently only the OpenRouter
+/// `/auth/key` token) is loaded server-side via [`load_backend_secret`]
+/// against the keychain, so the API key never crosses the IPC boundary.
 #[tauri::command]
 pub async fn get_session_usage(
     state: State<'_, AppState>,
@@ -29,7 +31,6 @@ pub async fn get_session_usage(
     chat_session_id: String,
     backend: AgentBackendConfig,
     usage_insights_enabled: bool,
-    openrouter_api_key: Option<String>,
 ) -> Result<UsageSnapshot, String> {
     let now_ms = chrono::Utc::now().timestamp_millis();
 
@@ -57,7 +58,7 @@ pub async fn get_session_usage(
     }
 
     // Non-Claude path: every backend gets the local-aggregate baseline,
-    // and Codex/OpenRouter merge in their provider-specific extras.
+    // and OpenRouter merges in its provider-specific credit bucket.
     let db = Database::open(&state.db_path).map_err(|e| format!("DB open failed: {e}"))?;
 
     let session = db
@@ -72,19 +73,26 @@ pub async fn get_session_usage(
     // Provider-specific extras and label.
     let (source_label, extra_buckets) = match backend.kind {
         AgentBackendKind::CodexNative => {
-            // Codex's app-server only exposes `plan_type` — no quota.
-            // We surface the tier as the source label so the popover
-            // header reads "Codex Plus" instead of "Local".
-            let label = codex_account::format_plan_label(None);
-            (label, Vec::new())
+            // Codex's app-server only exposes `plan_type` via `account/read`,
+            // but the dispatcher doesn't currently hold a live app-server
+            // connection. Until that's wired (deferred from this PR), the
+            // label is just "Codex"; the local-aggregate token totals carry
+            // the meter on their own. `codex_account::format_plan_label`
+            // stays available so the wiring is a one-line change later.
+            (String::from("Codex"), Vec::new())
         }
         AgentBackendKind::CustomOpenAi
             if openrouter::is_openrouter_base_url(backend.base_url.as_deref()) =>
         {
+            // Read the user's OpenRouter API key from the keychain via the
+            // same `load_secure_secret` path the agent runtime uses to
+            // authenticate the model call itself. Frontend never sees the
+            // key. Network errors are swallowed — the bucket simply doesn't
+            // appear, and local-aggregate still carries the meter.
             let mut extras = Vec::new();
-            if let Some(key) = openrouter_api_key.as_deref()
+            if let Ok(Some(key)) = load_backend_secret(&backend.id)
                 && !key.is_empty()
-                && let Ok(Some(bucket)) = openrouter::fetch_credit_bucket(key).await
+                && let Ok(Some(bucket)) = openrouter::fetch_credit_bucket(&key).await
             {
                 extras.push(bucket);
             }

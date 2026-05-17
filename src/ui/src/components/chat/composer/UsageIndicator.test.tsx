@@ -143,11 +143,25 @@ describe("UsageIndicator", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("hides when the session has no backend selected yet", async () => {
-    // selectedModelProvider has no entry for s1
-    appStore.agentBackends = [makeBackend("anthropic")];
+  it("hides when no backend matches and there's no Anthropic default", async () => {
+    // No entry in agentBackends matches either an explicit provider or
+    // the implicit "anthropic" fallback — defensive: shouldn't paint.
+    appStore.agentBackends = [makeBackend("codex_native", "codex")];
+    appStore.selectedModelProvider = {}; // no entry for s1
     const container = await render();
     expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("defaults to Anthropic when the session has no saved provider", async () => {
+    // selectedModelProvider has no entry for s1 — the indicator should
+    // resolve to the built-in "anthropic" backend and render the
+    // greyed-out disabled state (flag is off in beforeEach), matching
+    // ComposerToolbar / ChatToolbar / ChatPanel's default behavior.
+    appStore.agentBackends = [makeBackend("anthropic", "anthropic")];
+    const container = await render();
+    const button = container.querySelector("button");
+    expect(button).not.toBeNull();
+    expect(button?.className).toContain("disabled");
   });
 
   it("renders disabled state for Claude family when flag is off", async () => {
@@ -179,6 +193,29 @@ describe("UsageIndicator", () => {
     appStore.selectedModelProvider = { s1: "codex" };
     const container = await render();
     expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("renders empty state when the snapshot has no buckets yet", async () => {
+    // Brand-new local-aggregate session with zero recorded turns: the
+    // snapshot loads but `buckets` is empty. The indicator must still
+    // render so users can open the popover and read `snapshot.note`.
+    appStore.agentBackends = [makeBackend("codex_native", "codex")];
+    appStore.selectedModelProvider = { s1: "codex" };
+    appStore.sessionUsage = {
+      s1: makeSnapshot({
+        buckets: [],
+        note: "No turns recorded yet for this session.",
+      }),
+    };
+    const container = await render();
+    const button = container.querySelector("button");
+    expect(button).not.toBeNull();
+    expect(button?.textContent).toContain("—");
+    // Popover should open and show the note.
+    await act(async () => button!.click());
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("No turns recorded yet");
   });
 
   it("renders the active meter for Codex Native once the snapshot lands", async () => {
