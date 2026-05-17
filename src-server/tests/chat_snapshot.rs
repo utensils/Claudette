@@ -320,3 +320,55 @@ async fn snapshot_inlines_small_text_attachments_skips_binary() {
     assert_eq!(bin.media_type, "image/png");
     assert_eq!(bin.size_bytes, 4);
 }
+
+/// Attachments returned by the snapshot must be ordered by the position of
+/// their owning message in the page (then created_at, filename, id) — not
+/// by HashMap iteration order. A snapshot that reorders attachments across
+/// reconnects breaks any client logic that diffs the snapshot against
+/// already-rendered state.
+#[tokio::test]
+async fn snapshot_attachments_follow_message_order() {
+    let (state, _temp) = make_state().await;
+    let db = Database::open(&state.db_path).unwrap();
+    let (session_id, ws_id) = seed_session(&db);
+
+    // Two messages, inserted in chronological order so `messages` arrives as
+    // [m1, m2] in the snapshot.
+    db.insert_chat_message(&make_message("m1", &ws_id, &session_id, ChatRole::User))
+        .unwrap();
+    db.insert_chat_message(&make_message(
+        "m2",
+        &ws_id,
+        &session_id,
+        ChatRole::Assistant,
+    ))
+    .unwrap();
+
+    // Insert attachments in REVERSE message order (m2 first, then m1) so a
+    // naive insertion-order or HashMap iteration would put m2's attachment
+    // ahead of m1's. The snapshot must reorder them by message position.
+    db.insert_attachment(&make_attachment(
+        "att-m2",
+        "m2",
+        "text/plain",
+        b"on m2".to_vec(),
+    ))
+    .unwrap();
+    db.insert_attachment(&make_attachment(
+        "att-m1",
+        "m1",
+        "text/plain",
+        b"on m1".to_vec(),
+    ))
+    .unwrap();
+
+    let snap = snapshot::build(&state, &session_id, 50, None)
+        .await
+        .unwrap();
+    let order: Vec<&str> = snap.attachments.iter().map(|a| a.id.as_str()).collect();
+    assert_eq!(
+        order,
+        vec!["att-m1", "att-m2"],
+        "attachments must be ordered by message position, not insertion order"
+    );
+}

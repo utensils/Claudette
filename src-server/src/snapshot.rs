@@ -196,18 +196,19 @@ fn load_safe_attachments_for_messages(
         .list_attachments_for_messages(&message_ids)
         .map_err(|e| e.to_string())?;
 
-    let mut out = Vec::new();
-    let mut remaining_inline_bytes = MAX_ATTACHMENT_INLINE_BYTES_PER_RESPONSE;
-    for (msg_id, atts) in att_map {
-        let is_carry_over = carry_over_user_id.as_deref() == Some(msg_id.as_str());
-        for att in atts {
-            if is_carry_over && att.origin != AttachmentOrigin::Agent {
-                continue;
-            }
-            out.push(safe_attachment(att, &mut remaining_inline_bytes));
-        }
-    }
-    out.sort_by(|a, b| {
+    // Flatten + filter carryover, then sort BEFORE walking the inline budget.
+    // HashMap iteration is nondeterministic, so consuming the 512 KB budget
+    // during iteration would let different attachments receive `text_content`
+    // across reconnects — breaking the recovery use case this RPC exists for.
+    let mut flattened: Vec<Attachment> = att_map
+        .into_iter()
+        .flat_map(|(msg_id, atts)| {
+            let is_carry_over = carry_over_user_id.as_deref() == Some(msg_id.as_str());
+            atts.into_iter()
+                .filter(move |att| !is_carry_over || att.origin == AttachmentOrigin::Agent)
+        })
+        .collect();
+    flattened.sort_by(|a, b| {
         message_order
             .get(a.message_id.as_str())
             .cmp(&message_order.get(b.message_id.as_str()))
@@ -215,6 +216,12 @@ fn load_safe_attachments_for_messages(
             .then_with(|| a.filename.cmp(&b.filename))
             .then_with(|| a.id.cmp(&b.id))
     });
+
+    let mut remaining_inline_bytes = MAX_ATTACHMENT_INLINE_BYTES_PER_RESPONSE;
+    let out = flattened
+        .into_iter()
+        .map(|att| safe_attachment(att, &mut remaining_inline_bytes))
+        .collect();
     Ok(out)
 }
 
@@ -222,9 +229,16 @@ fn safe_attachment(att: Attachment, remaining_inline_bytes: &mut usize) -> WssAt
     let can_inline = is_text_attachment(&att.media_type)
         && att.data.len() <= MAX_TEXT_ATTACHMENT_INLINE_BYTES
         && att.data.len() <= *remaining_inline_bytes;
+    // Validate UTF-8 BEFORE charging the budget — a mislabeled text/* file
+    // that decodes as None must not lock out later valid text attachments.
     let text_content = if can_inline {
-        *remaining_inline_bytes = remaining_inline_bytes.saturating_sub(att.data.len());
-        std::str::from_utf8(&att.data).ok().map(str::to_owned)
+        match std::str::from_utf8(&att.data) {
+            Ok(s) => {
+                *remaining_inline_bytes = remaining_inline_bytes.saturating_sub(att.data.len());
+                Some(s.to_owned())
+            }
+            Err(_) => None,
+        }
     } else {
         None
     };
