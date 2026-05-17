@@ -6,6 +6,7 @@ mod app_info;
 mod boot_probation;
 mod claude_teammate_bridge;
 mod commands;
+mod interactive_lifecycle;
 mod ipc;
 mod mdns;
 mod missing_cli;
@@ -826,6 +827,17 @@ fn main() {
             // continues to work via the initial-load path. Same
             // fallback shape as the env watcher above.
             commands::files::setup_file_watcher(app.handle().clone());
+
+            // Reconcile any `interactive_sessions` rows left in
+            // `state = 'running'` from the previous boot. Runs in the
+            // background so a slow tmux/sidecar probe doesn't delay
+            // the UI; the reconciler is idempotent and only writes
+            // when the host responds, so repeated boots eventually
+            // converge even if the first attempt finds nothing.
+            let reattach_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                interactive_lifecycle::reattach_interactive_sessions_on_boot(reattach_app).await;
+            });
 
             // Start the local IPC server the `claudette` CLI talks to.
             // Spawned async on the Tauri runtime; the resulting
