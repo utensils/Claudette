@@ -75,6 +75,9 @@ import { ScrollContext } from "./ScrollContext";
 import { StreamingThinkingBlock } from "./StreamingThinkingBlock";
 import { StreamingMessage } from "./StreamingMessage";
 import { MessagesWithTurns } from "./MessagesWithTurns";
+import { InteractiveTurns } from "./InteractiveTurns";
+import { InteractiveTerminalMode } from "./InteractiveTerminalMode";
+import { useInteractiveChatMode } from "./useInteractiveChatMode";
 import { ChatAuthFailureCallout } from "../auth/ChatAuthFailureCallout";
 import { CliInvocationBanner } from "./CliInvocationBanner";
 import { SetupScriptBanner } from "./SetupScriptBanner";
@@ -105,6 +108,14 @@ export function ChatPanel() {
   );
   const workspaces = useAppStore((s) => s.workspaces);
   const repositories = useAppStore((s) => s.repositories);
+  // G6: detect when the active backend's effective harness is the
+  // ClaudeInteractive runtime so we can swap the chat scroll body to
+  // the embedded turn-list / full-terminal view. Lives behind a tiny
+  // helper hook so ChatPanel — a god file — keeps a minimal diff.
+  const interactiveMode = useInteractiveChatMode(
+    selectedWorkspaceId,
+    activeSessionId,
+  );
   const chatMessages = useAppStore((s) => s.chatMessages);
   const setChatMessages = useAppStore((s) => s.setChatMessages);
   // Treat `null` (probe-in-flight) as available so we don't briefly
@@ -1544,44 +1555,52 @@ export function ChatPanel() {
                 </div>
               )}
               {activeSessionId && selectedWorkspaceId && (
-                <MessagesWithTurns
-                  messages={messages}
-                  workspaceId={selectedWorkspaceId}
-                  sessionId={activeSessionId}
-                  isRunning={isRunning}
-                  onForkTurn={isRemote ? undefined : handleFork}
-                  onAttachmentContextMenu={openAttachmentMenu}
-                  onAttachmentClick={openLightbox}
-                  onOpenFileLink={rememberChatScrollPosition}
-                  searchQuery={searchQuery}
-                  globalOffset={globalOffset}
-                  toolDisplayMode={toolDisplayMode}
-                  liveTaskProgressNode={
-                    activitiesCount > 0 ? (
-                      <CurrentTurnTaskProgress sessionId={activeSessionId} />
-                    ) : null
-                  }
-                  streamingThinkingNode={
-                    hasThinking && showThinkingBlocks ? (
-                      <StreamingThinkingBlock
-                        sessionId={activeSessionId}
-                        isStreaming={isRunning ?? false}
-                        inline={toolDisplayMode === "inline"}
-                        searchQuery={searchQuery}
-                      />
-                    ) : null
-                  }
-                  streamingMessageNode={
-                    hasStreaming || hasPendingTypewriter ? (
-                      <StreamingMessage
-                        sessionId={activeSessionId}
-                        workspaceId={selectedWorkspaceId}
-                        isStreaming={isRunning ?? false}
-                        searchQuery={searchQuery}
-                      />
-                    ) : null
-                  }
-                />
+                interactiveMode.isInteractive ? (
+                  interactiveMode.terminalMode ? (
+                    <InteractiveTerminalMode sid={activeSessionId} />
+                  ) : (
+                    <InteractiveTurns sid={activeSessionId} />
+                  )
+                ) : (
+                  <MessagesWithTurns
+                    messages={messages}
+                    workspaceId={selectedWorkspaceId}
+                    sessionId={activeSessionId}
+                    isRunning={isRunning}
+                    onForkTurn={isRemote ? undefined : handleFork}
+                    onAttachmentContextMenu={openAttachmentMenu}
+                    onAttachmentClick={openLightbox}
+                    onOpenFileLink={rememberChatScrollPosition}
+                    searchQuery={searchQuery}
+                    globalOffset={globalOffset}
+                    toolDisplayMode={toolDisplayMode}
+                    liveTaskProgressNode={
+                      activitiesCount > 0 ? (
+                        <CurrentTurnTaskProgress sessionId={activeSessionId} />
+                      ) : null
+                    }
+                    streamingThinkingNode={
+                      hasThinking && showThinkingBlocks ? (
+                        <StreamingThinkingBlock
+                          sessionId={activeSessionId}
+                          isStreaming={isRunning ?? false}
+                          inline={toolDisplayMode === "inline"}
+                          searchQuery={searchQuery}
+                        />
+                      ) : null
+                    }
+                    streamingMessageNode={
+                      hasStreaming || hasPendingTypewriter ? (
+                        <StreamingMessage
+                          sessionId={activeSessionId}
+                          workspaceId={selectedWorkspaceId}
+                          isStreaming={isRunning ?? false}
+                          searchQuery={searchQuery}
+                        />
+                      ) : null
+                    }
+                  />
+                )
               )}
 
               {showChatAuthLoginPanel && (
