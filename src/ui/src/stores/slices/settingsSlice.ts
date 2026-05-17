@@ -58,6 +58,12 @@ export interface SettingsSlice {
   setUsageInsightsEnabled: (enabled: boolean) => void;
   pluginManagementEnabled: boolean;
   setPluginManagementEnabled: (enabled: boolean) => void;
+  /// Experimental: surface the ClaudeInteractive agent backend, which runs
+  /// the `claude` CLI in interactive (non `--print`) mode inside a
+  /// detachable host (tmux/sidecar). Off by default; opt in via
+  /// Settings → Experimental.
+  claudeInteractiveEnabled: boolean;
+  setClaudeInteractiveEnabled: (enabled: boolean) => void;
   claudeRemoteControlEnabled: boolean;
   setClaudeRemoteControlEnabled: (enabled: boolean) => void;
   /// Gate the Settings → Community section. When false, the section is
@@ -195,6 +201,9 @@ export const createSettingsSlice: StateCreator<
       pluginSettingsRepoId: enabled ? state.pluginSettingsRepoId : null,
       pluginSettingsTab: enabled ? state.pluginSettingsTab : "available",
     })),
+  claudeInteractiveEnabled: false,
+  setClaudeInteractiveEnabled: (enabled) =>
+    set({ claudeInteractiveEnabled: enabled }),
   claudeRemoteControlEnabled: true,
   setClaudeRemoteControlEnabled: (enabled) =>
     set({ claudeRemoteControlEnabled: enabled }),
