@@ -72,13 +72,12 @@ pub async fn get_session_usage(
 
     // Provider-specific extras and label.
     let (source_label, extra_buckets) = match backend.kind {
-        AgentBackendKind::CodexNative => {
-            // Codex's app-server only exposes `plan_type` via `account/read`,
-            // but the dispatcher doesn't currently hold a live app-server
-            // connection. Until that's wired (deferred from this PR), the
-            // label is just "Codex"; the local-aggregate token totals carry
-            // the meter on their own. `codex_account::format_plan_label`
-            // stays available so the wiring is a one-line change later.
+        // Both Codex variants share the "Codex" header. Native is the
+        // standalone app-server harness, Subscription is the Codex CLI
+        // routed through Claude CLI's gateway — different runtimes, same
+        // user-facing branding, same data source (local aggregate;
+        // upstream Codex usage telemetry is deferred).
+        AgentBackendKind::CodexNative | AgentBackendKind::CodexSubscription => {
             (String::from("Codex"), Vec::new())
         }
         AgentBackendKind::CustomOpenAi
@@ -108,9 +107,9 @@ pub async fn get_session_usage(
         // Anthropic-family already handled above; fall through for
         // forward-compat if a new variant is added without a matching
         // dispatch arm.
-        AgentBackendKind::Anthropic
-        | AgentBackendKind::CustomAnthropic
-        | AgentBackendKind::CodexSubscription => (String::from("Claude"), Vec::new()),
+        AgentBackendKind::Anthropic | AgentBackendKind::CustomAnthropic => {
+            (String::from("Claude"), Vec::new())
+        }
     };
 
     Ok(local_aggregate::snapshot_from_locals(
@@ -124,12 +123,16 @@ pub async fn get_session_usage(
     ))
 }
 
+/// Mirror of the TS-side `CLAUDE_FAMILY_KINDS` in
+/// `src/ui/src/components/chat/composer/usageIndicatorMode.ts`. Membership
+/// is "auth source is Anthropic Pro/Max OAuth". Codex Subscription is NOT
+/// here — its auth is Codex-side and the Anthropic Usage API can never
+/// speak for it, even though its default harness happens to be the Claude
+/// CLI gateway.
 fn is_claude_family(kind: &AgentBackendKind) -> bool {
     matches!(
         kind,
-        AgentBackendKind::Anthropic
-            | AgentBackendKind::CustomAnthropic
-            | AgentBackendKind::CodexSubscription
+        AgentBackendKind::Anthropic | AgentBackendKind::CustomAnthropic
     )
 }
 

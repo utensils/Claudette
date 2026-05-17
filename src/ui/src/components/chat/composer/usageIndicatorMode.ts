@@ -23,26 +23,35 @@ export type UsageIndicatorMode = "active" | "disabled" | "hidden";
  * (subscription quotas, gated behind the experimental Claude Code Usage
  * flag).
  *
- * Crucially, OpenAI / Custom OpenAI / Ollama / LM Studio are NOT in
- * this set, even though their default harness is `claude_code` —
- * they use the gateway-translation path, not OAuth. Their usage
- * indicator runs on the local-aggregate source (tokens recorded per
- * turn) and is always enabled.
+ * Membership rule: the backend's *auth source* is Anthropic Pro/Max
+ * OAuth (the tokens the `claude` CLI stores in the keychain). Codex
+ * Subscription uses Codex CLI auth — a completely different
+ * credential ecosystem — and the Anthropic Usage API can never speak
+ * for it, so it does NOT belong here even though its default harness
+ * is `claude_code`. Same reasoning extends to OpenAI / Custom OpenAI /
+ * Ollama / LM Studio: gateway-translated, not OAuth-authenticated.
+ *
+ * `custom_anthropic` stays in for backward compatibility — pre-refactor
+ * builds always showed the global Anthropic Usage meter regardless of
+ * which backend was active, and CustomAnthropic users who happen to
+ * also have Pro/Max OAuth credentials in their keychain still get a
+ * meaningful reading here.
  */
 const CLAUDE_FAMILY_KINDS: ReadonlySet<AgentBackendKind> = new Set([
   "anthropic",
   "custom_anthropic",
-  "codex_subscription",
 ]);
 
 /**
  * Backend kinds that always render the live meter regardless of the
  * experimental flag. These rely on local-aggregate data (plus
- * provider-specific extras for Codex Native and OpenRouter) — no
- * subscription credential is in play.
+ * provider-specific extras for OpenRouter) — no Anthropic OAuth
+ * credential is in play. Codex Subscription joins this group because
+ * its auth + quota live on the Codex side, not Anthropic's.
  */
 const ALWAYS_ACTIVE_KINDS: ReadonlySet<AgentBackendKind> = new Set([
   "codex_native",
+  "codex_subscription",
   "openai_api",
   "custom_openai",
   "ollama",

@@ -43,10 +43,14 @@ describe("resolveIndicatorMode", () => {
   });
 
   it("Claude-family kinds: disabled when flag off, active when on", () => {
+    // Only kinds whose auth source IS Anthropic OAuth. Codex
+    // Subscription is intentionally NOT here even though its default
+    // harness is `claude_code` — its auth lives in the Codex CLI
+    // ecosystem, not Anthropic's, so the Anthropic Usage API has
+    // nothing to say about it.
     const claudeKinds: AgentBackendKind[] = [
       "anthropic",
       "custom_anthropic",
-      "codex_subscription",
     ];
     for (const kind of claudeKinds) {
       const backend = makeBackend(kind);
@@ -55,9 +59,21 @@ describe("resolveIndicatorMode", () => {
     }
   });
 
+  it("Codex Subscription: always active, ignores experimental flag", () => {
+    // Codex Subscription uses Codex CLI auth (not Anthropic OAuth),
+    // so the experimental Claude Code Usage gate has no business
+    // applying to it. Both flag states render the live local-aggregate
+    // meter. Regression for the user-reported bug where the indicator
+    // showed "Claude Code Usage off" while on Codex / GPT-5.5.
+    const backend = makeBackend("codex_subscription");
+    expect(resolveIndicatorMode(backend, false)).toBe("active");
+    expect(resolveIndicatorMode(backend, true)).toBe("active");
+  });
+
   it("non-Claude kinds with default harness: always active", () => {
     const alwaysActive: AgentBackendKind[] = [
       "codex_native",
+      "codex_subscription",
       "openai_api",
       "custom_openai",
       "ollama",

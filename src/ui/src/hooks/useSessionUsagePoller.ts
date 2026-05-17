@@ -92,6 +92,23 @@ export function useSessionUsagePoller({
       return;
     }
 
+    // Synchronous placeholder so the indicator renders the new
+    // backend's chrome immediately on model switch, instead of
+    // disappearing for the ~50-200ms it takes the IPC + DB roundtrip
+    // to land. The first real `fetchOnce()` below overwrites it.
+    // Without this, the meter "blinks" on every backend switch,
+    // which looks like "I have to send a message for it to show up."
+    // (The early-return paths above already covered hidden / disabled
+    // / missing-id, so `sessionId` and `backend` are non-null here.)
+    setSessionUsage(sessionId, {
+      provider_kind: backend.kind,
+      source_label: backend.label,
+      buckets: [],
+      note: null,
+      fetched_at_ms: Date.now(),
+      experimental_disabled: false,
+    });
+
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let lastFetchAt = 0;
