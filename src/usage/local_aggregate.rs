@@ -160,7 +160,22 @@ pub fn snapshot_from_locals(
     let mut buckets = extra_buckets;
     let pricing = default_model.and_then(super::pricing::lookup);
 
+    // Models running entirely on the user's hardware have no marginal
+    // per-token cost, so the ≈$X.XX readout is meaningless for them.
+    // It would also be misleading: `chat_messages.cost_usd` is summed
+    // across the whole workspace over 24h, so a stray Claude / Codex
+    // turn earlier in the day would surface a dollar number under an
+    // Ollama header. Suppress it entirely for the two backends whose
+    // runtime is by definition local.
+    let track_cost = !matches!(
+        provider_kind,
+        AgentBackendKind::Ollama | AgentBackendKind::LmStudio
+    );
+
     let augment_cost = |agg: &LocalAggregate| -> f64 {
+        if !track_cost {
+            return 0.0;
+        }
         if agg.cost_usd > 0.0 {
             return agg.cost_usd;
         }
@@ -405,6 +420,39 @@ mod tests {
         // 1M prompt * $1.25 + 0.5M completion * $10.00 = $1.25 + $5.00 = $6.25
         let secondary = bucket.secondary_text.as_ref().unwrap();
         assert!(secondary.contains("$6.25"), "secondary = {secondary}");
+    }
+
+    #[test]
+    fn snapshot_suppresses_cost_for_local_only_backends() {
+        // Even when chat_messages.cost_usd has data (e.g. from a prior
+        // paid-backend turn in the same workspace), Ollama / LmStudio
+        // backends should never surface a dollar readout — their
+        // inference is local and has no marginal cost.
+        let session = LocalAggregate {
+            input_tokens: 5_000,
+            output_tokens: 2_000,
+            cost_usd: 0.42,
+            message_count: 1,
+            ..Default::default()
+        };
+        for kind in [AgentBackendKind::Ollama, AgentBackendKind::LmStudio] {
+            let snap = snapshot_from_locals(
+                kind,
+                "Ollama",
+                session.clone(),
+                LocalAggregate::default(),
+                Some("gpt-5.4"), // even with a model that maps to pricing
+                Vec::new(),
+                0,
+            );
+            let bucket = &snap.buckets[0];
+            assert_eq!(bucket.key, "local_session");
+            assert!(
+                bucket.secondary_text.is_none(),
+                "{kind:?} bucket should have no cost readout, got {:?}",
+                bucket.secondary_text,
+            );
+        }
     }
 
     #[test]
