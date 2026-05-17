@@ -1,0 +1,296 @@
+//! `get_chat_snapshot` RPC: a single read that returns enough state for a
+//! WSS client to rebuild a chat session view after a disconnect or a
+//! broadcast-lag event-loss. Mirrors the desktop IPC `ChatSnapshot` shape
+//! in `src-tauri/src/ipc.rs` so the mobile client can share a response
+//! decoder across the two transports.
+//!
+//! Lives in its own module so `handler.rs` (already past 1800 lines) only
+//! grows by a small dispatch arm — see the "god file — keep diffs surgical"
+//! note in CLAUDE.md.
+//!
+//! The key piece is `pending_controls`: it surfaces the in-memory
+//! `pending_permissions` map for the session, giving a client a way to
+//! recover from a missed `agent-permission-prompt` broadcast event.
+
+use std::collections::HashMap;
+
+use claudette::db::Database;
+use claudette::model::{
+    Attachment, AttachmentOrigin, ChatMessage, ChatRole, ChatSession, CompletedTurnData,
+};
+use serde::Serialize;
+
+use crate::ws::{AgentSessionState, ServerState};
+
+pub const DEFAULT_SNAPSHOT_LIMIT: i64 = 50;
+pub const MAX_SNAPSHOT_LIMIT: i64 = 200;
+
+/// Per-attachment cap for inlined text bodies. Mirrors
+/// `MAX_TEXT_ATTACHMENT_INLINE_BYTES` in the desktop IPC.
+const MAX_TEXT_ATTACHMENT_INLINE_BYTES: usize = 16 * 1024;
+/// Per-response budget for inlined text bodies, summed across all
+/// attachments in this snapshot. Mirrors `MAX_ATTACHMENT_INLINE_BYTES_PER_RESPONSE`.
+const MAX_ATTACHMENT_INLINE_BYTES_PER_RESPONSE: usize = 512 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatSnapshot {
+    pub session: ChatSession,
+    pub messages: Vec<ChatMessage>,
+    pub attachments: Vec<WssAttachment>,
+    pub completed_turns: Vec<CompletedTurnData>,
+    pub pending_controls: Vec<PendingAgentControl>,
+    pub has_more: bool,
+    pub total_count: i64,
+}
+
+/// Attachment metadata safe to send inline in a JSON-RPC response.
+/// Binary or oversize bodies have `text_content = None`; a follow-up
+/// `load_attachment_data` WSS RPC is needed to fetch raw bytes.
+#[derive(Debug, Clone, Serialize)]
+pub struct WssAttachment {
+    pub id: String,
+    pub message_id: String,
+    pub filename: String,
+    pub media_type: String,
+    pub text_content: Option<String>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub size_bytes: i64,
+    pub created_at: String,
+    pub origin: AttachmentOrigin,
+    pub tool_use_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PendingAgentControl {
+    pub tool_use_id: String,
+    pub tool_name: String,
+    pub input: serde_json::Value,
+    pub kind: PendingAgentControlKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingAgentControlKind {
+    AskUserQuestion,
+    ExitPlanMode,
+    /// Forward-compatible bucket for future Claude tool-control kinds.
+    Unknown,
+}
+
+/// Clamp a raw `limit` param to the supported range; default when absent.
+pub fn clamp_limit(raw: Option<i64>) -> i64 {
+    raw.unwrap_or(DEFAULT_SNAPSHOT_LIMIT)
+        .clamp(1, MAX_SNAPSHOT_LIMIT)
+}
+
+/// Project the in-memory `pending_permissions` map for a session into the
+/// wire shape. Sorted by `tool_use_id` for deterministic ordering across
+/// reconnects.
+pub fn pending_controls_for_session(agent: Option<&AgentSessionState>) -> Vec<PendingAgentControl> {
+    let Some(agent) = agent else {
+        return Vec::new();
+    };
+    let mut out: Vec<PendingAgentControl> = agent
+        .pending_permissions
+        .iter()
+        .map(|(tool_use_id, pending)| PendingAgentControl {
+            tool_use_id: tool_use_id.clone(),
+            tool_name: pending.tool_name.clone(),
+            input: pending.original_input.clone(),
+            kind: match pending.tool_name.as_str() {
+                "AskUserQuestion" => PendingAgentControlKind::AskUserQuestion,
+                "ExitPlanMode" => PendingAgentControlKind::ExitPlanMode,
+                _ => PendingAgentControlKind::Unknown,
+            },
+        })
+        .collect();
+    out.sort_by(|a, b| a.tool_use_id.cmp(&b.tool_use_id));
+    out
+}
+
+/// Assemble a `ChatSnapshot` for the given session. Returns `Err("Session not found")`
+/// if the chat session does not exist.
+pub async fn build(
+    state: &ServerState,
+    chat_session_id: &str,
+    limit: i64,
+    before_message_id: Option<&str>,
+) -> Result<ChatSnapshot, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let session = db
+        .get_chat_session(chat_session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Session not found".to_string())?;
+
+    // Peek-and-trim for has_more: fetch one extra row, drop it if present.
+    // Avoids a separate "is there an older message?" query.
+    let mut messages = db
+        .list_chat_messages_page(chat_session_id, limit + 1, before_message_id)
+        .map_err(|e| e.to_string())?;
+    let has_more = trim_peeked_message_page(&mut messages, limit);
+
+    let total_count = db
+        .count_chat_messages_for_session(chat_session_id)
+        .map_err(|e| e.to_string())?;
+    let completed_turns = db
+        .list_completed_turns_for_session(chat_session_id)
+        .map_err(|e| e.to_string())?;
+
+    let attachments = load_safe_attachments_for_messages(&db, chat_session_id, &messages)?;
+
+    let pending_controls = {
+        let agents = state.agents.read().await;
+        pending_controls_for_session(agents.get(chat_session_id))
+    };
+
+    Ok(ChatSnapshot {
+        session,
+        messages,
+        attachments,
+        completed_turns,
+        pending_controls,
+        has_more,
+        total_count,
+    })
+}
+
+fn trim_peeked_message_page(messages: &mut Vec<ChatMessage>, limit: i64) -> bool {
+    let has_more = messages.len() as i64 > limit;
+    if has_more {
+        messages.remove(0);
+    }
+    has_more
+}
+
+/// Hydrate attachment metadata for the loaded message page, mirroring the
+/// desktop's safe-inline rules. Walks the optional preceding user message
+/// for the agent-attachment carryover case (turn boundary mid-page).
+fn load_safe_attachments_for_messages(
+    db: &Database,
+    chat_session_id: &str,
+    messages: &[ChatMessage],
+) -> Result<Vec<WssAttachment>, String> {
+    let mut message_ids: Vec<String> = messages.iter().map(|m| m.id.clone()).collect();
+    let mut carry_over_user_id: Option<String> = None;
+
+    // If the page starts on a non-user message, the preceding user message
+    // (on the previous page) may carry agent-authored attachments — pull
+    // just those so the visible assistant turn renders with its tool output.
+    if let Some(first) = messages.first()
+        && first.role != ChatRole::User
+        && let Some(prev_user) = db
+            .previous_user_message_id(chat_session_id, &first.id)
+            .map_err(|e| e.to_string())?
+    {
+        message_ids.push(prev_user.clone());
+        carry_over_user_id = Some(prev_user);
+    }
+
+    let message_order: HashMap<&str, usize> = message_ids
+        .iter()
+        .enumerate()
+        .map(|(idx, id)| (id.as_str(), idx))
+        .collect();
+    let att_map = db
+        .list_attachments_for_messages(&message_ids)
+        .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    let mut remaining_inline_bytes = MAX_ATTACHMENT_INLINE_BYTES_PER_RESPONSE;
+    for (msg_id, atts) in att_map {
+        let is_carry_over = carry_over_user_id.as_deref() == Some(msg_id.as_str());
+        for att in atts {
+            if is_carry_over && att.origin != AttachmentOrigin::Agent {
+                continue;
+            }
+            out.push(safe_attachment(att, &mut remaining_inline_bytes));
+        }
+    }
+    out.sort_by(|a, b| {
+        message_order
+            .get(a.message_id.as_str())
+            .cmp(&message_order.get(b.message_id.as_str()))
+            .then_with(|| a.created_at.cmp(&b.created_at))
+            .then_with(|| a.filename.cmp(&b.filename))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(out)
+}
+
+fn safe_attachment(att: Attachment, remaining_inline_bytes: &mut usize) -> WssAttachment {
+    let can_inline = is_text_attachment(&att.media_type)
+        && att.data.len() <= MAX_TEXT_ATTACHMENT_INLINE_BYTES
+        && att.data.len() <= *remaining_inline_bytes;
+    let text_content = if can_inline {
+        *remaining_inline_bytes = remaining_inline_bytes.saturating_sub(att.data.len());
+        std::str::from_utf8(&att.data).ok().map(str::to_owned)
+    } else {
+        None
+    };
+    WssAttachment {
+        id: att.id,
+        message_id: att.message_id,
+        filename: att.filename,
+        media_type: att.media_type,
+        text_content,
+        width: att.width,
+        height: att.height,
+        size_bytes: att.size_bytes,
+        created_at: att.created_at,
+        origin: att.origin,
+        tool_use_id: att.tool_use_id,
+    }
+}
+
+fn is_text_attachment(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "text/plain" | "text/csv" | "text/markdown" | "application/json"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_limit_defaults_when_absent() {
+        assert_eq!(clamp_limit(None), DEFAULT_SNAPSHOT_LIMIT);
+    }
+
+    #[test]
+    fn clamp_limit_caps_oversize_requests() {
+        assert_eq!(clamp_limit(Some(500)), MAX_SNAPSHOT_LIMIT);
+        assert_eq!(clamp_limit(Some(i64::MAX)), MAX_SNAPSHOT_LIMIT);
+    }
+
+    #[test]
+    fn clamp_limit_floors_at_one() {
+        assert_eq!(clamp_limit(Some(0)), 1);
+        assert_eq!(clamp_limit(Some(-10)), 1);
+    }
+
+    #[test]
+    fn clamp_limit_passes_through_in_range() {
+        assert_eq!(clamp_limit(Some(1)), 1);
+        assert_eq!(clamp_limit(Some(50)), 50);
+        assert_eq!(clamp_limit(Some(200)), 200);
+    }
+
+    #[test]
+    fn pending_controls_for_missing_session_is_empty() {
+        let out = pending_controls_for_session(None);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn pending_control_kind_serializes_snake_case() {
+        let json = serde_json::to_string(&PendingAgentControlKind::AskUserQuestion).unwrap();
+        assert_eq!(json, "\"ask_user_question\"");
+        let json = serde_json::to_string(&PendingAgentControlKind::ExitPlanMode).unwrap();
+        assert_eq!(json, "\"exit_plan_mode\"");
+        let json = serde_json::to_string(&PendingAgentControlKind::Unknown).unwrap();
+        assert_eq!(json, "\"unknown\"");
+    }
+}
