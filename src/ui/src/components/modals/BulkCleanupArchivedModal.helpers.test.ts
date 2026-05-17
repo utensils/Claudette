@@ -30,11 +30,23 @@ function makeArchived(id: string, ageInDays: number): Workspace {
 }
 
 describe("parseCreatedAt", () => {
-  it("returns the numeric epoch for a valid string", () => {
+  it("returns the numeric epoch for an all-digits Unix-seconds string", () => {
     expect(parseCreatedAt("1700000000")).toBe(1_700_000_000);
   });
 
-  it("returns null for non-numeric values so the row can be skipped under age filters", () => {
+  it("parses SQLite `datetime('now')` output as UTC", () => {
+    // datetime('now') returns "YYYY-MM-DD HH:MM:SS" with no timezone
+    // suffix; the value is UTC. The DB column DEFAULT is datetime('now'),
+    // which is what `workspaces.created_at` actually holds today
+    // because `insert_workspace` omits the column from its INSERT.
+    expect(parseCreatedAt("2023-11-14 22:13:20")).toBe(1_700_000_000);
+  });
+
+  it("parses ISO 8601 with explicit Z / T", () => {
+    expect(parseCreatedAt("2023-11-14T22:13:20Z")).toBe(1_700_000_000);
+  });
+
+  it("returns null for unparseable values so the row can be skipped under age filters", () => {
     expect(parseCreatedAt("")).toBeNull();
     expect(parseCreatedAt("nope")).toBeNull();
   });

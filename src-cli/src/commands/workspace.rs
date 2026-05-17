@@ -181,12 +181,20 @@ pub async fn run(action: Action, json: bool) -> Result<(), Box<dyn Error>> {
 
 /// Filter the `list_workspaces` response to archived rows matching the
 /// CLI's `--repo` (required) and `--older-than-days` (optional) filters.
-/// `created_at` is a Unix-seconds-as-string field (despite the
-/// misleadingly-named `now_iso()` helper in `ops::workspace` that
-/// produces it — the value is `SystemTime::duration_since(UNIX_EPOCH).as_secs()`
-/// formatted as a decimal string, not an ISO 8601 timestamp). We parse
-/// it as an integer and compare against the current epoch. Rows with
-/// malformed timestamps are dropped from age filtering when
+///
+/// `workspaces.created_at` is stored in one of two formats:
+///
+/// 1. **SQLite `datetime('now')`** — `"YYYY-MM-DD HH:MM:SS"` (UTC).
+///    The DB column has `DEFAULT (datetime('now'))` and
+///    `Database::insert_workspace` omits `created_at` from its INSERT,
+///    so the DEFAULT wins for every workspace today.
+/// 2. **Unix-seconds-as-string** — `"1700000000"`. What
+///    `ops::workspace::now_iso()` produces. Currently unused for
+///    workspace rows but supported here so a future migration that
+///    switches the INSERT to set `created_at = now_iso()` doesn't
+///    require a CLI change.
+///
+/// Rows with malformed timestamps are dropped from age filtering when
 /// `--older-than-days` is set, kept otherwise.
 fn resolve_purge_ids(
     value: &serde_json::Value,
@@ -225,7 +233,7 @@ fn resolve_purge_ids(
             let created_secs = item
                 .get("created_at")
                 .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<u64>().ok());
+                .and_then(parse_created_at);
             match created_secs {
                 Some(c) if c < cutoff => {}
                 _ => continue,
@@ -237,6 +245,68 @@ fn resolve_purge_ids(
         out.push(id.to_string());
     }
     Ok(out)
+}
+
+/// Parse a `workspace.created_at` value into Unix seconds. Mirrors the
+/// frontend's `parseCreatedAt` in
+/// `src/ui/src/components/modals/BulkCleanupArchivedModal.helpers.ts`
+/// — see that file for the format rationale.
+///
+/// Accepts:
+/// - All-digits → Unix-seconds-as-string.
+/// - SQLite `datetime('now')` (`"YYYY-MM-DD HH:MM:SS"`, treated as UTC).
+/// - RFC 3339 / ISO 8601 with `T` separator and explicit timezone.
+fn parse_created_at(value: &str) -> Option<u64> {
+    if value.is_empty() {
+        return None;
+    }
+    if value.chars().all(|c| c.is_ascii_digit()) {
+        return value.parse::<u64>().ok();
+    }
+    // Hand-rolled UTC parser for `YYYY-MM-DD[T ]HH:MM:SS[.fff][Z|±HH:MM]`.
+    // We don't pull `chrono` in for one date — every observed format
+    // has the same first-19-char shape, and the timezone suffix
+    // (currently always missing for SQLite datetime, optional for ISO)
+    // doesn't affect a day-granularity filter beyond a few hours of
+    // edge cases.
+    let bytes = value.as_bytes();
+    if bytes.len() < 19 {
+        return None;
+    }
+    let part = |start: usize, len: usize| -> Option<u32> {
+        std::str::from_utf8(&bytes[start..start + len])
+            .ok()?
+            .parse::<u32>()
+            .ok()
+    };
+    let year = part(0, 4)? as i32;
+    let month = part(5, 2)?;
+    let day = part(8, 2)?;
+    let hour = part(11, 2)?;
+    let minute = part(14, 2)?;
+    let second = part(17, 2)?;
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour >= 24
+        || minute >= 60
+        || second >= 60
+    {
+        return None;
+    }
+    // Days-from-epoch for the UTC midnight of (year, month, day).
+    // Howard Hinnant's civil-from-days inverse, adapted to be const-friendly.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400) as u32;
+    let m = month as i32;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) as u32 / 5 + (day - 1);
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days_from_epoch = era as i64 * 146097 + doe as i64 - 719468;
+    let secs = days_from_epoch * 86_400
+        + i64::from(hour) * 3600
+        + i64::from(minute) * 60
+        + i64::from(second);
+    u64::try_from(secs).ok()
 }
 
 /// Minimal table renderer for `workspace list`. Format is intentionally
@@ -261,5 +331,36 @@ fn render_workspace_table(value: &serde_json::Value) {
             .and_then(|v| v.as_str())
             .unwrap_or("?");
         println!("{id:<36}  {name:<24}  {status:<10}  {branch}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_created_at;
+
+    #[test]
+    fn parses_unix_seconds_string() {
+        assert_eq!(parse_created_at("1700000000"), Some(1_700_000_000));
+    }
+
+    #[test]
+    fn parses_sqlite_datetime_now_as_utc() {
+        // `datetime('now')` output for the same instant as 1700000000.
+        assert_eq!(parse_created_at("2023-11-14 22:13:20"), Some(1_700_000_000));
+    }
+
+    #[test]
+    fn parses_iso_with_t_separator() {
+        assert_eq!(
+            parse_created_at("2023-11-14T22:13:20Z"),
+            Some(1_700_000_000),
+        );
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert_eq!(parse_created_at(""), None);
+        assert_eq!(parse_created_at("nope"), None);
+        assert_eq!(parse_created_at("2023-13-01 00:00:00"), None);
     }
 }

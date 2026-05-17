@@ -28,12 +28,47 @@ export type AgeBucket =
   | { kind: "months"; count: number }
   | { kind: "years"; count: number };
 
-/** Parse the `created_at` Unix-seconds-as-string field (set by
- *  `ops::workspace::now_iso`). Returns `null` for malformed values so
- *  callers can decide whether to keep or drop the row. */
+/** Parse the `created_at` field into Unix seconds. Two formats are
+ *  observed in the wild:
+ *
+ *  1. **SQLite `datetime('now')`** — `"YYYY-MM-DD HH:MM:SS"` (UTC).
+ *     This is what the `workspaces` table actually stores: the
+ *     `INSERT` in `Database::insert_workspace` omits `created_at`,
+ *     so the column `DEFAULT (datetime('now'))` fills in.
+ *  2. **Unix-seconds-as-string** — `"1700000000"`. What
+ *     `ops::workspace::now_iso()` produces. Unused for
+ *     `workspaces.created_at` today, but several siblings use it,
+ *     and a future migration that switches the INSERT to set
+ *     `created_at = now_iso()` shouldn't require a frontend
+ *     change to keep working.
+ *  3. **ISO 8601 with `T`/timezone** — `"2026-05-15T19:23:11Z"`.
+ *     Future-proof for callers that adopt the standard form.
+ *
+ *  Returns `null` for malformed values so callers can decide
+ *  whether to keep or drop the row. A naive `parseInt` would
+ *  silently misread the leading `"2026"` from format 1 as a
+ *  ~33-minute-old Unix timestamp (rendering every workspace as
+ *  "56y ago") — hence the explicit format detection. */
 export function parseCreatedAt(value: string): number | null {
-  const n = Number.parseInt(value, 10);
-  return Number.isFinite(n) ? n : null;
+  if (!value) return null;
+
+  // All-digits → Unix seconds.
+  if (/^\d+$/.test(value)) {
+    const n = Number.parseInt(value, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // SQLite `datetime('now')` lacks a timezone suffix — the value is
+  // UTC, so swap the space for `T` and tack on `Z` before handing it
+  // to the platform parser. Already-ISO values pass through.
+  const normalized = (() => {
+    const withT = value.includes("T") ? value : value.replace(" ", "T");
+    const hasTz = /[Zz]|[+-]\d{2}:?\d{2}$/.test(withT);
+    return hasTz ? withT : `${withT}Z`;
+  })();
+  const ms = Date.parse(normalized);
+  if (!Number.isFinite(ms)) return null;
+  return Math.floor(ms / 1000);
 }
 
 /** Bucket `created_at` into today / days / months / years, anchored at
