@@ -4,6 +4,7 @@
 //! workspace row (e.g. survived a `~/.claudette/data.db` reset or a
 //! dev-build crash).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use claudette::db::Database;
@@ -60,6 +61,18 @@ pub async fn compute_storage_stats(
 ) -> Result<Vec<RepoStorageStats>, String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+    // Drop workspaces whose repository_id no longer resolves to a real
+    // row — those would still spawn a blocking size walk (wasted work)
+    // and produce a `RepoStorageStats` entry that the frontend silently
+    // drops via `statsById.get(repo.id)`, making the bytes invisible to
+    // the user. Better to skip the walk entirely and let the orphan
+    // scanner surface those dirs as "Unknown repository" cards.
+    let known_repo_ids: std::collections::HashSet<String> = db
+        .list_repositories()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
 
     // Spawn one blocking size walk per workspace that has a worktree
     // dir on disk. Skip rows whose path is None or doesn't exist —
@@ -75,6 +88,9 @@ pub async fn compute_storage_stats(
 
     let mut pending: Vec<Pending> = Vec::with_capacity(workspaces.len());
     for ws in workspaces {
+        if !known_repo_ids.contains(&ws.repository_id) {
+            continue;
+        }
         let size_handle = ws
             .worktree_path
             .as_ref()
@@ -94,9 +110,14 @@ pub async fn compute_storage_stats(
     }
 
     // Aggregate by repository_id, preserving workspace insertion order
-    // within each repo. Use a Vec instead of a HashMap so the returned
-    // ordering is stable (matches sidebar/Settings expectations).
+    // within each repo. Use a `Vec` for the stable returned ordering
+    // (matches sidebar/Settings expectations) plus an auxiliary
+    // `HashMap<repo_id, Vec index>` so the per-row slot lookup is O(1)
+    // instead of the previous O(N) `iter_mut().find(...)`. Matters when
+    // both `StorageSettings` and `BulkCleanupArchivedModal` mount the
+    // scan back-to-back on every archived-id change.
     let mut by_repo: Vec<RepoStorageStats> = Vec::new();
+    let mut by_repo_index: HashMap<String, usize> = HashMap::new();
     for p in pending {
         let size_bytes = match p.size_handle {
             Some(handle) => handle.await.ok(),
@@ -111,12 +132,10 @@ pub async fn compute_storage_stats(
         };
         let bytes = size_bytes.unwrap_or(0);
 
-        let slot = match by_repo
-            .iter_mut()
-            .find(|r| r.repository_id == p.repository_id)
-        {
-            Some(s) => s,
+        let slot_idx = match by_repo_index.get(&p.repository_id) {
+            Some(idx) => *idx,
             None => {
+                let idx = by_repo.len();
                 by_repo.push(RepoStorageStats {
                     repository_id: p.repository_id.clone(),
                     active_bytes: 0,
@@ -124,9 +143,11 @@ pub async fn compute_storage_stats(
                     total_bytes: 0,
                     workspaces: Vec::new(),
                 });
-                by_repo.last_mut().unwrap()
+                by_repo_index.insert(p.repository_id.clone(), idx);
+                idx
             }
         };
+        let slot = &mut by_repo[slot_idx];
         match entry.status {
             WorkspaceStatus::Active => slot.active_bytes = slot.active_bytes.saturating_add(bytes),
             WorkspaceStatus::Archived => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -13,11 +13,11 @@ import { formatBytes } from "../../../utils/formatBytes";
 import {
   computeStorageStats,
   scanOrphanedWorktrees,
-  purgeOrphanedWorktree,
   type OrphanedWorktree,
   type RepoStorageStats,
   type WorkspaceStorageEntry,
 } from "../../../services/tauri";
+import { useOrphanBulkPurge } from "./useOrphanBulkPurge";
 import styles from "../Settings.module.css";
 
 /**
@@ -55,25 +55,49 @@ export function StorageSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [purging, setPurging] = useState<Set<string>>(new Set());
   // Bulk confirm: a list of one or more paths the user has staged for
   // deletion. Single-path (per-row trash) and multi-path (per-card
   // "Delete N orphans" or global "Delete all orphans") share the same
   // confirm UI — only the wording changes.
   const [confirmPaths, setConfirmPaths] = useState<string[] | null>(null);
-  const [bulkProgress, setBulkProgress] = useState<{
-    done: number;
-    total: number;
-  } | null>(null);
-  // Set to true when the user clicks Cancel during a bulk purge. The
-  // sequential loop inside `handleBulkOrphanPurge` checks this between
-  // iterations so the currently-running `purgeOrphanedWorktree` call
-  // is allowed to complete (filesystem `remove_dir_all` is not safely
-  // interruptible at JS boundaries) but no further paths are touched.
-  // Uses a ref instead of state so the loop sees the latest value
-  // without re-running setState → re-render → new closure.
-  const cancelOrphanPurgeRef = useRef(false);
-  const [bulkCancelling, setBulkCancelling] = useState(false);
+  // Sequential bulk-purge state machine — owns `purging`,
+  // `bulkProgress`, and cooperative cancel. The component is the
+  // controller (decides what to purge and what to do on completion)
+  // while the hook is the engine. See `useOrphanBulkPurge.ts`.
+  const {
+    purging,
+    bulkProgress,
+    bulkCancelling,
+    start: startBulkPurge,
+    cancel: handleBulkOrphanCancel,
+  } = useOrphanBulkPurge({
+    onPathPurged: (path) => {
+      setOrphans((prev) => prev?.filter((r) => r.path !== path) ?? null);
+    },
+    onComplete: ({ failures, skipped, total }) => {
+      // Re-pull stats so totals stay accurate after a partial / full
+      // bulk purge.
+      computeStorageStats().then(setStats).catch(() => {});
+
+      if (failures.length > 0 || skipped > 0) {
+        const parts: string[] = [];
+        if (failures.length > 0) {
+          const lines = failures.map((f) => `${f.path}: ${f.error}`);
+          parts.push(
+            `${failures.length}/${total} delete(s) failed:\n${lines.join("\n")}`,
+          );
+        }
+        if (skipped > 0) {
+          parts.push(`${skipped} skipped (cancelled).`);
+        }
+        setError(parts.join("\n\n"));
+        // Leave the confirm box open so the user can read the error /
+        // skip summary and re-run on the remaining paths.
+      } else {
+        setConfirmPaths(null);
+      }
+    },
+  });
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -115,6 +139,11 @@ export function StorageSettings() {
    */
   const cards = useMemo<UnifiedRepoCard[]>(() => {
     const statsById = new Map(stats?.map((s) => [s.repository_id, s]) ?? []);
+    // Bucket every orphan once: matched-to-real-repo orphans go into
+    // `orphansBySlug` keyed by their slug, unmatched go into
+    // `unknownBySlug`. Lets the known-cards loop look up its matches in
+    // O(1) (`orphansBySlug.get(repo.path_slug)`) instead of re-filtering
+    // the full orphans array for every repo (which was O(repos × orphans)).
     const orphansBySlug = new Map<string, OrphanedWorktree[]>();
     const unknownBySlug = new Map<string, OrphanedWorktree[]>();
     for (const o of orphans ?? []) {
@@ -127,12 +156,7 @@ export function StorageSettings() {
 
     const knownCards: UnifiedRepoCard[] = localRepos.map((repo) => {
       const s = statsById.get(repo.id);
-      // Match orphans by slug — the backend stamps `inferred_repo_name`
-      // when the slug resolves, but the slug itself is what we group on.
-      const matched = (orphans ?? []).filter(
-        (o) =>
-          o.inferred_repo_name != null && o.inferred_repo_slug === repo.path_slug,
-      );
+      const matched = orphansBySlug.get(repo.path_slug) ?? [];
       const orphanedBytes = matched.reduce(
         (sum, o) => sum + (o.size_bytes ?? 0),
         0,
@@ -201,87 +225,15 @@ export function StorageSettings() {
     });
   };
 
-  /**
-   * Delete an array of orphan paths sequentially. We purposefully do
-   * NOT Promise.all — sequential keeps the user's progress readout
-   * accurate (1/N, 2/N, …) and avoids spawning N concurrent
-   * `remove_dir_all`s against the same parent dir. Continues past
-   * individual failures and surfaces the first error at the end.
-   *
-   * Cancellation: the loop checks `cancelOrphanPurgeRef` at the top of
-   * each iteration. The currently-running `purgeOrphanedWorktree` call
-   * is allowed to finish (the backend's `remove_dir_all` can't be
-   * safely interrupted partway), then the loop breaks and every
-   * remaining path is preserved — matching the spec the user asked for.
-   */
-  const handleBulkOrphanPurge = async (paths: string[]) => {
-    setError(null);
-    cancelOrphanPurgeRef.current = false;
-    setBulkCancelling(false);
-    setPurging((prev) => {
-      const next = new Set(prev);
-      for (const p of paths) next.add(p);
-      return next;
-    });
-    setBulkProgress({ done: 0, total: paths.length });
-
-    const failures: string[] = [];
-    let done = 0;
-    let skipped = 0;
-    for (const path of paths) {
-      if (cancelOrphanPurgeRef.current) {
-        // Stop before touching this path. Everything from `done` onward
-        // stays on disk, exactly as the user intended when they hit
-        // Cancel. Re-count the remainder so the readout / toast can
-        // tell them what's still there.
-        skipped = paths.length - done;
-        break;
-      }
-      try {
-        await purgeOrphanedWorktree(path);
-        setOrphans((prev) => prev?.filter((r) => r.path !== path) ?? null);
-      } catch (e) {
-        failures.push(`${path}: ${e}`);
-      }
-      done++;
-      setBulkProgress({ done, total: paths.length });
-    }
-
-    setPurging((prev) => {
-      const next = new Set(prev);
-      for (const p of paths) next.delete(p);
-      return next;
-    });
-    setBulkProgress(null);
-    setBulkCancelling(false);
-    cancelOrphanPurgeRef.current = false;
-
-    // Re-pull stats so totals stay accurate after a partial / full bulk
-    // purge.
-    computeStorageStats().then(setStats).catch(() => {});
-
-    if (failures.length > 0 || skipped > 0) {
-      const parts: string[] = [];
-      if (failures.length > 0) {
-        parts.push(
-          `${failures.length}/${paths.length} delete(s) failed:\n${failures.join("\n")}`,
-        );
-      }
-      if (skipped > 0) {
-        parts.push(`${skipped} skipped (cancelled).`);
-      }
-      setError(parts.join("\n\n"));
-      // Leave the confirm box open so the user can read the error /
-      // skip summary and re-run on the remaining paths if they want.
-    } else {
-      setConfirmPaths(null);
-    }
-  };
-
-  const handleBulkOrphanCancel = useCallback(() => {
-    cancelOrphanPurgeRef.current = true;
-    setBulkCancelling(true);
-  }, []);
+  /** Stage one or more orphan paths into the confirm overlay, then hand
+   *  off to the `useOrphanBulkPurge` engine when the user confirms. */
+  const startConfirmedPurge = useCallback(
+    (paths: string[]) => {
+      setError(null);
+      void startBulkPurge(paths);
+    },
+    [startBulkPurge],
+  );
 
   return (
     <div>
@@ -426,7 +378,7 @@ export function StorageSettings() {
               <button
                 type="button"
                 className={`${styles.iconBtn} ${styles.storageOrphanConfirmDelete}`}
-                onClick={() => handleBulkOrphanPurge(confirmPaths)}
+                onClick={() => startConfirmedPurge(confirmPaths)}
                 disabled={bulkProgress !== null}
               >
                 <Trash2 size={12} />

@@ -1500,8 +1500,11 @@ pub struct DiscoveredWorktree {
     pub head_sha: String,
     pub suggested_name: String,
     pub name_valid: bool,
-    /// Recursive on-disk size of the worktree directory, or `None` if the
-    /// walk failed (e.g. permission denied on a subdir).
+    /// Recursive on-disk size of the worktree directory. `None` only when
+    /// the `spawn_blocking` task itself panics or is cancelled (the only
+    /// way `JoinHandle::await.ok()` returns `None`). Per-entry I/O errors
+    /// inside `directory_size_bytes` are silently skipped and contribute 0
+    /// — they never produce `None`.
     pub size_bytes: Option<u64>,
 }
 

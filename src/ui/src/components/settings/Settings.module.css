@@ -458,6 +458,12 @@
   color: var(--status-stopped);
   margin: 0 0 8px;
   word-break: break-word;
+  /* `handleBulkOrphanPurge` joins per-failure lines with "\n" and the
+     "failures / skipped" sections with "\n\n". Without pre-wrap those
+     literal newlines collapse to single spaces and the user sees one
+     unbroken run of "path: error path: error" instead of a per-failure
+     list. Matches the sibling .storageOrphanConfirmText rule. */
+  white-space: pre-wrap;
 }
 
 .storageOrphanConfirmActions {

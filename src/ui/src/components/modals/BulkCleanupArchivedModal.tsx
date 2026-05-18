@@ -150,7 +150,24 @@ export function BulkCleanupArchivedModal() {
   const [backendArchivedIds, setBackendArchivedIds] = useState<Set<
     string
   > | null>(null);
-  const refreshStorageScan = useCallback(() => {
+  // Re-scan whenever the set of archived ids in the store changes —
+  // catches the moment an in-flight archive resolves and the
+  // `useWorkspaceLifecycle.archive` optimistic update is confirmed by
+  // the backend. Keyed on a stable join string so an unrelated row
+  // edit (status_line, agent_status) doesn't refire the scan. Inlined
+  // into the effect (rather than extracted to a `useCallback`) so the
+  // per-invocation `cancelled` flag and the cleanup closure share one
+  // scope — `useCallback` returning a cleanup is non-idiomatic React.
+  const archivedIdJoin = useMemo(
+    () =>
+      workspaces
+        .filter((w) => w.status === "Archived" && !w.remote_connection_id)
+        .map((w) => w.id)
+        .sort()
+        .join(","),
+    [workspaces],
+  );
+  useEffect(() => {
     let cancelled = false;
     computeStorageStats()
       .then((stats) => {
@@ -177,35 +194,6 @@ export function BulkCleanupArchivedModal() {
     return () => {
       cancelled = true;
     };
-  }, []);
-  useEffect(() => {
-    const cleanup = refreshStorageScan();
-    return cleanup;
-  }, [refreshStorageScan]);
-  // Re-scan whenever the set of archived ids in the store changes —
-  // catches the moment an in-flight archive resolves and the
-  // `useWorkspaceLifecycle.archive` optimistic update is confirmed by
-  // the backend. Keyed on a stable join string so an unrelated row
-  // edit (status_line, agent_status) doesn't refire the scan.
-  const archivedIdJoin = useMemo(
-    () =>
-      workspaces
-        .filter((w) => w.status === "Archived" && !w.remote_connection_id)
-        .map((w) => w.id)
-        .sort()
-        .join(","),
-    [workspaces],
-  );
-  useEffect(() => {
-    // Skip the initial run — the on-mount effect above already triggered
-    // the first scan and racing it with this one would do redundant
-    // work. The dependency array fires this effect on every change to
-    // the archived-id set, including the change immediately after mount
-    // if a workspaces-changed event lands.
-    if (backendArchivedIds === null) return;
-    const cleanup = refreshStorageScan();
-    return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [archivedIdJoin]);
 
   const nowSecs = useMemo(() => Math.floor(Date.now() / 1000), []);
