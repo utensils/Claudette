@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -20,6 +21,47 @@ import type { FileContextTarget } from "./fileContextMenu";
 import { FileTree } from "./FileTree";
 import { useFilePathActions } from "./useFilePathActions";
 import styles from "./FilesPanel.module.css";
+
+interface CachedFileEntries {
+  refreshNonce: number;
+  entries: FileEntry[];
+}
+
+const MAX_CACHED_WORKSPACES = 20;
+const fileEntriesCache = new Map<string, CachedFileEntries>();
+
+function getCachedFileEntries(
+  workspaceId: string,
+  refreshNonce: number,
+): FileEntry[] | null {
+  const cached = fileEntriesCache.get(workspaceId);
+  if (cached?.refreshNonce !== refreshNonce) return null;
+  // Refresh LRU position.
+  fileEntriesCache.delete(workspaceId);
+  fileEntriesCache.set(workspaceId, cached);
+  return cached.entries;
+}
+
+function setCachedFileEntries(
+  workspaceId: string,
+  refreshNonce: number,
+  entries: FileEntry[],
+): void {
+  fileEntriesCache.set(workspaceId, { refreshNonce, entries });
+  while (fileEntriesCache.size > MAX_CACHED_WORKSPACES) {
+    const oldestKey = fileEntriesCache.keys().next().value;
+    if (!oldestKey) return;
+    fileEntriesCache.delete(oldestKey);
+  }
+}
+
+function pruneFileEntriesCache(activeWorkspaceIds: Set<string>): void {
+  for (const workspaceId of fileEntriesCache.keys()) {
+    if (!activeWorkspaceIds.has(workspaceId)) {
+      fileEntriesCache.delete(workspaceId);
+    }
+  }
+}
 
 export function FilesPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
@@ -102,23 +144,27 @@ export function FilesPanel() {
   }, []);
 
   const loadFiles = useCallback(
-    async (workspaceId: string, showLoading: boolean) => {
+    async (workspaceId: string, expectedRefreshNonce: number, showLoading: boolean) => {
       const version = ++loadVersionRef.current;
       if (showLoading) {
         setLoading(true);
       }
-      setError(null);
       loadFilesInFlightCount.current += 1;
       try {
         const result = await listWorkspaceFiles(workspaceId);
         if (version !== loadVersionRef.current) return;
         if (useAppStore.getState().selectedWorkspaceId !== workspaceId) return;
+        setCachedFileEntries(workspaceId, expectedRefreshNonce, result);
         setEntries(result);
+        setError(null);
         setLoading(false);
       } catch (e) {
         if (version !== loadVersionRef.current) return;
         if (useAppStore.getState().selectedWorkspaceId !== workspaceId) return;
         setError(String(e));
+        if (!showLoading) {
+          console.error("Failed to refresh workspace files:", e);
+        }
         setLoading(false);
       } finally {
         loadFilesInFlightCount.current -= 1;
@@ -128,6 +174,10 @@ export function FilesPanel() {
   );
 
   useEffect(() => {
+    pruneFileEntriesCache(new Set(workspaces.map((workspace) => workspace.id)));
+  }, [workspaces]);
+
+  useLayoutEffect(() => {
     if (!selectedWorkspaceId || isPendingPlaceholder) {
       // Bumping the version invalidates any in-flight load from the
       // previously-selected workspace so its `.then` can't land here
@@ -140,8 +190,22 @@ export function FilesPanel() {
       setLoading(false);
       return;
     }
+    const cachedEntries = getCachedFileEntries(selectedWorkspaceId, refreshNonce);
+    setError(null);
+    if (cachedEntries) {
+      setEntries(cachedEntries);
+      setLoading(false);
+    } else {
+      setEntries([]);
+      setLoading(true);
+    }
+  }, [selectedWorkspaceId, refreshNonce, isPendingPlaceholder]);
+
+  useEffect(() => {
+    if (!selectedWorkspaceId || isPendingPlaceholder) return;
+    const cachedEntries = getCachedFileEntries(selectedWorkspaceId, refreshNonce);
     const timer = window.setTimeout(() => {
-      void loadFiles(selectedWorkspaceId, true);
+      void loadFiles(selectedWorkspaceId, refreshNonce, cachedEntries === null);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [selectedWorkspaceId, refreshNonce, loadFiles, isPendingPlaceholder]);
@@ -152,10 +216,10 @@ export function FilesPanel() {
       // Skip when a previous load is still in flight — see
       // `loadFilesInFlightCount` declaration above for the pileup rationale.
       if (loadFilesInFlightCount.current > 0) return;
-      void loadFiles(selectedWorkspaceId, false);
+      void loadFiles(selectedWorkspaceId, refreshNonce, false);
     }, FILES_AGENT_RUNNING_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [isRunning, selectedWorkspaceId, loadFiles, isPendingPlaceholder]);
+  }, [isRunning, selectedWorkspaceId, refreshNonce, loadFiles, isPendingPlaceholder]);
 
   useEffect(() => {
     const wasRunning = prevIsRunning.current;
@@ -163,10 +227,10 @@ export function FilesPanel() {
     if (!selectedWorkspaceId || isPendingPlaceholder || wasRunning !== true || isRunning) return;
 
     const timer = setTimeout(() => {
-      void loadFiles(selectedWorkspaceId, false);
+      void loadFiles(selectedWorkspaceId, refreshNonce, false);
     }, 500);
     return () => clearTimeout(timer);
-  }, [isRunning, selectedWorkspaceId, loadFiles, isPendingPlaceholder]);
+  }, [isRunning, selectedWorkspaceId, refreshNonce, loadFiles, isPendingPlaceholder]);
 
   // Idle polling: refresh file tree while agent is not running so
   // manually-edited files surface without navigating away. The cadence
@@ -179,10 +243,10 @@ export function FilesPanel() {
       // Skip when a previous load is still in flight — see
       // `loadFilesInFlightCount` declaration above for the pileup rationale.
       if (loadFilesInFlightCount.current > 0) return;
-      void loadFiles(selectedWorkspaceId, false);
+      void loadFiles(selectedWorkspaceId, refreshNonce, false);
     }, IDLE_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [isRunning, selectedWorkspaceId, loadFiles, isPendingPlaceholder]);
+  }, [isRunning, selectedWorkspaceId, refreshNonce, loadFiles, isPendingPlaceholder]);
 
   // React to the `requestNewFileAtRoot` nonce: open the inline create
   // editor at the workspace root.
@@ -259,51 +323,56 @@ export function FilesPanel() {
     <div className={styles.panel} onKeyDownCapture={handlePanelKeyDownCapture}>
       {loading ? (
         <div className={styles.empty}>Loading…</div>
-      ) : error ? (
+      ) : error && entries.length === 0 ? (
         <div className={styles.empty}>Failed to load: {error}</div>
       ) : (
-        <FileTree
-          workspaceId={selectedWorkspaceId}
-          entries={entries}
-          onActivateFile={handleActivateFile}
-          onActivateDiff={handleActivateDiff}
-          onContextMenu={(target, x, y) => setContextMenu({ target, x, y })}
-          creatingParentPath={creatingParentPath}
-          focusRequest={focusRequest}
-          onCreateCommit={async (parentPath, name) => {
-            try {
-              await filePathActions.createFile(parentPath, name);
+        <>
+          {error && (
+            <div className={styles.refreshError}>Refresh failed: {error}</div>
+          )}
+          <FileTree
+            workspaceId={selectedWorkspaceId}
+            entries={entries}
+            onActivateFile={handleActivateFile}
+            onActivateDiff={handleActivateDiff}
+            onContextMenu={(target, x, y) => setContextMenu({ target, x, y })}
+            creatingParentPath={creatingParentPath}
+            focusRequest={focusRequest}
+            onCreateCommit={async (parentPath, name) => {
+              try {
+                await filePathActions.createFile(parentPath, name);
+                setCreatingParentPath(null);
+                refocusExplorer();
+                return true;
+              } catch (err) {
+                console.error("Failed to create file:", err);
+                useAppStore.getState().addToast(`Create file failed: ${String(err)}`);
+                return false;
+              }
+            }}
+            onCreateCancel={() => {
               setCreatingParentPath(null);
               refocusExplorer();
-              return true;
-            } catch (err) {
-              console.error("Failed to create file:", err);
-              useAppStore.getState().addToast(`Create file failed: ${String(err)}`);
-              return false;
-            }
-          }}
-          onCreateCancel={() => {
-            setCreatingParentPath(null);
-            refocusExplorer();
-          }}
-          renamingPath={renamingTarget?.path ?? null}
-          onRenameCommit={async (target, newName) => {
-            try {
-              await filePathActions.renamePath(target, newName);
+            }}
+            renamingPath={renamingTarget?.path ?? null}
+            onRenameCommit={async (target, newName) => {
+              try {
+                await filePathActions.renamePath(target, newName);
+                setRenamingTarget(null);
+                refocusExplorer();
+                return true;
+              } catch (err) {
+                console.error("Failed to rename file:", err);
+                useAppStore.getState().addToast(`Rename failed: ${String(err)}`);
+                return false;
+              }
+            }}
+            onRenameCancel={() => {
               setRenamingTarget(null);
               refocusExplorer();
-              return true;
-            } catch (err) {
-              console.error("Failed to rename file:", err);
-              useAppStore.getState().addToast(`Rename failed: ${String(err)}`);
-              return false;
-            }
-          }}
-          onRenameCancel={() => {
-            setRenamingTarget(null);
-            refocusExplorer();
-          }}
-        />
+            }}
+          />
+        </>
       )}
       {contextMenu && (
         <FilePathContextMenu
