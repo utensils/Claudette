@@ -26,6 +26,7 @@ import {
   setApiKey,
   type ProviderAuthDeps,
 } from "./provider-auth.js";
+import { renderProviderErrorMarkdown } from "./format-error.js";
 
 type RequestMessage = {
   id?: string;
@@ -947,20 +948,12 @@ function routeSessionEvent(event: AgentSessionEvent): void {
         // `AssistantMessageEvent` `error` variant fires when the LLM
         // call fails mid-turn (e.g. a Copilot model returns 401 or a
         // provider 5xxs). The error message lives on the carried
-        // partial AssistantMessage. Forward it as a turn_error so
-        // Rust surfaces it in the chat — without this, the only
-        // signal the user ever sees is `agent_end` + "Agent stopped",
-        // because pi-agent-core's top-level `agent_end` carries
-        // `messages` but NOT a top-level errorMessage.
+        // partial AssistantMessage. Format with the shared markdown
+        // renderer so the chat doesn't render raw provider JSON.
         const errorMessage = update.error?.errorMessage?.trim();
-        if (errorMessage) {
-          send({ type: "turn_error", error: errorMessage });
-        } else {
-          send({
-            type: "turn_error",
-            error: `Pi model call failed (${update.reason ?? "error"})`,
-          });
-        }
+        const raw =
+          errorMessage ?? `Pi model call failed (${update.reason ?? "error"})`;
+        send({ type: "turn_error", error: renderProviderErrorMarkdown(raw) });
         break;
       }
       // start / text_start / text_end / thinking_start / thinking_end /
@@ -995,7 +988,7 @@ function routeSessionEvent(event: AgentSessionEvent): void {
         isError: event.isError,
       });
       break;
-    case "agent_end":
+    case "agent_end": {
       // pi-agent-core's `agent_end` does NOT carry a top-level
       // `errorMessage` (only `messages: AgentMessage[]`). The
       // `"errorMessage" in event` check therefore always failed and
@@ -1003,11 +996,13 @@ function routeSessionEvent(event: AgentSessionEvent): void {
       // the chat silent when a model call 401'd / 5xx'd. Walk the
       // tail of `messages` for the last assistant entry and forward
       // its errorMessage when `stopReason` is "error" or "aborted".
+      const raw = extractAgentEndError(event as { messages?: unknown });
       send({
         type: "turn_end",
-        error: extractAgentEndError(event as { messages?: unknown }),
+        error: raw ? renderProviderErrorMarkdown(raw) : undefined,
       });
       break;
+    }
     case "auto_retry_start": {
       // Surface "retrying after <reason>" as a turn-thinking line so
       // users seeing a long pause know Pi is re-trying instead of
@@ -1027,11 +1022,16 @@ function routeSessionEvent(event: AgentSessionEvent): void {
     case "auto_retry_end": {
       // Final retry failed: surface `finalError` as a turn_error so
       // it reaches the chat even if `agent_end` walks back into the
-      // no-errorMessage path.
+      // no-errorMessage path. Run through the formatter so a JSON
+      // envelope from the provider gets unwrapped into a friendly
+      // line just like the other error paths.
       const finalError = (event as { finalError?: string }).finalError?.trim();
       const success = (event as { success?: boolean }).success;
       if (success === false && finalError) {
-        send({ type: "turn_error", error: finalError });
+        send({
+          type: "turn_error",
+          error: renderProviderErrorMarkdown(finalError),
+        });
       }
       break;
     }

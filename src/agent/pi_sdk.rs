@@ -1058,10 +1058,14 @@ async fn route_pi_message(
             // `Result.result`, so without this an error after partial
             // text would finalize with only the partial text visible and
             // the failure invisible.
+            //
+            // The harness pre-formats `err` as markdown via
+            // `renderProviderErrorMarkdown` (the **Error · HTTP X** label
+            // + parsed message), so we embed it verbatim instead of
+            // adding our own "Pi turn failed:" prefix that would
+            // duplicate the label.
             if let Some(err) = error_text.as_ref() {
-                content.push(ContentBlock::Text {
-                    text: format!("Pi turn failed: {err}"),
-                });
+                content.push(ContentBlock::Text { text: err.clone() });
             }
             if !content.is_empty() {
                 let _ = event_tx.send(AgentEvent::Stream(StreamEvent::Assistant {
