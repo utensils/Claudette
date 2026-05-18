@@ -167,49 +167,47 @@ export function ImportWorktreesModal() {
           const size =
             row.size_bytes != null ? formatBytes(row.size_bytes) : null;
           return (
-            <label key={row.path} className={styles.worktreeRow}>
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => toggleRow(row.path)}
-                disabled={isPurging}
-              />
-              <div className={styles.worktreeInfo}>
-                <div className={styles.worktreeHeader}>
-                  <input
-                    type="text"
-                    className={
-                      isSelected && !nameValid
-                        ? styles.nameInputInvalid
-                        : styles.nameInput
-                    }
-                    value={row.editedName}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      updateName(row.path, e.target.value);
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    disabled={isPurging}
-                  />
-                  <span className={styles.badge}>{row.branch_name}</span>
-                  {size && <span className={styles.sizeBadge}>{size}</span>}
+            <div key={row.path} className={styles.worktreeRow}>
+              <label className={styles.worktreeSelect}>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleRow(row.path)}
+                  disabled={isPurging}
+                />
+                <div className={styles.worktreeInfo}>
+                  <div className={styles.worktreeHeader}>
+                    <input
+                      type="text"
+                      className={
+                        isSelected && !nameValid
+                          ? styles.nameInputInvalid
+                          : styles.nameInput
+                      }
+                      value={row.editedName}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        updateName(row.path, e.target.value);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      disabled={isPurging}
+                    />
+                    <span className={styles.badge}>{row.branch_name}</span>
+                    {size && <span className={styles.sizeBadge}>{size}</span>}
+                  </div>
+                  <div className={styles.worktreePath}>{row.path}</div>
                 </div>
-                <div className={styles.worktreePath}>{row.path}</div>
-              </div>
+              </label>
               <button
                 type="button"
                 className={styles.deleteButton}
                 title={t("import_worktrees_delete_tooltip")}
                 disabled={isPurging}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setConfirmPath(row.path);
-                }}
+                onClick={() => setConfirmPath(row.path)}
               >
                 <Trash2 size={14} />
               </button>
-            </label>
+            </div>
           );
         })}
       </div>

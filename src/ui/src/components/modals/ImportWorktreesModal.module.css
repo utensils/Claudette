@@ -26,7 +26,6 @@
   gap: 8px;
   padding: 8px;
   border-radius: 6px;
-  cursor: pointer;
   font-size: 13px;
 }
 
@@ -34,7 +33,16 @@
   background: var(--hover-bg);
 }
 
-.worktreeRow input[type="checkbox"] {
+.worktreeSelect {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.worktreeSelect input[type="checkbox"] {
   margin-top: 2px;
   flex-shrink: 0;
 }

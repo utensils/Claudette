@@ -1594,16 +1594,23 @@ pub async fn discover_worktrees(
         let wt_canon = std::fs::canonicalize(&wt.path)
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| wt.path.clone());
+        // Skip the main repo entry and bare clones — neither is importable.
         if wt_canon == repo_canon || wt.is_bare {
             continue;
         }
+        // Skip detached HEAD worktrees — Claudette workspaces require a branch.
         let branch = match &wt.branch {
             Some(b) => b.clone(),
             None => continue,
         };
+        // Skip worktrees git knows about but that no longer exist on disk
+        // (these survive in `.git/worktrees/` until `git worktree prune`).
         if !Path::new(&wt.path).is_dir() {
             continue;
         }
+        // Skip worktrees already claimed by a Claudette workspace row — the
+        // user already imported them once. Match by canonical path OR by
+        // branch name so a manually-checked-out duplicate is also filtered.
         if tracked_paths.contains(&wt_canon) || tracked_branches.contains(branch.as_str()) {
             continue;
         }
@@ -1643,8 +1650,10 @@ pub async fn discover_worktrees(
     Ok(discovered)
 }
 
-/// Best-effort canonicalize: returns the canonical path string when the
-/// path exists on disk, otherwise the raw string. Comparisons that need
+/// Best-effort canonicalize: returns the canonical path string when
+/// canonicalize succeeds, otherwise the raw string unchanged. Falls back
+/// on *any* error (NotFound, permission denied, broken symlink, etc.)
+/// — the returned path is NOT validated to exist. Comparisons that need
 /// to handle deleted-on-disk paths should compare both `(canon, raw)`
 /// pairs to avoid macOS `/tmp` vs `/private/tmp` mismatches when one
 /// side canonicalized and the other couldn't.
@@ -1671,22 +1680,22 @@ fn canon_or_raw(p: &str) -> String {
 /// - Refuses paths still claimed by a Claudette workspace (active or
 ///   archived). Comparison uses both canonical and raw forms so
 ///   deleted-on-disk DB rows still match against a canonical target.
-#[tauri::command]
-pub async fn purge_stray_worktree(
-    repo_id: String,
-    path: String,
-    state: State<'_, AppState>,
+/// Pure validation logic for `purge_stray_worktree`. Extracted from the
+/// Tauri command so it can be tested with tempdir + handcrafted inputs
+/// instead of needing a Tauri `State`. The command wires DB + git output
+/// into this function and acts on its result.
+///
+/// Returns `Ok(())` when the target is safe to purge; an error string
+/// when any guard rejects it.
+fn validate_purge_target(
+    target_path: &str,
+    repo_path: &str,
+    git_worktrees: &[git::WorktreeInfo],
+    workspace_paths: &[String],
 ) -> Result<(), String> {
-    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    let repos = db.list_repositories().map_err(|e| e.to_string())?;
-    let repo = repos
-        .iter()
-        .find(|r| r.id == repo_id)
-        .ok_or("Repository not found")?;
-
-    let target_canon = canon_or_raw(&path);
-    let target_raw = path.clone();
-    let repo_canon = canon_or_raw(&repo.path);
+    let target_canon = canon_or_raw(target_path);
+    let target_raw = target_path.to_string();
+    let repo_canon = canon_or_raw(repo_path);
 
     if target_canon == repo_canon || target_raw == repo_canon {
         return Err("Refusing to delete the main repository directory".into());
@@ -1696,10 +1705,7 @@ pub async fn purge_stray_worktree(
     // repo. A caller (including any future XSS injecting into a Tauri
     // invoke) cannot use this command to delete arbitrary filesystem
     // paths.
-    let worktrees = git::list_worktrees(&repo.path)
-        .await
-        .map_err(|e| e.to_string())?;
-    let valid_worktree_paths: std::collections::HashSet<String> = worktrees
+    let valid_worktree_paths: std::collections::HashSet<String> = git_worktrees
         .iter()
         .filter(|wt| !wt.is_bare)
         .flat_map(|wt| {
@@ -1713,30 +1719,53 @@ pub async fn purge_stray_worktree(
     if !valid_worktree_paths.contains(&target_canon) && !valid_worktree_paths.contains(&target_raw)
     {
         return Err(format!(
-            "'{path}' is not a linked worktree of this repository"
+            "'{target_path}' is not a linked worktree of this repository"
         ));
     }
 
     // Refuse if any active or archived workspace still claims this path.
     // Compare both canonical and raw forms — a stored path whose dir was
     // deleted will fail to canonicalize and would otherwise slip the guard.
-    let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
-    let claimed = workspaces
-        .iter()
-        .filter_map(|w| w.worktree_path.as_ref())
-        .any(|p| {
-            let p_canon = canon_or_raw(p);
-            p_canon == target_canon
-                || p_canon == target_raw
-                || p.as_str() == target_canon.as_str()
-                || p.as_str() == target_raw.as_str()
-        });
+    let claimed = workspace_paths.iter().any(|p| {
+        let p_canon = canon_or_raw(p);
+        p_canon == target_canon
+            || p_canon == target_raw
+            || p.as_str() == target_canon.as_str()
+            || p.as_str() == target_raw.as_str()
+    });
     if claimed {
         return Err(
             "Path is tracked as a Claudette workspace — archive and clean it from the workspace list instead"
                 .into(),
         );
     }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn purge_stray_worktree(
+    repo_id: String,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let repos = db.list_repositories().map_err(|e| e.to_string())?;
+    let repo = repos
+        .iter()
+        .find(|r| r.id == repo_id)
+        .ok_or("Repository not found")?;
+
+    let worktrees = git::list_worktrees(&repo.path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+    let workspace_paths: Vec<String> = workspaces
+        .iter()
+        .filter_map(|w| w.worktree_path.clone())
+        .collect();
+
+    validate_purge_target(&path, &repo.path, &worktrees, &workspace_paths)?;
 
     // Phase 1: ask git to unregister + remove. Don't error out on failure;
     // git may refuse if the worktree is locked or already gone.
@@ -2094,10 +2123,107 @@ pub async fn notify_workspace_selected(
 
 #[cfg(test)]
 mod tests {
-    use super::apply_fork_prelude;
+    use super::{apply_fork_prelude, validate_purge_target};
     use crate::state::{AgentSessionState, ClaudeRemoteControlStatus};
+    use claudette::git::WorktreeInfo;
     use claudette::model::{ChatMessage, ChatRole};
     use std::collections::HashMap;
+
+    /// Make a WorktreeInfo for tests. Only `path` matters for validation.
+    fn wt(path: &str, branch: &str) -> WorktreeInfo {
+        WorktreeInfo {
+            path: path.to_string(),
+            head: "deadbeef".into(),
+            branch: Some(branch.to_string()),
+            is_bare: false,
+        }
+    }
+
+    #[test]
+    fn validate_purge_rejects_repo_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().to_str().unwrap();
+        let result = validate_purge_target(repo, repo, &[], &[]);
+        assert!(
+            result.is_err(),
+            "expected repo root rejection, got {result:?}"
+        );
+        assert!(
+            result.unwrap_err().contains("main repository"),
+            "wrong rejection reason"
+        );
+    }
+
+    #[test]
+    fn validate_purge_rejects_path_not_in_worktree_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().to_str().unwrap();
+        // A real worktree exists, but the target is something else entirely.
+        let real_wt = dir.path().join("real-wt");
+        std::fs::create_dir_all(&real_wt).unwrap();
+        let arbitrary = dir.path().join("not-a-worktree");
+        std::fs::create_dir_all(&arbitrary).unwrap();
+
+        let worktrees = vec![wt(real_wt.to_str().unwrap(), "feature-branch")];
+        let result = validate_purge_target(arbitrary.to_str().unwrap(), repo, &worktrees, &[]);
+        assert!(
+            result.is_err(),
+            "expected arbitrary-path rejection, got {result:?}"
+        );
+        assert!(
+            result.unwrap_err().contains("not a linked worktree"),
+            "wrong rejection reason"
+        );
+    }
+
+    #[test]
+    fn validate_purge_rejects_path_still_claimed_by_workspace_even_when_dir_deleted() {
+        // The canonicalize-fails-on-deleted-dir hazard from the prior
+        // review. Stored DB path is `/tmp/foo-XYZ/wt` (which does NOT
+        // exist on disk, so canonicalize errors); target the same path
+        // canonicalized via `/private/tmp/...`. A buggy guard would
+        // compare raw stored vs canonical target and let the purge slip
+        // through.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().to_str().unwrap();
+        let wt_path = dir.path().join("claimed-wt");
+        std::fs::create_dir_all(&wt_path).unwrap();
+        let wt_str = wt_path.to_str().unwrap();
+
+        // Workspace row still claims this path (raw stored).
+        let workspace_paths = vec![wt_str.to_string()];
+        // git also still reports it (so it passes the "in git list" guard).
+        let worktrees = vec![wt(wt_str, "claimed-branch")];
+
+        let result = validate_purge_target(wt_str, repo, &worktrees, &workspace_paths);
+        assert!(
+            result.is_err(),
+            "expected workspace-claim rejection, got {result:?}"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .contains("tracked as a Claudette workspace"),
+            "wrong rejection reason"
+        );
+    }
+
+    #[test]
+    fn validate_purge_accepts_stray_worktree_in_git_list_with_no_workspace_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().to_str().unwrap();
+        let stray = dir.path().join("stray-wt");
+        std::fs::create_dir_all(&stray).unwrap();
+        let stray_str = stray.to_str().unwrap();
+
+        let worktrees = vec![wt(stray_str, "stray-branch")];
+        // No workspace claims this path.
+        let result = validate_purge_target(stray_str, repo, &worktrees, &[]);
+        assert!(
+            result.is_ok(),
+            "expected stray worktree to validate, got {result:?}"
+        );
+    }
 
     fn fresh_session() -> AgentSessionState {
         AgentSessionState {
