@@ -10,12 +10,14 @@
 //    `pi_oauth_submit_input`.
 // 4. Close on `oauth_complete`; on cancel send `pi_oauth_cancel`.
 
+import { writeText as clipboardWriteText } from "@tauri-apps/plugin-clipboard-manager";
 import { Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Modal } from "../modals/Modal";
 import shared from "../modals/shared.module.css";
+import { openUrl } from "../../services/tauri";
 import {
   listenPiOAuthEvents,
   piOAuthCancel,
@@ -162,7 +164,13 @@ export function PiOAuthModal({
 
   const handleCopyUrl = () => {
     if (phase.kind === "auth") {
-      void navigator.clipboard.writeText(phase.url);
+      // Tauri's webview doesn't expose `navigator.clipboard` as a
+      // secure-context API on macOS WebKit, and asking for the
+      // permission would fail; the rest of the app uses the Tauri
+      // clipboard plugin for the same reason.
+      void clipboardWriteText(phase.url).catch((e) => {
+        setError(String(e));
+      });
     }
   };
 
@@ -299,9 +307,7 @@ function PhaseBody({
             <button
               type="button"
               className={shared.btn}
-              onClick={() =>
-                window.open(phase.url, "_blank", "noopener,noreferrer")
-              }
+              onClick={() => void openUrl(phase.url).catch(() => {})}
               title={t("pi_oauth_open", "Open")}
             >
               <ExternalLink size={12} aria-hidden />
@@ -323,7 +329,18 @@ function PhaseBody({
         )}
         {provider.docsUrl && (
           <p className={shared.hint}>
-            <a href={provider.docsUrl} target="_blank" rel="noopener noreferrer">
+            <a
+              href={provider.docsUrl}
+              onClick={(e) => {
+                // Bare `<a target="_blank">` opens inside the Tauri
+                // webview on some platforms; route through the
+                // shell command like the rest of Settings does.
+                e.preventDefault();
+                if (provider.docsUrl) {
+                  void openUrl(provider.docsUrl).catch(() => {});
+                }
+              }}
+            >
               {t("pi_oauth_learn_more", "What is this? →")}
             </a>
           </p>

@@ -179,13 +179,21 @@ pub async fn pi_set_provider_api_key(
     if trimmed.is_empty() {
         return Err("API key is empty".to_string());
     }
+    // Write the new credential first, then clear the *other* scope so
+    // the old key never silently shadows the new one. Pi's resolution
+    // order has auth.json beating env vars; without clearing the
+    // other scope, switching from shared→local leaves the auth.json
+    // entry in place and Pi keeps using the old key, while switching
+    // from local→shared leaves the env-injected key around in case
+    // the user later removes the auth.json entry from a terminal.
+    // The previous "clear local first, then write shared" path
+    // produced an even worse failure: a write error wiped the only
+    // working credential.
     match scope {
         ProviderSecretScope::Shared => {
-            // Belt-and-suspenders: clear any local copy when the user
-            // switches to shared, otherwise Pi's auth.json (which
-            // wins) and Claudette's env-var injection drift.
+            pi_control::set_api_key(working_dir_path(&working_dir), &provider_id, &trimmed).await?;
             let _ = delete_secure_secret(KEYCHAIN_BUCKET, &keychain_key(&provider_id));
-            pi_control::set_api_key(working_dir_path(&working_dir), &provider_id, &trimmed).await
+            Ok(())
         }
         ProviderSecretScope::Local => {
             if pi_env_var_for_provider(&provider_id).is_none() {
@@ -194,7 +202,22 @@ pub async fn pi_set_provider_api_key(
                 ));
             }
             save_secure_secret(KEYCHAIN_BUCKET, &keychain_key(&provider_id), &trimmed)
-                .map_err(|e| format!("Failed to store pi provider secret: {e}"))
+                .map_err(|e| format!("Failed to store pi provider secret: {e}"))?;
+            // Drop any pre-existing shared auth.json entry only after
+            // the new local secret is safely written. If the shared
+            // clear fails (Pi auth.json unreadable, etc.) the local
+            // key still wins for keychain-injected env-var lookups
+            // outside auth.json, but inside Pi's resolution order the
+            // shared entry would beat it — surface that condition so
+            // the user knows their local change is shadowed.
+            pi_control::clear_api_key(working_dir_path(&working_dir), &provider_id)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Saved local secret, but failed to clear shared auth.json entry \
+                         (Pi will keep using the old shared key until it is removed): {e}"
+                    )
+                })
         }
     }
 }
@@ -232,15 +255,23 @@ pub async fn pi_oauth_start(
     } else {
         Some(extras.as_slice())
     };
-    let session = PiOAuthSession::start(
+    let mut session = PiOAuthSession::start(
         working_dir_path(&working_dir),
         &provider_id,
         &challenge_id,
         extras_slice,
     )
     .await?;
+    // Take the receiver subscribed BEFORE `oauth_start` was issued so
+    // the very first `oauth_challenge` cannot race past us. A fresh
+    // `subscribe_events()` after the fact is not equivalent — broadcast
+    // channels do not replay messages to late subscribers, so any
+    // event Pi emitted between `start_control` and this line would be
+    // dropped without `take_events()`.
+    let mut events = session
+        .take_events()
+        .ok_or("PiOAuthSession seeded events already consumed")?;
     let session = Arc::new(session);
-    let mut events = session.subscribe_events();
     ACTIVE_OAUTH
         .lock()
         .await

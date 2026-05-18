@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  piClearProviderApiKey,
   piListProviders,
   type PiProvider,
   type PiProviderList,
@@ -79,10 +80,30 @@ export function PiProviderManager({
     // env_only — handled by the row (opens docs URL); shouldn't land here.
   };
 
-  const handleClear = (provider: PiProvider) => {
-    // Repurpose the API-key dialog's "Clear" path. It clears both
-    // shared and local scopes, which is what the user wants when they
-    // hit "Clear" on a row without a specific scope in mind.
+  const handleClear = async (provider: PiProvider) => {
+    if (provider.kind === "oauth" || provider.kind === "oauth+enterprise") {
+      // OAuth tokens live in Pi's auth.json under the provider id; we
+      // can clear them straight from the same shared-scope path used
+      // by API-key providers. No API-key dialog needed — its
+      // "Replace this key" copy would be nonsense for an OAuth
+      // credential. Surface any failure via the existing error path
+      // so the user knows whether their token actually got wiped.
+      setError(null);
+      try {
+        await piClearProviderApiKey({
+          workingDir,
+          providerId: provider.id,
+          scope: "shared",
+        });
+        await refresh();
+        onConfigured?.();
+      } catch (e) {
+        setError(String(e));
+      }
+      return;
+    }
+    // For API-key providers reuse the dialog's clear-both-scopes path
+    // so the user can also surface partial-failure errors visually.
     setDialog({ kind: "api_key", provider });
   };
 

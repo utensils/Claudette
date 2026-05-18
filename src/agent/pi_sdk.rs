@@ -166,7 +166,21 @@ impl PiSdkSession {
     }
 
     pub async fn discover_models(working_dir: &Path) -> Result<Vec<PiSdkModel>, String> {
-        let session = Self::start_control(working_dir, None).await?;
+        Self::discover_models_with_env(working_dir, None).await
+    }
+
+    /// Same as `discover_models`, but threads Claudette's keychain-
+    /// only provider secrets into the control session's env so
+    /// `getAvailable()` sees those providers as configured. The Tauri
+    /// layer passes the `pi_local_secret_env()` snapshot here so
+    /// "Refresh models" surfaces keychain-stored OpenRouter / OpenAI /
+    /// etc. credentials without the user having to also write them to
+    /// `~/.pi/agent/auth.json`.
+    pub async fn discover_models_with_env(
+        working_dir: &Path,
+        extra_env: Option<&[(String, String)]>,
+    ) -> Result<Vec<PiSdkModel>, String> {
+        let session = Self::start_control(working_dir, extra_env).await?;
         let value = session
             .send_request(json!({ "type": "discover_models" }))
             .await?;
@@ -711,9 +725,22 @@ enum PiHarnessMessage {
 /// Control-plane events that flow over a side channel separate from the
 /// main agent event stream. Used by the Settings provider-management UI
 /// to drive the OAuth device-code modal.
+///
+/// The `type` discriminant stays snake_case to match the harness wire
+/// shape (`oauth_challenge` / `oauth_progress` / `oauth_complete`), but
+/// the *fields* serialize camelCase so the React modal can read
+/// `challengeId` / `providerId` / `allowEmpty` directly. Without the
+/// inner camelCase rename, the frontend received every id as
+/// `undefined` and the OAuth flow's challenge filtering and prompt
+/// submission both broke silently.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type")]
 pub enum PiControlEvent {
+    // Variants get explicit `rename` because serde's default conversion
+    // of `OAuthChallenge` to snake_case is `o_auth_challenge` (it
+    // treats the leading capitalized "O" + "Auth" as two words).
+    // Pin to the wire shape the harness emits.
+    #[serde(rename = "oauth_challenge", rename_all = "camelCase")]
     OAuthChallenge {
         challenge_id: String,
         provider_id: String,
@@ -726,11 +753,13 @@ pub enum PiControlEvent {
         placeholder: Option<String>,
         allow_empty: bool,
     },
+    #[serde(rename = "oauth_progress", rename_all = "camelCase")]
     OAuthProgress {
         challenge_id: String,
         provider_id: String,
         message: String,
     },
+    #[serde(rename = "oauth_complete", rename_all = "camelCase")]
     OAuthComplete {
         challenge_id: String,
         provider_id: String,
@@ -2044,6 +2073,44 @@ mod tests {
             }
             other => panic!("expected System command_line, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn pi_control_event_uses_camel_case_field_names() {
+        // The React OAuth modal reads `challengeId` / `providerId` /
+        // `allowEmpty` straight off the Tauri event payload. If these
+        // serialize as snake_case the UI receives undefined ids,
+        // silently dropping every challenge into the filter check.
+        // Pin the wire shape so a future struct rename can't regress.
+        let event = PiControlEvent::OAuthChallenge {
+            challenge_id: "c1".to_string(),
+            provider_id: "github-copilot".to_string(),
+            kind: "auth".to_string(),
+            url: Some("https://github.com/login/device".to_string()),
+            instructions: Some("ABCD-1234".to_string()),
+            message: None,
+            placeholder: None,
+            allow_empty: false,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "oauth_challenge");
+        assert_eq!(json["challengeId"], "c1");
+        assert_eq!(json["providerId"], "github-copilot");
+        assert_eq!(json["allowEmpty"], false);
+        assert!(json.get("challenge_id").is_none());
+        assert!(json.get("provider_id").is_none());
+        assert!(json.get("allow_empty").is_none());
+
+        let complete = PiControlEvent::OAuthComplete {
+            challenge_id: "c1".to_string(),
+            provider_id: "openrouter".to_string(),
+            ok: true,
+            error: None,
+        };
+        let json = serde_json::to_value(&complete).unwrap();
+        assert_eq!(json["type"], "oauth_complete");
+        assert_eq!(json["challengeId"], "c1");
+        assert_eq!(json["providerId"], "openrouter");
     }
 
     #[test]

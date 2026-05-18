@@ -13,6 +13,7 @@ import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { openUrl } from "../../services/tauri";
 import type { PiProvider } from "../../services/tauri/piProviders";
 import styles from "./PiProviderList.module.css";
 
@@ -50,7 +51,14 @@ export function PiProviderList({
 
   const hiddenCount = providers.length - visible.length;
   const configuredCount = providers.filter((p) => p.configured).length;
-  const totalModels = providers.reduce((acc, p) => acc + p.modelCount, 0);
+  // Sum models only for providers that are actually configured —
+  // otherwise the "models available" summary wildly overcounts (Pi
+  // ships ~275 OpenRouter models in its registry, but with no key
+  // configured the user gets zero of them from getAvailable()).
+  const totalModels = providers.reduce(
+    (acc, p) => (p.configured ? acc + p.modelCount : acc),
+    0,
+  );
 
   if (providers.length === 0) {
     return (
@@ -140,21 +148,43 @@ function PiProviderRow({
     .join(" ");
 
   // Action button label depends on kind + state. OAuth providers say
-  // "Sign in" / "Sign out"; API-key providers say "Configure" / "Clear".
-  // env_only providers point at docs.
+  // "Sign in" / "Reauthenticate" (the *primary* button stays a sign-
+  // in entry point even when configured — sign-out routes through
+  // the separate Clear button below). env_only providers point at
+  // docs. API-key providers say Configure / Reconfigure.
   const actionLabel = (() => {
     if (isEnvOnly) {
       return t("pi_provider_view_docs", "Docs");
     }
     if (provider.kind.startsWith("oauth")) {
       return provider.configured
-        ? t("pi_provider_signout", "Sign out")
+        ? t("pi_provider_reauthenticate", "Reauthenticate")
         : t("pi_provider_signin", "Sign in");
     }
     return provider.configured
       ? t("pi_provider_reconfigure", "Reconfigure")
       : t("pi_provider_configure", "Configure");
   })();
+
+  // Clear button is only meaningful for credentials we own — keychain
+  // entries we wrote (auth_source ∈ {stored, fallback after our
+  // save}) plus the catch-all of "no source recorded but the user
+  // just configured it". env/models_json sources represent state Pi
+  // discovered from the shell or models.json that Claudette cannot
+  // delete, so the button would be a confusing no-op.
+  const clearableAuthSource = !provider.authSource
+    || provider.authSource === "stored"
+    || provider.authSource === "runtime";
+  const showClearButton =
+    provider.configured && !isEnvOnly && clearableAuthSource && Boolean(onClear);
+
+  // OAuth providers get an explicit Sign-out button in addition to
+  // the Reauthenticate primary — the clear-button label changes to
+  // "Sign out" so users have a way back without the UI pretending
+  // every flow is an API-key dialog.
+  const clearLabel = provider.kind.startsWith("oauth")
+    ? t("pi_provider_signout", "Sign out")
+    : t("pi_provider_clear", "Clear");
 
   // Show the auth source label for already-configured providers so a
   // user with both an env var and an auth.json entry can tell which
@@ -204,14 +234,14 @@ function PiProviderRow({
       </div>
       {sourceLabel && <span className={styles.source}>{sourceLabel}</span>}
       <div style={{ display: "flex", gap: 6 }}>
-        {provider.configured && onClear && !isEnvOnly && (
+        {showClearButton && (
           <button
             type="button"
             className={styles.btn}
-            onClick={() => onClear(provider)}
+            onClick={() => onClear?.(provider)}
             disabled={busy}
           >
-            {t("pi_provider_clear", "Clear")}
+            {clearLabel}
           </button>
         )}
         <button
@@ -221,7 +251,10 @@ function PiProviderRow({
           }
           onClick={() => {
             if (isEnvOnly && provider.docsUrl) {
-              window.open(provider.docsUrl, "_blank", "noopener,noreferrer");
+              // Tauri's webview blocks bare `window.open`; route
+              // every external-link launch through the
+              // `open_url` command the rest of Settings uses.
+              void openUrl(provider.docsUrl).catch(() => {});
               return;
             }
             onConfigure(provider);

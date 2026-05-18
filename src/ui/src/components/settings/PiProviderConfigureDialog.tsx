@@ -42,6 +42,7 @@ export function PiProviderConfigureDialog({
   // auth.json by default, opt-out for keychain-only).
   const defaultLocal =
     provider.authSource === "environment" ||
+    provider.authSource === "fallback" ||
     provider.authSource === "models_json_command" ||
     provider.authSource === "models_json_key";
   const [keepPrivate, setKeepPrivate] = useState(defaultLocal);
@@ -83,23 +84,43 @@ export function PiProviderConfigureDialog({
     setSubmitting(true);
     setError(null);
     try {
-      // Clear both scopes — the user is wiping the slate. Without this,
-      // a user who switches from shared to local and then wipes would
-      // leave the auth.json entry behind.
-      await piClearProviderApiKey({
-        workingDir,
-        providerId: provider.id,
-        scope: "shared",
-      }).catch(() => {});
-      await piClearProviderApiKey({
-        workingDir,
-        providerId: provider.id,
-        scope: "local",
-      }).catch(() => {});
+      // Clear both scopes — the user is wiping the slate. Surface
+      // either failure so the user is not told "cleared" when one of
+      // the two store paths still holds an active key.
+      const errors: string[] = [];
+      try {
+        await piClearProviderApiKey({
+          workingDir,
+          providerId: provider.id,
+          scope: "shared",
+        });
+      } catch (e) {
+        errors.push(`auth.json: ${String(e)}`);
+      }
+      try {
+        await piClearProviderApiKey({
+          workingDir,
+          providerId: provider.id,
+          scope: "local",
+        });
+      } catch (e) {
+        errors.push(`keychain: ${String(e)}`);
+      }
+      if (errors.length > 0) {
+        // Refresh so the UI reflects whichever scope WAS cleared, but
+        // hold the dialog open with the error so the user knows the
+        // other scope still has a key.
+        onSaved();
+        setError(
+          t("pi_provider_dialog_clear_partial", {
+            details: errors.join("; "),
+            defaultValue: "Some credentials could not be cleared: {{details}}",
+          }),
+        );
+        return;
+      }
       onSaved();
       onClose();
-    } catch (e) {
-      setError(String(e));
     } finally {
       setSubmitting(false);
     }

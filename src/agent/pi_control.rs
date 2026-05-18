@@ -115,14 +115,24 @@ pub async fn clear_api_key(working_dir: &Path, provider_id: &str) -> Result<(), 
 }
 
 /// Long-lived control session bound to a single OAuth login attempt.
-/// Spawn one when the Configure modal opens, drain
-/// `subscribe_events()` for challenge updates, forward user input via
+/// Spawn one when the Configure modal opens, take the seeded
+/// receiver via `take_events()` (or fall back to `subscribe_events()`
+/// for additional independent listeners), forward user input via
 /// `submit_input` / cancel via `cancel`, and `dispose()` (Drop also
 /// works) when the modal closes.
 pub struct PiOAuthSession {
     session: PiSdkSession,
     challenge_id: String,
     provider_id: String,
+    /// Receiver bound BEFORE the `oauth_start` IPC. Hands the very
+    /// first `oauth_challenge` (which Pi can emit faster than the
+    /// caller registers its own subscriber) over to the Tauri layer
+    /// via `take_events()`. Once taken, additional listeners can
+    /// still call `subscribe_events()` — but they will miss any
+    /// event that arrived before they subscribed, which is fine
+    /// because the Tauri layer fans the seeded receiver out to a
+    /// webview event.
+    seeded_events: Option<broadcast::Receiver<PiControlEvent>>,
 }
 
 impl PiOAuthSession {
@@ -139,11 +149,13 @@ impl PiOAuthSession {
             return Err("Missing challengeId".to_string());
         }
         let session = PiSdkSession::start_control(working_dir, extra_env).await?;
-        // Subscribe BEFORE we issue oauth_start, otherwise the very
-        // first `oauth_challenge` event can race past the broadcast
-        // receiver. The caller can replace this receiver via
-        // `subscribe_events()` once it has its own subscription.
-        let _early_subscriber = session.subscribe_control();
+        // Subscribe BEFORE we issue oauth_start. The harness streams
+        // the first `oauth_challenge` as soon as Pi resolves the
+        // device-code, which races past any subscription made later.
+        // Hold the receiver on `self` and hand it to the caller via
+        // `take_events()` so the seeded subscription survives across
+        // the IPC round-trip.
+        let seeded_events = Some(session.subscribe_control());
         session
             .send_request_raw(json!({
                 "type": "oauth_start",
@@ -151,11 +163,11 @@ impl PiOAuthSession {
                 "challengeId": challenge_id,
             }))
             .await?;
-        drop(_early_subscriber);
         Ok(Self {
             session,
             challenge_id: challenge_id.to_string(),
             provider_id: provider_id.to_string(),
+            seeded_events,
         })
     }
 
@@ -167,6 +179,20 @@ impl PiOAuthSession {
         &self.provider_id
     }
 
+    /// Take the seeded broadcast receiver established BEFORE
+    /// `oauth_start`. The caller (typically the Tauri webview-event
+    /// forwarder) MUST use this on first subscription instead of
+    /// `subscribe_events()` so the initial `oauth_challenge` payload
+    /// is not lost. Returns `None` if already taken (subsequent
+    /// listeners are independent and may legitimately miss the
+    /// initial event).
+    pub fn take_events(&mut self) -> Option<broadcast::Receiver<PiControlEvent>> {
+        self.seeded_events.take()
+    }
+
+    /// Subscribe to control events from this point forward. Will miss
+    /// any events that fired before this call — prefer
+    /// `take_events()` for the primary subscriber.
     pub fn subscribe_events(&self) -> broadcast::Receiver<PiControlEvent> {
         self.session.subscribe_control()
     }
