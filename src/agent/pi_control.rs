@@ -80,11 +80,7 @@ pub async fn list_providers(
 /// the "shared with terminal `pi`" storage path. For the keychain-only
 /// path Claudette stores the key itself and injects an env var on
 /// harness spawn — that flow does NOT call this function.
-pub async fn set_api_key(
-    working_dir: &Path,
-    provider_id: &str,
-    key: &str,
-) -> Result<(), String> {
+pub async fn set_api_key(working_dir: &Path, provider_id: &str, key: &str) -> Result<(), String> {
     if provider_id.is_empty() {
         return Err("Missing providerId".to_string());
     }

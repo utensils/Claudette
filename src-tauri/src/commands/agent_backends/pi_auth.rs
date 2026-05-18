@@ -324,7 +324,10 @@ mod tests {
             pi_env_var_for_provider("github-copilot"),
             Some("COPILOT_GITHUB_TOKEN")
         );
-        assert_eq!(pi_env_var_for_provider("anthropic"), Some("ANTHROPIC_API_KEY"));
+        assert_eq!(
+            pi_env_var_for_provider("anthropic"),
+            Some("ANTHROPIC_API_KEY")
+        );
         assert_eq!(pi_env_var_for_provider("nonexistent"), None);
     }
 

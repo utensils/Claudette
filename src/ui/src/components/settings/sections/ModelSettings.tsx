@@ -40,6 +40,7 @@ import {
 } from "../codexBackendMigration";
 import { shouldShowBackendTestButton } from "../agentBackendStartupRefresh";
 import { ClaudeCodeAuthSetting } from "../../auth/ClaudeCodeAuthSetting";
+import { PiProviderManager } from "../PiProviderManager";
 import styles from "../Settings.module.css";
 
 const BACKEND_AUTO_DETECT_DISABLED_PREFIX = "agent_backend_auto_detect_disabled:";
@@ -939,6 +940,23 @@ function BackendCard({
           )}
         </div>
         <div className={styles.backendForm}>
+          {draft.kind === "pi_sdk" && (
+            // Pi provider list lives above the discovered-models view
+            // so users see configurable providers first, then the
+            // resulting models. `onConfigured` re-fetches the model
+            // list after a successful API-key save / OAuth sign-in so
+            // both surfaces stay in sync without a manual Refresh click.
+            <div
+              className={styles.backendField}
+              role="group"
+              aria-label={t("pi_providers_section", "Pi providers")}
+            >
+              <span className={styles.backendFieldLabel}>
+                {t("pi_providers_section", "Pi providers")}
+              </span>
+              <PiProviderManager workingDir="" onConfigured={refresh} />
+            </div>
+          )}
           {discoveryBackend && (
             // Same a11y concern: the Pi variant renders expandable
             // `<button>` headers, which don't belong inside a `<label>`.
@@ -1017,15 +1035,13 @@ function BackendCard({
               {t("models_backend_login")}
             </button>
           )}
-          {usesPiAuth && (
-            <button
-              className={styles.iconBtn}
-              onClick={() => setStatus(t("models_backend_pi_auth_guidance", "Run `pi auth` in a terminal, then refresh Pi models."))}
-              disabled={busy}
-            >
-              {t("models_backend_pi_login")}
-            </button>
-          )}
+          {/* Pi auth UX moved into the inline `PiProviderManager`
+              above — see the `draft.kind === "pi_sdk"` block at the
+              top of `.backendForm`. Per-provider login lives there
+              (Configure / Sign in buttons), and the redundant card-
+              footer button used to confuse users into thinking
+              there's a single "Pi login" instead of N per-provider
+              flows. */}
         </div>
       </div>
     </div>

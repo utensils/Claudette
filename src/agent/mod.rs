@@ -39,9 +39,7 @@ pub use naming::{
 #[cfg(feature = "pi-sdk")]
 pub use pi_control::{PiOAuthSession, PiOAuthStarted, PiProvider, PiProviderList};
 #[cfg(feature = "pi-sdk")]
-pub use pi_sdk::{
-    PiControlEvent, PiSdkModel, PiSdkOptions, PiSdkSession, resolve_pi_harness_path,
-};
+pub use pi_sdk::{PiControlEvent, PiSdkModel, PiSdkOptions, PiSdkSession, resolve_pi_harness_path};
 pub use process::{AgentEvent, TurnHandle, run_turn, stop_agent, stop_agent_graceful};
 pub use session::PersistentSession;
 pub use types::{
