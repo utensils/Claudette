@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkspaceFileIndex } from "./useWorkspaceFileIndex";
 import { useAppStore } from "../../stores/useAppStore";
+import { __testing as workspaceFileCacheTesting } from "../../utils/workspaceFileCache";
 
 const serviceMocks = vi.hoisted(() => ({
   listWorkspaceFiles: vi.fn(),
@@ -42,6 +43,7 @@ async function render(workspaceId: string): Promise<void> {
 
 beforeEach(() => {
   latestResolve = null;
+  workspaceFileCacheTesting.reset();
   serviceMocks.listWorkspaceFiles.mockReset();
   serviceMocks.listWorkspaceFiles.mockResolvedValue([
     { path: "Cargo.toml", is_directory: false },

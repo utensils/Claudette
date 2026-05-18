@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../stores/useAppStore";
 import type { FileEntry } from "../../services/tauri";
 import type { Workspace } from "../../types";
+import { __testing as workspaceFileCacheTesting } from "../../utils/workspaceFileCache";
 import { FilesPanel } from "./FilesPanel";
 
 const serviceMocks = vi.hoisted(() => ({
@@ -98,6 +99,7 @@ async function flushTimers(): Promise<void> {
 }
 
 beforeEach(() => {
+  workspaceFileCacheTesting.reset();
   serviceMocks.listWorkspaceFiles.mockReset();
   useAppStore.setState({
     selectedWorkspaceId: "files-cache-ws-a",

@@ -7,8 +7,13 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useAppStore } from "../../stores/useAppStore";
-import { listWorkspaceFiles, type FileEntry } from "../../services/tauri";
+import type { FileEntry } from "../../services/tauri";
 import { isPendingPlaceholderWorkspace } from "../../utils/workspaceEnvironment";
+import {
+  getCachedWorkspaceFiles,
+  loadWorkspaceFilesCached,
+  pruneWorkspaceFilesCache,
+} from "../../utils/workspaceFileCache";
 import { resolveHotkeyAction } from "../../hotkeys/bindings";
 import { isAgentBusy } from "../../utils/agentStatus";
 import {
@@ -21,47 +26,6 @@ import type { FileContextTarget } from "./fileContextMenu";
 import { FileTree } from "./FileTree";
 import { useFilePathActions } from "./useFilePathActions";
 import styles from "./FilesPanel.module.css";
-
-interface CachedFileEntries {
-  refreshNonce: number;
-  entries: FileEntry[];
-}
-
-const MAX_CACHED_WORKSPACES = 20;
-const fileEntriesCache = new Map<string, CachedFileEntries>();
-
-function getCachedFileEntries(
-  workspaceId: string,
-  refreshNonce: number,
-): FileEntry[] | null {
-  const cached = fileEntriesCache.get(workspaceId);
-  if (cached?.refreshNonce !== refreshNonce) return null;
-  // Refresh LRU position.
-  fileEntriesCache.delete(workspaceId);
-  fileEntriesCache.set(workspaceId, cached);
-  return cached.entries;
-}
-
-function setCachedFileEntries(
-  workspaceId: string,
-  refreshNonce: number,
-  entries: FileEntry[],
-): void {
-  fileEntriesCache.set(workspaceId, { refreshNonce, entries });
-  while (fileEntriesCache.size > MAX_CACHED_WORKSPACES) {
-    const oldestKey = fileEntriesCache.keys().next().value;
-    if (!oldestKey) return;
-    fileEntriesCache.delete(oldestKey);
-  }
-}
-
-function pruneFileEntriesCache(activeWorkspaceIds: Set<string>): void {
-  for (const workspaceId of fileEntriesCache.keys()) {
-    if (!activeWorkspaceIds.has(workspaceId)) {
-      fileEntriesCache.delete(workspaceId);
-    }
-  }
-}
 
 export function FilesPanel() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
@@ -151,10 +115,13 @@ export function FilesPanel() {
       }
       loadFilesInFlightCount.current += 1;
       try {
-        const result = await listWorkspaceFiles(workspaceId);
+        const result = await loadWorkspaceFilesCached(
+          workspaceId,
+          expectedRefreshNonce,
+          { forceRefresh: true },
+        );
         if (version !== loadVersionRef.current) return;
         if (useAppStore.getState().selectedWorkspaceId !== workspaceId) return;
-        setCachedFileEntries(workspaceId, expectedRefreshNonce, result);
         setEntries(result);
         setError(null);
         setLoading(false);
@@ -174,7 +141,7 @@ export function FilesPanel() {
   );
 
   useEffect(() => {
-    pruneFileEntriesCache(new Set(workspaces.map((workspace) => workspace.id)));
+    pruneWorkspaceFilesCache(new Set(workspaces.map((workspace) => workspace.id)));
   }, [workspaces]);
 
   useLayoutEffect(() => {
@@ -190,7 +157,7 @@ export function FilesPanel() {
       setLoading(false);
       return;
     }
-    const cachedEntries = getCachedFileEntries(selectedWorkspaceId, refreshNonce);
+    const cachedEntries = getCachedWorkspaceFiles(selectedWorkspaceId, refreshNonce);
     setError(null);
     if (cachedEntries) {
       setEntries(cachedEntries);
@@ -203,7 +170,7 @@ export function FilesPanel() {
 
   useEffect(() => {
     if (!selectedWorkspaceId || isPendingPlaceholder) return;
-    const cachedEntries = getCachedFileEntries(selectedWorkspaceId, refreshNonce);
+    const cachedEntries = getCachedWorkspaceFiles(selectedWorkspaceId, refreshNonce);
     const timer = window.setTimeout(() => {
       void loadFiles(selectedWorkspaceId, refreshNonce, cachedEntries === null);
     }, 0);

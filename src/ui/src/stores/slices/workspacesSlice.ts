@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
 import { notifyWorkspaceSelected } from "../../services/tauri";
 import type { Workspace } from "../../types";
+import { prewarmWorkspaceFiles } from "../../utils/workspaceFileCache";
 import type { AppState } from "../useAppStore";
 
 // Fire-and-forget wrapper around the typed service call. Errors are
@@ -90,6 +91,20 @@ export function findPendingPlaceholderForCreatedWorkspace(args: {
 
 function notifyBackendSelection(workspaceId: string | null) {
   notifyWorkspaceSelected(workspaceId).catch(() => {});
+}
+
+function prewarmWorkspaceSelection(
+  workspaceId: string | null,
+  refreshNonceByWorkspace: Record<string, number>,
+  pendingCreates: Record<string, string>,
+  pendingForks: Record<string, string>,
+) {
+  if (!workspaceId) return;
+  if (workspaceId in pendingCreates || workspaceId in pendingForks) return;
+  prewarmWorkspaceFiles(
+    workspaceId,
+    refreshNonceByWorkspace[workspaceId] ?? 0,
+  );
 }
 
 export type WorkspaceEnvironmentStatus = "idle" | "preparing" | "ready" | "error";
@@ -593,6 +608,12 @@ export const createWorkspacesSlice: StateCreator<
     set((s) => {
       if (id === s.selectedWorkspaceId) return s;
       notifyBackendSelection(id);
+      prewarmWorkspaceSelection(
+        id,
+        s.fileTreeRefreshNonceByWorkspace,
+        s.pendingCreates,
+        s.pendingForks,
+      );
 
       // Save the outgoing workspace's active diff selection, or clear it if
       // the user left that workspace in chat view (e.g. they clicked a chat

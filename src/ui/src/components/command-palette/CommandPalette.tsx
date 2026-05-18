@@ -17,11 +17,15 @@ import {
   createWorkspace as createWorkspaceService,
   getRepoConfig,
   runWorkspaceSetup,
-  listWorkspaceFiles,
 } from "../../services/tauri";
 import { applySelectedModel } from "../chat/applySelectedModel";
 import { useModelRegistry } from "../chat/useModelRegistry";
 import { runAndRecordSetupScript } from "../../utils/setupScriptMessage";
+import {
+  getCachedWorkspaceFiles,
+  getStaleWorkspaceFiles,
+  loadWorkspaceFilesCached,
+} from "../../utils/workspaceFileCache";
 import type { ThemeDefinition } from "../../types/theme";
 import { scoreCommand } from "./searchScore";
 import {
@@ -45,6 +49,11 @@ export function CommandPalette() {
   const toggleFuzzyFinder = useAppStore((s) => s.toggleFuzzyFinder);
   const openModal = useAppStore((s) => s.openModal);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
+  const selectedWorkspaceFilesRefreshNonce = useAppStore((s) =>
+    s.selectedWorkspaceId
+      ? (s.fileTreeRefreshNonceByWorkspace[s.selectedWorkspaceId] ?? 0)
+      : 0,
+  );
   // Active chat session within the selected workspace. Agent-scoped
   // commands (stop, reset, model-change teardown) run against a session
   // id, not the workspace id.
@@ -246,10 +255,24 @@ export function CommandPalette() {
     setMode("file");
     setQuery("");
     setSelectedIndex(0);
-    setFilesLoading(true);
     setFilesLoadError(null);
+    const cached = getCachedWorkspaceFiles(
+      selectedWorkspaceId,
+      selectedWorkspaceFilesRefreshNonce,
+    );
+    const stale = cached ?? getStaleWorkspaceFiles(selectedWorkspaceId);
+    if (stale) {
+      setFileEntries(stale);
+      setFilesLoading(false);
+    } else {
+      setFileEntries([]);
+      setFilesLoading(true);
+    }
     const version = ++filesLoadVersionRef.current;
-    listWorkspaceFiles(selectedWorkspaceId)
+    loadWorkspaceFilesCached(
+      selectedWorkspaceId,
+      selectedWorkspaceFilesRefreshNonce,
+    )
       .then((entries) => {
         if (version !== filesLoadVersionRef.current) return;
         setFileEntries(entries);
@@ -258,11 +281,11 @@ export function CommandPalette() {
       .catch((err) => {
         if (version !== filesLoadVersionRef.current) return;
         console.error("[CommandPalette] Failed to load workspace files:", err);
-        setFileEntries([]);
+        if (!stale) setFileEntries([]);
         setFilesLoadError(String(err));
         setFilesLoading(false);
       });
-  }, [selectedWorkspaceId]);
+  }, [selectedWorkspaceId, selectedWorkspaceFilesRefreshNonce]);
 
   // If the palette was opened with an initial file mode (e.g. via Cmd+O), enter it.
   useEffect(() => {
