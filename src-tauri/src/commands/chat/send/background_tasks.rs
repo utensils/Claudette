@@ -186,6 +186,10 @@ fn is_terminal_task_status(status: &str) -> bool {
     )
 }
 
+pub(super) fn is_final_terminal_task_status(status: &str) -> bool {
+    is_terminal_task_status(status)
+}
+
 pub(super) fn should_defer_persistent_restart(session: &AgentSessionState) -> bool {
     should_defer_persistent_restart_for_state(
         session.persistent_session.is_some(),
@@ -971,6 +975,29 @@ mod tests {
         assert!(tracker.is_bash_tool_active("cmd-1"));
         tracker.finish_bash_tool_result("cmd-1");
         assert!(!tracker.is_bash_tool_result("cmd-1"));
+    }
+
+    #[test]
+    fn completed_structured_status_can_claim_bash_tool_result_before_fallback() {
+        let mut tracker = BackgroundTaskInputTracker::default();
+
+        tracker.observe_bash_input_delta(&AgentEvent::Stream(StreamEvent::Stream {
+            event: InnerStreamEvent::ContentBlockStart {
+                index: 3,
+                content_block: Some(StartContentBlock::ToolUse {
+                    id: "cmd-1".to_string(),
+                    name: "Bash".to_string(),
+                }),
+            },
+        }));
+        tracker.mark_bash_tool_started("cmd-1");
+
+        assert!(tracker.is_bash_tool_result("cmd-1"));
+        tracker.finish_bash_tool_result("cmd-1");
+        assert!(
+            !tracker.is_bash_tool_result("cmd-1"),
+            "a structured Codex terminal completion must prevent the legacy ToolResult fallback"
+        );
     }
 
     #[test]

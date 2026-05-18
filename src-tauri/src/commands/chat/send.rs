@@ -46,8 +46,8 @@ mod team_agents;
 use self::background_tasks::{
     BackgroundTaskInputTracker, append_agent_bash_output, apply_task_notification_status,
     emit_agent_background_task_event, get_or_create_agent_shell_terminal_tab,
-    mirror_background_task_output, schedule_background_task_wake, should_defer_persistent_restart,
-    terminal_text,
+    is_final_terminal_task_status, mirror_background_task_output, schedule_background_task_wake,
+    should_defer_persistent_restart, terminal_text,
 };
 use self::team_agents::TeamAgentInputTracker;
 pub(super) use self::team_agents::team_agent_session_tabs_enabled;
@@ -2560,6 +2560,11 @@ pub async fn send_chat_message(
                 .await;
                 if status == "running" && tool_use_id.as_deref() == Some(task_id.as_str()) {
                     background_task_inputs.mark_bash_tool_started(task_id);
+                }
+                if is_final_terminal_task_status(status)
+                    && tool_use_id.as_deref() == Some(task_id.as_str())
+                {
+                    background_task_inputs.finish_bash_tool_result(task_id);
                 }
             }
 
