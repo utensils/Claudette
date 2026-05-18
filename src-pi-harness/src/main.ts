@@ -17,6 +17,15 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import {
+  cancelOAuth,
+  clearApiKey,
+  handleOAuthInput,
+  listProviders,
+  oauthStart,
+  setApiKey,
+  type ProviderAuthDeps,
+} from "./provider-auth.js";
 
 type RequestMessage = {
   id?: string;
@@ -55,6 +64,19 @@ const state: HarnessState = {
 
 function send(message: Record<string, unknown>): void {
   output.write(`${JSON.stringify(message)}\n`);
+}
+
+/** Snapshot the harness state's AuthStorage / ModelRegistry into the
+ *  ProviderAuthDeps shape the `provider-auth.ts` handlers expect. Both
+ *  references are replaced on every `start_session` (so a re-auth or a
+ *  cwd change picks up new credentials), which is why we read them
+ *  fresh on each call rather than caching at startup. */
+function providerAuthDeps(): ProviderAuthDeps {
+  return {
+    authStorage: state.authStorage,
+    modelRegistry: state.modelRegistry,
+    send,
+  };
 }
 
 function respond(id: unknown, command: string, success: boolean, data?: unknown, error?: unknown): void {
@@ -991,6 +1013,44 @@ async function handle(message: RequestMessage): Promise<void> {
         models: listAvailableModels().length,
         authFile: join(getAgentDir(), "auth.json"),
       });
+      break;
+    case "list_providers":
+      respond(message.id, message.type, true, listProviders(providerAuthDeps()));
+      break;
+    case "set_api_key":
+      setApiKey(
+        providerAuthDeps(),
+        asString(message.providerId) ?? "",
+        asString(message.key) ?? "",
+      );
+      respond(message.id, message.type, true);
+      break;
+    case "clear_api_key":
+      clearApiKey(providerAuthDeps(), asString(message.providerId) ?? "");
+      respond(message.id, message.type, true);
+      break;
+    case "oauth_start":
+      // Don't `await` — Pi's `login()` resolves only after the user
+      // finishes the browser flow. Returning immediately lets the UI
+      // receive the synchronous response while the device-code events
+      // stream asynchronously via `oauth_challenge` / `oauth_complete`.
+      void oauthStart(
+        providerAuthDeps(),
+        asString(message.providerId) ?? "",
+        asString(message.challengeId) ?? "",
+      );
+      respond(message.id, message.type, true);
+      break;
+    case "oauth_input":
+      handleOAuthInput(
+        asString(message.challengeId) ?? "",
+        typeof message.value === "string" ? message.value : "",
+      );
+      respond(message.id, message.type, true);
+      break;
+    case "oauth_cancel":
+      cancelOAuth(asString(message.challengeId) ?? "");
+      respond(message.id, message.type, true);
       break;
     case "approve_tool": {
       const requestId = asString(message.requestId);
