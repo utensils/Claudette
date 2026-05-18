@@ -999,24 +999,41 @@ fn load_scm_poll_settings_snapshot(db: &Database) -> ScmPollSettingsSnapshot {
             .ok()
             .flatten(),
     );
-    let ci_auto_fix_model = db
+    // When the user picks an explicit CI auto-fix model, take its explicit
+    // provider (may be None for the legacy Anthropic-direct case). When
+    // there's no explicit pick, fall back to the user's global default
+    // *pair* — `default_model` + `default_agent_backend` — together. Reading
+    // `ci_auto_fix_model_provider` while the model itself came from
+    // `default_model` would silently leave the backend at None and route a
+    // non-Anthropic default (Codex Native, Pi, OpenAI) through the wrong
+    // harness.
+    let explicit_ci_model = db
         .get_app_setting("ci_auto_fix_model")
         .ok()
         .flatten()
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            db.get_app_setting("default_model")
+        .filter(|s| !s.is_empty());
+    let (ci_auto_fix_model, ci_auto_fix_model_provider) = match explicit_ci_model {
+        Some(model) => {
+            let provider = db
+                .get_app_setting("ci_auto_fix_model_provider")
                 .ok()
                 .flatten()
-                .filter(|s| !s.is_empty())
-        });
-    let ci_auto_fix_model_provider = if ci_auto_fix_model.is_some() {
-        db.get_app_setting("ci_auto_fix_model_provider")
-            .ok()
-            .flatten()
-            .filter(|s| !s.is_empty())
-    } else {
-        None
+                .filter(|s| !s.is_empty());
+            (Some(model), provider)
+        }
+        None => {
+            let default_model = db
+                .get_app_setting("default_model")
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty());
+            let default_backend = db
+                .get_app_setting("default_agent_backend")
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty());
+            (default_model, default_backend)
+        }
     };
 
     ScmPollSettingsSnapshot {

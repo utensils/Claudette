@@ -36,6 +36,16 @@ export function useCiAutoFixSession() {
           store.selectSession(workspace_id, session_id);
 
           const disable1mContext = shouldDisable1mContext(model);
+          // Auto-fix sessions intentionally use the backend defaults for
+          // permissionLevel / thinkingEnabled / planMode / fastMode rather
+          // than inheriting the user's current chat toolbar state. This is
+          // a brand-new session triggered by a background poll — there is
+          // no per-tab UI state to inherit, and "safe defaults" (full perms
+          // off, no plan/fast/thinking forced) is the right baseline for an
+          // automated, non-interactive launch. Only model + backend + the
+          // 1M-context disable flag are passed; the rest stay at backend
+          // defaults so a user enabling e.g. plan mode for their chats
+          // doesn't suddenly force every auto-fix into plan mode too.
           await sendChatMessage(
             session_id,
             prompt,
