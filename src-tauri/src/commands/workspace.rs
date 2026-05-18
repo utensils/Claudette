@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
@@ -983,19 +984,40 @@ pub async fn delete_workspace(
 
 /// Result of [`delete_workspaces_bulk`]. `deleted` lists IDs that were
 /// successfully hard-deleted; `failed` carries per-ID error messages for
-/// rows that survived (typically due to a transient DB error). The
-/// frontend uses this to drive partial-failure UI and reconcile its
-/// store one row at a time.
+/// rows that survived (typically due to a transient DB error); `cancelled`
+/// lists IDs that were skipped because the user clicked Cancel before
+/// the row was attempted. The frontend uses this to drive partial-failure
+/// UI and reconcile its store one row at a time. Cancelled rows are
+/// untouched in the DB — re-running the cleanup will pick them up.
 #[derive(Debug, Serialize)]
 pub struct BulkDeleteResult {
     pub deleted: Vec<String>,
     pub failed: Vec<BulkDeleteFailure>,
+    pub cancelled: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct BulkDeleteFailure {
     pub id: String,
     pub error: String,
+}
+
+/// Per-row progress event payload emitted on `bulk-cleanup-progress` while
+/// a bulk delete is in flight. The frontend filters by `request_id` so
+/// concurrent runs (rare but legal — e.g. two Storage panels open) don't
+/// cross-pollute. `name` is included so the modal can render row labels
+/// even when the workspace has already been removed from the Zustand
+/// store via the `Deleted` hook by the time the event lands.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkCleanupProgress {
+    request_id: String,
+    workspace_id: String,
+    name: String,
+    /// `"deleted" | "failed" | "cancelled"` — matches the three terminal
+    /// states from `ops::workspace::DeleteWorkspaceOutcome`.
+    status: &'static str,
+    error: Option<String>,
 }
 
 /// Hard-delete a batch of archived workspaces. Mirrors the single-workspace
@@ -1018,15 +1040,40 @@ pub struct BulkDeleteFailure {
 #[tracing::instrument(
     target = "claudette::workspace",
     skip(app, state, supervisor),
-    fields(workspace_count = ids.len()),
+    fields(workspace_count = ids.len(), request_id = request_id.as_deref().unwrap_or("")),
 )]
 pub async fn delete_workspaces_bulk(
     ids: Vec<String>,
+    request_id: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
     supervisor: State<'_, Arc<McpSupervisor>>,
 ) -> Result<BulkDeleteResult, String> {
-    delete_workspaces_bulk_inner(&ids, &app, &state, &supervisor).await
+    delete_workspaces_bulk_inner(&ids, request_id.as_deref(), &app, &state, &supervisor).await
+}
+
+/// Cooperative-cancel a bulk delete that is currently in flight.
+///
+/// Idempotent: flipping a flag that's already set, or one belonging to
+/// a run that already completed and was unregistered, is a no-op. Returns
+/// `true` if a matching run was found and cancelled, `false` otherwise —
+/// the frontend uses the boolean only for telemetry and otherwise treats
+/// both outcomes the same (the run's final result will report whichever
+/// rows were skipped).
+#[tauri::command]
+#[tracing::instrument(target = "claudette::workspace", skip(state))]
+pub async fn cancel_workspaces_bulk(
+    request_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let cancels = state.bulk_cleanup_cancels.read().await;
+    match cancels.get(&request_id) {
+        Some(flag) => {
+            flag.store(true, Ordering::Relaxed);
+            Ok(true)
+        }
+        None => Ok(false),
+    }
 }
 
 /// Shared body of [`delete_workspaces_bulk`] used by both the Tauri
@@ -1035,8 +1082,14 @@ pub async fn delete_workspaces_bulk(
 /// `create_workspace_inner` — so the CLI path runs identical agent
 /// teardown, git cleanup, env-watcher reconciliation, and MCP supervisor
 /// updates without needing to construct Tauri `State` wrappers.
+///
+/// `request_id` is `Some` when the GUI initiated the run (so cancel
+/// works and per-row progress events fire); `None` from the CLI
+/// dispatcher today — CLI sessions don't have a UI to render progress
+/// or a Cancel button, so the bookkeeping cost would be wasted.
 pub(crate) async fn delete_workspaces_bulk_inner(
     ids: &[String],
+    request_id: Option<&str>,
     app: &AppHandle,
     state: &AppState,
     supervisor: &McpSupervisor,
@@ -1045,9 +1098,52 @@ pub(crate) async fn delete_workspaces_bulk_inner(
         return Ok(BulkDeleteResult {
             deleted: Vec::new(),
             failed: Vec::new(),
+            cancelled: Vec::new(),
         });
     }
 
+    // Register the cancel flag before the first DB call. The flag is
+    // unregistered in `finish_bulk_cleanup` at the end of this function,
+    // and the body is wrapped in an inner async block so a `?` early
+    // return below still hits the unregister step.
+    let cancel_flag: Option<Arc<AtomicBool>> = if let Some(req_id) = request_id {
+        let flag = Arc::new(AtomicBool::new(false));
+        state
+            .bulk_cleanup_cancels
+            .write()
+            .await
+            .insert(req_id.to_string(), Arc::clone(&flag));
+        Some(flag)
+    } else {
+        None
+    };
+    let result = delete_workspaces_bulk_body(
+        ids,
+        request_id,
+        cancel_flag.as_ref(),
+        app,
+        state,
+        supervisor,
+    )
+    .await;
+    if let Some(req_id) = request_id {
+        state.bulk_cleanup_cancels.write().await.remove(req_id);
+    }
+    result
+}
+
+/// Inner body of [`delete_workspaces_bulk_inner`] — pulled out so the
+/// outer function can manage the [`AppState::bulk_cleanup_cancels`]
+/// registration lifetime around a single body call, including the `?`
+/// early-return paths below.
+async fn delete_workspaces_bulk_body(
+    ids: &[String],
+    request_id: Option<&str>,
+    cancel_flag: Option<&Arc<AtomicBool>>,
+    app: &AppHandle,
+    state: &AppState,
+    supervisor: &McpSupervisor,
+) -> Result<BulkDeleteResult, String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
     let repos = db.list_repositories().map_err(|e| e.to_string())?;
@@ -1095,6 +1191,18 @@ pub(crate) async fn delete_workspaces_bulk_inner(
         })
         .collect();
 
+    // Display names for the per-row progress event. Built from the
+    // pre-delete snapshot of the workspaces table so a row whose DB
+    // delete commits mid-event still has a name to render (the Zustand
+    // store may have evicted it via the `Deleted` hook by the time the
+    // event lands). Missing IDs (not in `workspaces` at all) fall back
+    // to the id itself on the frontend.
+    let name_by_id: std::collections::HashMap<String, String> = workspaces
+        .iter()
+        .filter(|w| ids.iter().any(|id| id == &w.id))
+        .map(|w| (w.id.clone(), w.name.clone()))
+        .collect();
+
     // DB deletes + summary materialization + Deleted hooks per row. Each
     // row is its own transaction, so per-row failures (e.g. SQLITE_BUSY)
     // are isolated and reported as `failed` rather than rolling back the
@@ -1106,13 +1214,58 @@ pub(crate) async fn delete_workspaces_bulk_inner(
     // were already gone, leaving the user with an archived workspace
     // pointing at nothing they could restore.
     let hooks = TauriHooks::new(app.clone());
-    let outcomes = claudette::ops::workspace::delete_workspaces_bulk(&db, hooks.as_ref(), ids)
-        .map_err(|e| e.to_string())?;
+    // Bridge the ops-layer progress callback to a Tauri event the modal
+    // can subscribe to. Captures `request_id`, `name_by_id`, and
+    // `AppHandle` so the closure can emit on the same thread it's
+    // called from (synchronous — no .await available, no Send required).
+    let progress_emit = |outcome: &claudette::ops::workspace::DeleteWorkspaceOutcome| {
+        let Some(req_id) = request_id else {
+            return;
+        };
+        let status: &'static str = if outcome.cancelled {
+            "cancelled"
+        } else if outcome.error.is_some() {
+            "failed"
+        } else {
+            "deleted"
+        };
+        let payload = BulkCleanupProgress {
+            request_id: req_id.to_string(),
+            workspace_id: outcome.id.clone(),
+            name: name_by_id
+                .get(&outcome.id)
+                .cloned()
+                .unwrap_or_else(|| outcome.id.clone()),
+            status,
+            error: outcome.error.clone(),
+        };
+        if let Err(e) = app.emit("bulk-cleanup-progress", &payload) {
+            tracing::warn!(
+                target: "claudette::workspace",
+                error = %e,
+                workspace_id = %outcome.id,
+                "failed to emit bulk-cleanup-progress",
+            );
+        }
+    };
+    let outcomes = claudette::ops::workspace::delete_workspaces_bulk(
+        &db,
+        hooks.as_ref(),
+        ids,
+        cancel_flag,
+        Some(&progress_emit),
+    )
+    .map_err(|e| e.to_string())?;
 
     let mut deleted = Vec::with_capacity(outcomes.len());
     let mut failed = Vec::new();
+    let mut cancelled = Vec::new();
     let mut affected_repos: std::collections::HashSet<String> = std::collections::HashSet::new();
     for outcome in outcomes {
+        if outcome.cancelled {
+            cancelled.push(outcome.id);
+            continue;
+        }
         match outcome.error {
             None => {
                 affected_repos.insert(outcome.repository_id.clone());
@@ -1152,7 +1305,28 @@ pub(crate) async fn delete_workspaces_bulk_inner(
     // Git cleanup: best-effort worktree removal + force branch delete,
     // ONLY for rows whose DB delete succeeded. Worktree/branch state for
     // a failed row stays intact so the user can retry the cleanup.
+    //
+    // Cancel check between rows: a 50-workspace batch can spend most of
+    // its wall-clock time here (worktrees with `node_modules` are slow
+    // to `rm -rf`). Without this check, clicking Cancel after the fast
+    // DB pass would still leave the user waiting through every
+    // remaining worktree removal. The trade-off is that a cancelled
+    // mid-batch leaves orphan worktree directories on disk for rows
+    // that DB-committed but didn't get to git cleanup — the user can
+    // re-run cleanup (the orphans aren't visible in the UI since
+    // their DB row is gone) or remove them by hand. We accept the
+    // orphans because the alternative — making Cancel a no-op during
+    // the slow phase — is the bug we're fixing.
     for ws_id in &deleted {
+        if cancel_flag.is_some_and(|f| f.load(Ordering::Relaxed)) {
+            tracing::info!(
+                target: "claudette::workspace",
+                request_id = request_id.unwrap_or(""),
+                "cancel observed mid-worktree-cleanup; \
+                 skipping remaining git/env work for this batch",
+            );
+            break;
+        }
         let Some(meta) = target_meta.get(ws_id) else {
             continue;
         };
@@ -1211,7 +1385,11 @@ pub(crate) async fn delete_workspaces_bulk_inner(
         }
     }
 
-    Ok(BulkDeleteResult { deleted, failed })
+    Ok(BulkDeleteResult {
+        deleted,
+        failed,
+        cancelled,
+    })
 }
 
 #[tauri::command]
