@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  clearWorkspaceFilesCacheForTests,
+  __testing,
   getCachedWorkspaceFiles,
   getStaleWorkspaceFiles,
   loadWorkspaceFilesCached,
@@ -20,7 +20,7 @@ function entries(paths: string[]): FileEntry[] {
 }
 
 beforeEach(() => {
-  clearWorkspaceFilesCacheForTests();
+  __testing.reset();
   serviceMocks.listWorkspaceFiles.mockReset();
 });
 
@@ -68,5 +68,25 @@ describe("workspaceFileCache", () => {
     ]);
 
     expect(serviceMocks.listWorkspaceFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an older successful response as stale data when a newer uncached refresh is active", async () => {
+    const stale = entries(["src/older.ts"]);
+    const newer = new Promise<FileEntry[]>((_resolve, reject) => {
+      setTimeout(() => reject(new Error("newer failed")), 0);
+    });
+    serviceMocks.listWorkspaceFiles
+      .mockReturnValueOnce(Promise.resolve(stale))
+      .mockReturnValueOnce(newer);
+
+    const olderPromise = loadWorkspaceFilesCached("ws-a", 0);
+    const newerPromise = loadWorkspaceFilesCached("ws-a", 1);
+
+    await olderPromise;
+    expect(getCachedWorkspaceFiles("ws-a", 1)).toBeNull();
+    expect(getStaleWorkspaceFiles("ws-a")).toBe(stale);
+
+    await expect(newerPromise).rejects.toThrow("newer failed");
+    expect(getStaleWorkspaceFiles("ws-a")).toBe(stale);
   });
 });

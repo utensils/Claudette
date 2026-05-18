@@ -17,6 +17,14 @@ interface FileIndexData {
   uniqueBasenames: Map<string, string | null>;
 }
 
+interface FileIndexCacheEntry {
+  refreshNonce: number;
+  promise: Promise<FileIndexData>;
+}
+
+const MAX_CACHED_WORKSPACES = 20;
+const indexCache = new Map<string, FileIndexCacheEntry>();
+
 export function useWorkspaceFileIndex(
   workspaceId: string | null | undefined,
 ): WorkspaceFileIndex {
@@ -31,9 +39,7 @@ export function useWorkspaceFileIndex(
       return;
     }
     let cancelled = false;
-    const promise = loadWorkspaceFilesCached(workspaceId, refreshNonce).then(
-      buildFileIndex,
-    );
+    const promise = loadWorkspaceFileIndexCached(workspaceId, refreshNonce);
     promise
       .then((next) => {
         if (!cancelled) setData(next);
@@ -76,6 +82,45 @@ export function useWorkspaceFileIndex(
       },
     };
   }, [data]);
+}
+
+function loadWorkspaceFileIndexCached(
+  workspaceId: string,
+  refreshNonce: number,
+): Promise<FileIndexData> {
+  const cached = indexCache.get(workspaceId);
+  if (cached?.refreshNonce === refreshNonce) {
+    refreshIndexCacheLru(workspaceId, cached);
+    return cached.promise;
+  }
+  const promise = loadWorkspaceFilesCached(workspaceId, refreshNonce)
+    .then(buildFileIndex)
+    .catch((err) => {
+      const current = indexCache.get(workspaceId);
+      if (current?.promise === promise) {
+        indexCache.delete(workspaceId);
+      }
+      throw err;
+    });
+  indexCache.set(workspaceId, { refreshNonce, promise });
+  trimIndexCache();
+  return promise;
+}
+
+function refreshIndexCacheLru(
+  workspaceId: string,
+  entry: FileIndexCacheEntry,
+): void {
+  indexCache.delete(workspaceId);
+  indexCache.set(workspaceId, entry);
+}
+
+function trimIndexCache(): void {
+  while (indexCache.size > MAX_CACHED_WORKSPACES) {
+    const oldestKey = indexCache.keys().next().value;
+    if (!oldestKey) return;
+    indexCache.delete(oldestKey);
+  }
 }
 
 function formatLineSuffix(parsed: ReturnType<typeof parseFilePathTarget>): string {

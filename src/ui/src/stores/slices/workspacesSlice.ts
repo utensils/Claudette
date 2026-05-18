@@ -96,8 +96,11 @@ function notifyBackendSelection(workspaceId: string | null) {
 function prewarmWorkspaceSelection(
   workspaceId: string | null,
   refreshNonceByWorkspace: Record<string, number>,
+  pendingCreates: Record<string, string>,
+  pendingForks: Record<string, string>,
 ) {
   if (!workspaceId) return;
+  if (workspaceId in pendingCreates || workspaceId in pendingForks) return;
   prewarmWorkspaceFiles(
     workspaceId,
     refreshNonceByWorkspace[workspaceId] ?? 0,
@@ -605,7 +608,12 @@ export const createWorkspacesSlice: StateCreator<
     set((s) => {
       if (id === s.selectedWorkspaceId) return s;
       notifyBackendSelection(id);
-      prewarmWorkspaceSelection(id, s.fileTreeRefreshNonceByWorkspace);
+      prewarmWorkspaceSelection(
+        id,
+        s.fileTreeRefreshNonceByWorkspace,
+        s.pendingCreates,
+        s.pendingForks,
+      );
 
       // Save the outgoing workspace's active diff selection, or clear it if
       // the user left that workspace in chat view (e.g. they clicked a chat

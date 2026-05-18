@@ -65,6 +65,19 @@ export function loadWorkspaceFilesCached(
           entriesRefreshNonce: refreshNonce,
         });
         trimWorkspaceFilesCache();
+      } else if (current && !current.entries) {
+        workspaceFilesCache.set(workspaceId, {
+          ...current,
+          entries,
+          entriesRefreshNonce: refreshNonce,
+        });
+        trimWorkspaceFilesCache();
+      } else if (!current) {
+        workspaceFilesCache.set(workspaceId, {
+          entries,
+          entriesRefreshNonce: refreshNonce,
+        });
+        trimWorkspaceFilesCache();
       }
       return entries;
     })
@@ -106,10 +119,6 @@ export function pruneWorkspaceFilesCache(activeWorkspaceIds: Set<string>): void 
   }
 }
 
-export function clearWorkspaceFilesCacheForTests(): void {
-  workspaceFilesCache.clear();
-}
-
 function refreshLru(workspaceId: string, entry: WorkspaceFilesCacheEntry): void {
   workspaceFilesCache.delete(workspaceId);
   workspaceFilesCache.set(workspaceId, entry);
@@ -122,3 +131,9 @@ function trimWorkspaceFilesCache(): void {
     workspaceFilesCache.delete(oldestKey);
   }
 }
+
+export const __testing = {
+  reset() {
+    workspaceFilesCache.clear();
+  },
+};
