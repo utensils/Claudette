@@ -1,0 +1,468 @@
+//! Storage-related Tauri commands: per-repo disk usage stats and a
+//! "rogue worktree" scanner that surfaces orphan worktree directories
+//! sitting under the configured workspace base dir but not tracked by
+//! any DB workspace row (e.g. survived a `~/.claudette/data.db` reset
+//! or a dev-build crash).
+
+use std::path::{Path, PathBuf};
+
+use claudette::db::Database;
+use claudette::model::WorkspaceStatus;
+use serde::Serialize;
+use tauri::State;
+
+use crate::commands::workspace::directory_size_bytes;
+use crate::state::AppState;
+
+#[derive(Serialize, Debug, Clone)]
+pub struct WorkspaceStorageEntry {
+    pub id: String,
+    pub name: String,
+    pub status: WorkspaceStatus,
+    pub worktree_path: Option<String>,
+    /// `None` when the workspace has no `worktree_path` (e.g. setup
+    /// failed and the row was created without a real worktree) or when
+    /// the dir is missing on disk.
+    pub size_bytes: Option<u64>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct RepoStorageStats {
+    pub repository_id: String,
+    pub active_bytes: u64,
+    pub archived_bytes: u64,
+    pub total_bytes: u64,
+    pub workspaces: Vec<WorkspaceStorageEntry>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct RogueWorktree {
+    pub path: String,
+    pub size_bytes: u64,
+    /// The path-slug component of `<base>/<slug>/<wt_name>` — i.e. the
+    /// parent directory name. Matches `Repository.path_slug` for repos
+    /// the DB still knows about.
+    pub inferred_repo_slug: String,
+    /// Repository display name resolved by slug match; `None` when the
+    /// slug doesn't correspond to any DB repo (the canonical "DB was
+    /// nuked" case).
+    pub inferred_repo_name: Option<String>,
+}
+
+/// Compute per-repo storage statistics by summing the on-disk size of
+/// every workspace's worktree directory. Spawns all directory walks
+/// concurrently on the blocking pool so a large worktree tree doesn't
+/// serialize the whole computation.
+#[tauri::command]
+pub async fn compute_storage_stats(
+    state: State<'_, AppState>,
+) -> Result<Vec<RepoStorageStats>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+
+    // Spawn one blocking size walk per workspace that has a worktree
+    // dir on disk. Skip rows whose path is None or doesn't exist —
+    // they contribute 0 bytes and don't need a thread.
+    struct Pending {
+        id: String,
+        name: String,
+        status: WorkspaceStatus,
+        repository_id: String,
+        worktree_path: Option<String>,
+        size_handle: Option<tokio::task::JoinHandle<u64>>,
+    }
+
+    let mut pending: Vec<Pending> = Vec::with_capacity(workspaces.len());
+    for ws in workspaces {
+        let size_handle = ws
+            .worktree_path
+            .as_ref()
+            .filter(|p| Path::new(p).is_dir())
+            .map(|p| {
+                let path = PathBuf::from(p);
+                tokio::task::spawn_blocking(move || directory_size_bytes(&path))
+            });
+        pending.push(Pending {
+            id: ws.id,
+            name: ws.name,
+            status: ws.status,
+            repository_id: ws.repository_id,
+            worktree_path: ws.worktree_path,
+            size_handle,
+        });
+    }
+
+    // Aggregate by repository_id, preserving workspace insertion order
+    // within each repo. Use a Vec instead of a HashMap so the returned
+    // ordering is stable (matches sidebar/Settings expectations).
+    let mut by_repo: Vec<RepoStorageStats> = Vec::new();
+    for p in pending {
+        let size_bytes = match p.size_handle {
+            Some(handle) => handle.await.ok(),
+            None => None,
+        };
+        let entry = WorkspaceStorageEntry {
+            id: p.id,
+            name: p.name,
+            status: p.status.clone(),
+            worktree_path: p.worktree_path,
+            size_bytes,
+        };
+        let bytes = size_bytes.unwrap_or(0);
+
+        let slot = match by_repo
+            .iter_mut()
+            .find(|r| r.repository_id == p.repository_id)
+        {
+            Some(s) => s,
+            None => {
+                by_repo.push(RepoStorageStats {
+                    repository_id: p.repository_id.clone(),
+                    active_bytes: 0,
+                    archived_bytes: 0,
+                    total_bytes: 0,
+                    workspaces: Vec::new(),
+                });
+                by_repo.last_mut().unwrap()
+            }
+        };
+        match entry.status {
+            WorkspaceStatus::Active => slot.active_bytes = slot.active_bytes.saturating_add(bytes),
+            WorkspaceStatus::Archived => {
+                slot.archived_bytes = slot.archived_bytes.saturating_add(bytes)
+            }
+        }
+        slot.total_bytes = slot.total_bytes.saturating_add(bytes);
+        slot.workspaces.push(entry);
+    }
+
+    Ok(by_repo)
+}
+
+/// Walk `<base>/<slug>/<wt_name>/` two levels deep and return every
+/// leaf-dir-path-plus-slug pair whose canonical path is not in
+/// `tracked_paths`. Pure (no DB / state access) so it can be unit-tested
+/// with a tempdir.
+fn detect_rogue_dirs(
+    base: &Path,
+    tracked_paths: &std::collections::HashSet<String>,
+) -> Vec<(String, String)> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    let slug_entries = match std::fs::read_dir(base) {
+        Ok(e) => e,
+        Err(_) => return found,
+    };
+    for slug_entry in slug_entries.flatten() {
+        let slug_path = slug_entry.path();
+        let Ok(meta) = slug_entry.metadata() else {
+            continue;
+        };
+        if !meta.is_dir() {
+            continue;
+        }
+        let slug_name = match slug_path.file_name() {
+            Some(n) => n.to_string_lossy().to_string(),
+            None => continue,
+        };
+        let wt_entries = match std::fs::read_dir(&slug_path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for wt_entry in wt_entries.flatten() {
+            let wt_path = wt_entry.path();
+            let Ok(wt_meta) = wt_entry.metadata() else {
+                continue;
+            };
+            if !wt_meta.is_dir() {
+                continue;
+            }
+            let wt_str = wt_path.to_string_lossy().to_string();
+            let canon = std::fs::canonicalize(&wt_path)
+                .map(|c| c.to_string_lossy().to_string())
+                .unwrap_or_else(|_| wt_str.clone());
+            if tracked_paths.contains(&canon) || tracked_paths.contains(&wt_str) {
+                continue;
+            }
+            found.push((wt_str, slug_name.clone()));
+        }
+    }
+    found
+}
+
+/// Pure validation logic for `purge_rogue_worktree`. The Tauri command
+/// resolves `base` + workspace claims and delegates the safety checks
+/// to this function so they can be unit-tested.
+fn validate_rogue_purge_target(
+    target_path: &str,
+    base: &Path,
+    workspace_paths: &[String],
+) -> Result<(), String> {
+    let base_canon = std::fs::canonicalize(base)
+        .map(|c| c.to_string_lossy().to_string())
+        .unwrap_or_else(|_| base.to_string_lossy().to_string());
+    let target_canon = std::fs::canonicalize(target_path)
+        .map(|c| c.to_string_lossy().to_string())
+        .unwrap_or_else(|_| target_path.to_string());
+
+    // Hard guard: target must be a strict descendant of base.
+    if target_canon == base_canon || !Path::new(&target_canon).starts_with(&base_canon) {
+        return Err(format!(
+            "Refusing to delete '{target_path}' — outside the workspace base directory"
+        ));
+    }
+
+    // Refuse if any active or archived workspace still claims this path.
+    let claimed = workspace_paths.iter().any(|p| {
+        let p_canon = std::fs::canonicalize(p)
+            .map(|c| c.to_string_lossy().to_string())
+            .unwrap_or_else(|_| p.clone());
+        p_canon == target_canon || p.as_str() == target_canon.as_str() || p.as_str() == target_path
+    });
+    if claimed {
+        return Err(
+            "Path is tracked as a Claudette workspace — use the workspace's archive flow instead"
+                .into(),
+        );
+    }
+
+    Ok(())
+}
+
+/// Scan the configured workspace base dir for orphan worktree dirs.
+///
+/// Looks at `<base>/<slug>/<wt_name>/` two levels deep. Any leaf dir
+/// whose canonical path doesn't match a tracked workspace's
+/// `worktree_path` is reported. The slug is whatever was at the first
+/// level — when it matches a DB repo's `path_slug`, the rogue worktree
+/// is "inferred" to belong to that repo; otherwise the slug stands
+/// alone (the user nuked the DB but kept the worktrees, or imported
+/// from another machine).
+///
+/// Does not modify anything. Callers pair this with
+/// `purge_rogue_worktree` to delete.
+#[tauri::command]
+pub async fn scan_rogue_worktrees(
+    state: State<'_, AppState>,
+) -> Result<Vec<RogueWorktree>, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+    let repos = db.list_repositories().map_err(|e| e.to_string())?;
+    let base = state.worktree_base_dir.read().await.clone();
+
+    // Canonicalize every tracked workspace path once so the comparison
+    // doesn't repeatedly hit the filesystem.
+    let tracked_paths: std::collections::HashSet<String> = workspaces
+        .iter()
+        .filter_map(|w| w.worktree_path.as_deref())
+        .flat_map(|p| {
+            let canon = std::fs::canonicalize(p)
+                .map(|c| c.to_string_lossy().to_string())
+                .unwrap_or_else(|_| p.to_string());
+            [p.to_string(), canon]
+        })
+        .collect();
+
+    // Map slug -> display name so we can label rogue worktrees by their
+    // owning repo. Slug duplicates shouldn't happen (DB enforces unique
+    // path_slug), but if they did, last-write-wins is fine.
+    let slug_to_repo_name: std::collections::HashMap<String, String> = repos
+        .iter()
+        .map(|r| (r.path_slug.clone(), r.name.clone()))
+        .collect();
+
+    let rogue = tokio::task::spawn_blocking(move || detect_rogue_dirs(&base, &tracked_paths))
+        .await
+        .map_err(|e| format!("rogue scan join error: {e}"))?;
+
+    // Second pass: compute sizes (also on blocking pool) and look up
+    // inferred repo names. Sizes run concurrently.
+    let mut size_handles: Vec<(String, String, tokio::task::JoinHandle<u64>)> = Vec::new();
+    for (path, slug) in rogue {
+        let p = PathBuf::from(&path);
+        let handle = tokio::task::spawn_blocking(move || directory_size_bytes(&p));
+        size_handles.push((path, slug, handle));
+    }
+
+    let mut results = Vec::with_capacity(size_handles.len());
+    for (path, slug, handle) in size_handles {
+        let size = handle.await.unwrap_or(0);
+        let inferred_repo_name = slug_to_repo_name.get(&slug).cloned();
+        results.push(RogueWorktree {
+            path,
+            size_bytes: size,
+            inferred_repo_slug: slug,
+            inferred_repo_name,
+        });
+    }
+
+    Ok(results)
+}
+
+/// Delete a rogue worktree dir. Refuses anything not under the
+/// configured worktree base — a caller cannot use this command to
+/// remove arbitrary filesystem paths even via prompt injection.
+#[tauri::command]
+pub async fn purge_rogue_worktree(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    let base = state.worktree_base_dir.read().await.clone();
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+    let workspace_paths: Vec<String> = workspaces
+        .iter()
+        .filter_map(|w| w.worktree_path.clone())
+        .collect();
+
+    validate_rogue_purge_target(&path, &base, &workspace_paths)?;
+
+    let target = path.clone();
+    tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&target))
+        .await
+        .map_err(|e| format!("fs cleanup join error: {e}"))?
+        .map_err(|e| format!("fs cleanup failed: {e}"))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{detect_rogue_dirs, validate_rogue_purge_target};
+    use std::collections::HashSet;
+
+    /// Build the standard `<base>/<slug>/<wt_name>/` two-level tree
+    /// shape that Claudette puts worktrees in, populate it, and return
+    /// the tempdir + paths the test can reference.
+    struct Tree {
+        _dir: tempfile::TempDir,
+        base: std::path::PathBuf,
+    }
+    fn make_tree(slugs_and_wts: &[(&str, &[&str])]) -> Tree {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().to_path_buf();
+        for (slug, wts) in slugs_and_wts {
+            for wt in *wts {
+                std::fs::create_dir_all(base.join(slug).join(wt)).unwrap();
+            }
+        }
+        Tree { _dir: dir, base }
+    }
+
+    #[test]
+    fn detect_rogue_returns_empty_when_every_dir_is_tracked() {
+        let tree = make_tree(&[("my-repo", &["alpha", "beta"])]);
+        let tracked: HashSet<String> = [
+            tree.base
+                .join("my-repo/alpha")
+                .to_string_lossy()
+                .to_string(),
+            tree.base.join("my-repo/beta").to_string_lossy().to_string(),
+        ]
+        .into_iter()
+        .collect();
+        // Also include canonical forms so /tmp vs /private/tmp doesn't
+        // confuse the test on macOS.
+        let mut tracked_full = tracked.clone();
+        for p in &tracked {
+            if let Ok(c) = std::fs::canonicalize(p) {
+                tracked_full.insert(c.to_string_lossy().to_string());
+            }
+        }
+        let rogue = detect_rogue_dirs(&tree.base, &tracked_full);
+        assert!(rogue.is_empty(), "expected no rogue dirs, got {rogue:?}");
+    }
+
+    #[test]
+    fn detect_rogue_finds_untracked_leaf_dirs() {
+        let tree = make_tree(&[
+            ("my-repo", &["tracked", "orphan-a"]),
+            ("dead-slug", &["orphan-b"]),
+        ]);
+        let tracked: HashSet<String> = [tree
+            .base
+            .join("my-repo/tracked")
+            .to_string_lossy()
+            .to_string()]
+        .into_iter()
+        .collect();
+        let mut tracked_full = tracked.clone();
+        for p in &tracked {
+            if let Ok(c) = std::fs::canonicalize(p) {
+                tracked_full.insert(c.to_string_lossy().to_string());
+            }
+        }
+        let rogue = detect_rogue_dirs(&tree.base, &tracked_full);
+        assert_eq!(rogue.len(), 2, "expected 2 rogue dirs, got {rogue:?}");
+        let slugs: HashSet<&str> = rogue.iter().map(|(_, s)| s.as_str()).collect();
+        assert!(slugs.contains("my-repo"));
+        assert!(slugs.contains("dead-slug"));
+    }
+
+    #[test]
+    fn detect_rogue_ignores_files_at_either_level() {
+        let tree = make_tree(&[("my-repo", &["wt-a"])]);
+        // Drop a stray file at base level — should not be reported.
+        std::fs::write(tree.base.join("loose-file"), "x").unwrap();
+        // Drop a file inside the slug dir — also should not be reported.
+        std::fs::write(tree.base.join("my-repo/README.md"), "x").unwrap();
+        let rogue = detect_rogue_dirs(&tree.base, &HashSet::new());
+        assert_eq!(rogue.len(), 1, "expected only the wt-a dir, got {rogue:?}");
+        assert_eq!(rogue[0].1, "my-repo");
+    }
+
+    #[test]
+    fn detect_rogue_returns_empty_for_missing_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        let rogue = detect_rogue_dirs(&missing, &HashSet::new());
+        assert!(rogue.is_empty());
+    }
+
+    #[test]
+    fn validate_rogue_purge_rejects_path_outside_base() {
+        let tree = make_tree(&[("my-repo", &["wt-a"])]);
+        let other = tempfile::tempdir().unwrap();
+        let outside = other.path().join("not-in-base");
+        std::fs::create_dir_all(&outside).unwrap();
+        let result = validate_rogue_purge_target(outside.to_str().unwrap(), &tree.base, &[]);
+        assert!(result.is_err(), "expected rejection, got {result:?}");
+        assert!(
+            result.unwrap_err().contains("outside the workspace base"),
+            "wrong rejection reason"
+        );
+    }
+
+    #[test]
+    fn validate_rogue_purge_rejects_base_itself() {
+        let tree = make_tree(&[("my-repo", &["wt-a"])]);
+        let result = validate_rogue_purge_target(tree.base.to_str().unwrap(), &tree.base, &[]);
+        assert!(
+            result.is_err(),
+            "expected base-path rejection, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rogue_purge_rejects_path_claimed_by_workspace() {
+        let tree = make_tree(&[("my-repo", &["wt-a"])]);
+        let wt = tree.base.join("my-repo/wt-a");
+        let wt_str = wt.to_str().unwrap().to_string();
+        // Workspace row still claims this path → must reject.
+        let result = validate_rogue_purge_target(&wt_str, &tree.base, &[wt_str.clone()]);
+        assert!(
+            result.is_err(),
+            "expected workspace-claim rejection, got {result:?}"
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .contains("tracked as a Claudette workspace"),
+            "wrong rejection reason"
+        );
+    }
+
+    #[test]
+    fn validate_rogue_purge_accepts_rogue_dir_under_base_with_no_claim() {
+        let tree = make_tree(&[("my-repo", &["rogue-wt"])]);
+        let wt = tree.base.join("my-repo/rogue-wt");
+        let result = validate_rogue_purge_target(wt.to_str().unwrap(), &tree.base, &[]);
+        assert!(result.is_ok(), "expected accept, got {result:?}");
+    }
+}

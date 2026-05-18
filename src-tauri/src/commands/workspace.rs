@@ -1513,7 +1513,7 @@ pub struct DiscoveredWorktree {
 /// for UI display, not accounting. Returns `u64` directly because there
 /// is no fatal-error path: an unreadable root yields `0`, same as an
 /// empty dir.
-fn directory_size_bytes(root: &Path) -> u64 {
+pub(super) fn directory_size_bytes(root: &Path) -> u64 {
     let mut total: u64 = 0;
     let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -1663,23 +1663,6 @@ fn canon_or_raw(p: &str) -> String {
         .unwrap_or_else(|_| p.to_string())
 }
 
-/// Force-remove a stray worktree the user picked from the import dialog.
-///
-/// Two-phase cleanup:
-/// 1. `git worktree remove --force` — unregisters the worktree from the
-///    parent repo's `.git/worktrees/` index and (when possible) deletes
-///    the dir.
-/// 2. If the dir still exists (git lost track, or refused), fall back to
-///    `std::fs::remove_dir_all`.
-///
-/// Safety guards (all enforced server-side because the frontend isn't
-/// the only possible caller of a Tauri command):
-/// - `path` must be one of the worktrees `git worktree list` reports for
-///   this repo. Arbitrary absolute paths are rejected.
-/// - Refuses the repo root itself.
-/// - Refuses paths still claimed by a Claudette workspace (active or
-///   archived). Comparison uses both canonical and raw forms so
-///   deleted-on-disk DB rows still match against a canonical target.
 /// Pure validation logic for `purge_stray_worktree`. Extracted from the
 /// Tauri command so it can be tested with tempdir + handcrafted inputs
 /// instead of needing a Tauri `State`. The command wires DB + git output
@@ -1743,6 +1726,18 @@ fn validate_purge_target(
     Ok(())
 }
 
+/// Force-remove a stray worktree the user picked from the import dialog.
+///
+/// Two-phase cleanup:
+/// 1. `git worktree remove --force` — unregisters the worktree from the
+///    parent repo's `.git/worktrees/` index and (when possible) deletes
+///    the dir.
+/// 2. If the dir still exists (git lost track, or refused), fall back to
+///    `std::fs::remove_dir_all`.
+///
+/// Safety guards delegate to `validate_purge_target` — see its docs for
+/// the full guard list. All guards are enforced server-side because the
+/// frontend isn't the only possible caller of a Tauri command.
 #[tauri::command]
 pub async fn purge_stray_worktree(
     repo_id: String,

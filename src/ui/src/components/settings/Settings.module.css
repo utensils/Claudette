@@ -187,6 +187,175 @@
   flex: 1;
 }
 
+/* Per-repo storage rows: chevron + label/desc + total + cleanup
+   button. Chevron is a self-styled button so it doesn't pick up the
+   default form-control styling. */
+.storageRepoBlock {
+  display: flex;
+  flex-direction: column;
+}
+
+.storageRepoChevron {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.storageRepoChevron:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.storageRepoChevronSpacer {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+}
+
+.storageBadgeTotal {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  border: 1px solid var(--divider);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 8px;
+}
+
+.storageBadgeSplit {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+}
+
+.storageBadgeMuted {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-style: italic;
+}
+
+.storageRepoBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px 36px;
+  padding: 6px 10px;
+  background: var(--selected-bg);
+  border-radius: 4px;
+}
+
+.storageWorkspaceRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.storageWorkspaceName {
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storageWorkspaceStatus {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.storageWorkspaceSize {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+/* Rogue worktrees section. */
+.storageRogueSection {
+  margin: 16px 0 24px;
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--hover-bg);
+}
+
+.storageRogueHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.storageRogueBadge {
+  font-size: 10px;
+  color: var(--text-dim);
+  border: 1px solid var(--divider);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.storageRogueUnknown {
+  font-size: 10px;
+  color: var(--status-stopped);
+  margin-left: 6px;
+}
+
+.storageRoguePath {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.storageRogueConfirm {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--status-stopped);
+  border-radius: 4px;
+  background: var(--bg-primary);
+}
+
+.storageRogueConfirmText {
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.storageRogueConfirmActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.storageRogueConfirmDelete {
+  composes: iconBtn;
+  color: var(--status-stopped);
+  border-color: var(--status-stopped);
+}
+
+.storageError {
+  font-size: 12px;
+  color: var(--status-stopped);
+  margin: 8px 0;
+}
+
 .subsectionTitle {
   font-size: 16px;
   font-weight: 500;
