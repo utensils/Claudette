@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Trash2 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   discoverWorktrees,
   importWorktrees,
+  purgeStrayWorktree,
 } from "../../services/tauri";
 import type { DiscoveredWorktree, WorktreeImport } from "../../services/tauri";
 import type { McpServer } from "../../types/mcp";
+import { formatBytes } from "../../utils/formatBytes";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
 import styles from "./ImportWorktreesModal.module.css";
@@ -15,6 +18,15 @@ const NAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
 
 interface WorktreeRow extends DiscoveredWorktree {
   editedName: string;
+}
+
+/** Defensive wrapper so a stubbed formatBytes can't crash the modal. */
+function safeFormatBytes(n: number): string {
+  try {
+    return formatBytes(n);
+  } catch {
+    return `${n} B`;
+  }
 }
 
 export function ImportWorktreesModal() {
@@ -32,6 +44,8 @@ export function ImportWorktreesModal() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [purging, setPurging] = useState<Set<string>>(new Set());
+  const [confirmPath, setConfirmPath] = useState<string | null>(null);
 
   useEffect(() => {
     if (!repoId) return;
@@ -80,6 +94,29 @@ export function ImportWorktreesModal() {
 
   const selectedRows = rows.filter((r) => selected.has(r.path));
   const allNamesValid = selectedRows.every((r) => NAME_RE.test(r.editedName));
+
+  const handlePurge = async (path: string) => {
+    setPurging((prev) => new Set(prev).add(path));
+    setError(null);
+    try {
+      await purgeStrayWorktree(repoId, path);
+      setRows((prev) => prev.filter((r) => r.path !== path));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPurging((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+      setConfirmPath(null);
+    }
+  };
 
   const handleImport = async () => {
     setImporting(true);
@@ -135,12 +172,16 @@ export function ImportWorktreesModal() {
         {rows.map((row) => {
           const isSelected = selected.has(row.path);
           const nameValid = NAME_RE.test(row.editedName);
+          const isPurging = purging.has(row.path);
+          const size =
+            row.size_bytes != null ? safeFormatBytes(row.size_bytes) : null;
           return (
             <label key={row.path} className={styles.worktreeRow}>
               <input
                 type="checkbox"
                 checked={isSelected}
                 onChange={() => toggleRow(row.path)}
+                disabled={isPurging}
               />
               <div className={styles.worktreeInfo}>
                 <div className={styles.worktreeHeader}>
@@ -157,15 +198,56 @@ export function ImportWorktreesModal() {
                       updateName(row.path, e.target.value);
                     }}
                     onClick={(e) => e.stopPropagation()}
+                    disabled={isPurging}
                   />
                   <span className={styles.badge}>{row.branch_name}</span>
+                  {size && <span className={styles.sizeBadge}>{size}</span>}
                 </div>
                 <div className={styles.worktreePath}>{row.path}</div>
               </div>
+              <button
+                type="button"
+                className={styles.deleteButton}
+                title={t("import_worktrees_delete_tooltip")}
+                disabled={isPurging}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setConfirmPath(row.path);
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
             </label>
           );
         })}
       </div>
+
+      {confirmPath && (
+        <div className={styles.confirmBox}>
+          <div className={styles.confirmText}>
+            {t("import_worktrees_delete_confirm", { path: confirmPath })}
+          </div>
+          <div className={styles.confirmActions}>
+            <button
+              className={shared.btn}
+              onClick={() => setConfirmPath(null)}
+              disabled={purging.has(confirmPath)}
+            >
+              {tCommon("cancel")}
+            </button>
+            <button
+              className={shared.btnDanger}
+              onClick={() => handlePurge(confirmPath)}
+              disabled={purging.has(confirmPath)}
+            >
+              {purging.has(confirmPath)
+                ? t("import_worktrees_deleting")
+                : t("import_worktrees_delete_confirm_button")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <div className={shared.error}>{error}</div>}
 

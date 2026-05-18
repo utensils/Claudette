@@ -90,3 +90,58 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.sizeBadge {
+  composes: badge;
+  background: transparent;
+  border: 1px solid var(--divider);
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.deleteButton {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.deleteButton:hover:not(:disabled) {
+  color: var(--status-stopped);
+  background: var(--hover-bg);
+}
+
+.deleteButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.confirmBox {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--status-stopped);
+  border-radius: 6px;
+  background: var(--selected-bg);
+}
+
+.confirmText {
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

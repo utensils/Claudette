@@ -1500,6 +1500,38 @@ pub struct DiscoveredWorktree {
     pub head_sha: String,
     pub suggested_name: String,
     pub name_valid: bool,
+    /// Recursive on-disk size of the worktree directory, or `None` if the
+    /// walk failed (e.g. permission denied on a subdir).
+    pub size_bytes: Option<u64>,
+}
+
+/// Recursively sum the apparent size of regular files under `root`.
+///
+/// Symlinks are not followed (would risk cycles and double-counting). I/O
+/// errors on individual entries are silently skipped so one unreadable
+/// subdir doesn't disqualify the whole worktree — the size is best-effort
+/// for UI display, not accounting.
+fn directory_size_bytes(root: &Path) -> std::io::Result<u64> {
+    let mut total: u64 = 0;
+    let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                total = total.saturating_add(meta.len());
+            }
+        }
+    }
+    Ok(total)
 }
 
 /// Validate a workspace name: ASCII alphanumeric + hyphens, no leading/trailing hyphens.
@@ -1575,16 +1607,104 @@ pub async fn discover_worktrees(
 
         let name_valid = is_valid_workspace_name(&suggested_name);
 
+        let size_path = PathBuf::from(&wt.path);
+        let size_bytes = tokio::task::spawn_blocking(move || directory_size_bytes(&size_path))
+            .await
+            .ok()
+            .and_then(|r| r.ok());
+
         discovered.push(DiscoveredWorktree {
             path: wt_path_display(&wt.path),
             branch_name: branch,
             head_sha: wt.head,
             suggested_name,
             name_valid,
+            size_bytes,
         });
     }
 
     Ok(discovered)
+}
+
+/// Force-remove a stray worktree the user picked from the import dialog.
+///
+/// Two-phase cleanup:
+/// 1. `git worktree remove --force` — unregisters the worktree from the
+///    parent repo's `.git/worktrees/` index and (when possible) deletes
+///    the dir.
+/// 2. If the dir still exists (git lost track, or refused), fall back to
+///    `std::fs::remove_dir_all`.
+///
+/// Safety guards: refuses to delete the repo root itself, paths already
+/// tracked as Claudette workspaces, or anything outside a plausible
+/// worktree shape (path must be a directory the user explicitly chose
+/// from the discovery list — we re-validate the canonical path here).
+#[tauri::command]
+pub async fn purge_stray_worktree(
+    repo_id: String,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let repos = db.list_repositories().map_err(|e| e.to_string())?;
+    let repo = repos
+        .iter()
+        .find(|r| r.id == repo_id)
+        .ok_or("Repository not found")?;
+
+    let target_canon = std::fs::canonicalize(&path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.clone());
+    let repo_canon = std::fs::canonicalize(&repo.path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| repo.path.clone());
+
+    if target_canon == repo_canon {
+        return Err("Refusing to delete the main repository directory".into());
+    }
+
+    // Refuse if any active or archived workspace still claims this path.
+    let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
+    let claimed = workspaces
+        .iter()
+        .filter_map(|w| w.worktree_path.as_ref())
+        .any(|p| {
+            std::fs::canonicalize(p)
+                .map(|c| c.to_string_lossy() == target_canon.as_str())
+                .unwrap_or_else(|_| p.as_str() == target_canon.as_str())
+        });
+    if claimed {
+        return Err(
+            "Path is tracked as a Claudette workspace — archive and clean it from the workspace list instead"
+                .into(),
+        );
+    }
+
+    // Phase 1: ask git to unregister + remove. Don't error out on failure;
+    // git may refuse if the worktree is locked or already gone.
+    let git_result = git::remove_worktree(&repo.path, &path, true).await;
+    if let Err(e) = &git_result {
+        tracing::warn!(
+            target: "claudette::workspace",
+            path = %path,
+            error = %e,
+            "git worktree remove failed during purge; will attempt fs cleanup"
+        );
+    }
+
+    // Phase 2: if anything's left on disk, nuke it.
+    if Path::new(&path).exists() {
+        let rm_path = path.clone();
+        tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&rm_path))
+            .await
+            .map_err(|e| format!("join error during fs cleanup: {e}"))?
+            .map_err(|e| format!("fs cleanup failed: {e}"))?;
+    }
+
+    // Best-effort: prune stale git/worktrees index entries.
+    let _ = git::prune_worktrees(&repo.path).await;
+
+    Ok(())
 }
 
 /// Return a display-friendly path (use the raw path, not canonicalized).

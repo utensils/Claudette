@@ -88,6 +88,10 @@
   "import_worktrees_importing": "Importing...",
   "import_worktrees_confirm_singular": "Import {{count}} Workspace",
   "import_worktrees_confirm_plural": "Import {{count}} Workspaces",
+  "import_worktrees_delete_tooltip": "Delete this stray worktree from disk",
+  "import_worktrees_delete_confirm": "Permanently delete this worktree and all its files?\n\n{{path}}",
+  "import_worktrees_delete_confirm_button": "Delete from disk",
+  "import_worktrees_deleting": "Deleting...",
 
   "mcp_servers_title": "MCP servers",
   "mcp_servers_detecting": "Detecting MCP servers...",
