@@ -31,6 +31,17 @@ struct PendingCodexRequest {
 struct CodexTurnOutput {
     text: String,
     thinking: String,
+    /// Item-id of the agentMessage item currently accumulating into
+    /// `text`. When a delta with a different item_id arrives (or that
+    /// item's `item/completed` fires), we drain `text` as its own
+    /// `ContentBlock::Text` so the persisted turn keeps item boundaries
+    /// instead of gluing every assistant utterance into one wall.
+    text_item_id: Option<String>,
+    /// Same idea for reasoning items: each discrete reasoning item is
+    /// drained as its own `ContentBlock::Thinking` so the UI's
+    /// `Thinking…` collapsible streams progressively rather than
+    /// arriving as one mega-block after the turn ends.
+    thinking_item_id: Option<String>,
     command_outputs: BTreeMap<String, String>,
 }
 
@@ -715,8 +726,16 @@ async fn route_app_server_message(
             if let CodexNotificationEvent::RateLimitsUpdated { rate_limits } = &notification {
                 let _ = rate_limits_tx.send(rate_limits.clone());
             }
+            // Any per-item drains triggered by this notification (item-id
+            // change inside a delta, or item/completed for an
+            // agentMessage/reasoning item) must be emitted BEFORE the
+            // delta events from `map_notification_to_agent_events_for_route`
+            // so the flushed assistant content stays chronologically
+            // ordered with the new item's first delta.
             if let Some(turn_output) = turn_output {
-                update_turn_output_buffer(turn_output, &notification).await;
+                for event in update_turn_output_buffer(turn_output, &notification).await {
+                    let _ = event_tx.send(event);
+                }
             }
             if notification_finishes_turn(&notification)
                 && let Some(active_turn_id) = active_turn_id
@@ -725,9 +744,10 @@ async fn route_app_server_message(
             }
             if notification_finishes_turn(&notification)
                 && let Some(turn_output) = turn_output
-                && let Some(event) = drain_turn_output_buffer(turn_output).await
             {
-                let _ = event_tx.send(event);
+                for event in drain_turn_output_buffer(turn_output).await {
+                    let _ = event_tx.send(event);
+                }
             }
             let events =
                 map_notification_to_agent_events_for_route(notification, turn_output).await;
@@ -1847,49 +1867,127 @@ fn notification_finishes_turn(event: &CodexNotificationEvent) -> bool {
     )
 }
 
+/// Accumulate streaming text/thinking into the per-turn buffer, and
+/// return any `Assistant` events that should be flushed *before* the
+/// caller emits the delta events for this notification.
+///
+/// We flush on two boundaries:
+///   1. **Item-id change inside a delta.** A new `item_id` for the same
+///      kind means the previous item is logically complete even if its
+///      `item/completed` hasn't arrived yet.
+///   2. **`ItemCompleted` for an `agentMessage` / `reasoning` item.**
+///      The semantic end-of-item from Codex.
+///
+/// Each flush emits ONE `ContentBlock` of the matching kind, so the
+/// persisted chat row ends up with multiple `ContentBlock::Text` /
+/// `ContentBlock::Thinking` entries in chronological order — restoring
+/// item boundaries on reload (issue #865).
 async fn update_turn_output_buffer(
     buffer: &TurnOutputBuffer,
     notification: &CodexNotificationEvent,
-) {
+) -> Vec<AgentEvent> {
     let mut buffer = buffer.lock().await;
+    let mut flushed = Vec::new();
     match notification {
-        CodexNotificationEvent::AgentMessageDelta { delta, .. } => {
+        CodexNotificationEvent::AgentMessageDelta { item_id, delta, .. } => {
+            if buffer
+                .text_item_id
+                .as_deref()
+                .is_some_and(|prev| prev != item_id)
+                && let Some(event) = flush_text_buffer(&mut buffer)
+            {
+                flushed.push(event);
+            }
+            buffer.text_item_id = Some(item_id.clone());
             buffer.text.push_str(delta);
         }
-        CodexNotificationEvent::ReasoningSummaryDelta { delta, .. }
-        | CodexNotificationEvent::ReasoningTextDelta { delta, .. } => {
+        CodexNotificationEvent::ReasoningSummaryDelta { item_id, delta, .. }
+        | CodexNotificationEvent::ReasoningTextDelta { item_id, delta, .. } => {
+            if buffer
+                .thinking_item_id
+                .as_deref()
+                .is_some_and(|prev| prev != item_id)
+                && let Some(event) = flush_thinking_buffer(&mut buffer)
+            {
+                flushed.push(event);
+            }
+            buffer.thinking_item_id = Some(item_id.clone());
             buffer.thinking.push_str(delta);
+        }
+        CodexNotificationEvent::ItemCompleted { item, .. } => {
+            let item_type = item.get("type").and_then(Value::as_str).unwrap_or_default();
+            let item_id = string_field(item, "id");
+            match item_type {
+                "agentMessage" if buffer.text_item_id.as_deref() == Some(item_id.as_str()) => {
+                    if let Some(event) = flush_text_buffer(&mut buffer) {
+                        flushed.push(event);
+                    }
+                }
+                "reasoning" if buffer.thinking_item_id.as_deref() == Some(item_id.as_str()) => {
+                    if let Some(event) = flush_thinking_buffer(&mut buffer) {
+                        flushed.push(event);
+                    }
+                }
+                _ => {}
+            }
         }
         _ => {}
     }
+    flushed
 }
 
-async fn drain_turn_output_buffer(buffer: &TurnOutputBuffer) -> Option<AgentEvent> {
+/// Drain whatever's left at turn end as a safety net. Per-item flushes
+/// above usually leave both buffers empty by the time TurnCompleted
+/// fires, but if Codex ever omits the trailing `item/completed` we
+/// don't want to lose the content.
+async fn drain_turn_output_buffer(buffer: &TurnOutputBuffer) -> Vec<AgentEvent> {
     let mut buffer = buffer.lock().await;
-    if buffer.text.trim().is_empty() && buffer.thinking.trim().is_empty() {
-        buffer.text.clear();
-        buffer.thinking.clear();
-        buffer.command_outputs.clear();
-        return None;
+    let mut events = Vec::new();
+    if let Some(event) = flush_thinking_buffer(&mut buffer) {
+        events.push(event);
     }
-
-    let mut content = Vec::new();
-    if !buffer.thinking.trim().is_empty() {
-        content.push(ContentBlock::Thinking {
-            thinking: std::mem::take(&mut buffer.thinking),
-        });
-    }
-    if !buffer.text.trim().is_empty() {
-        content.push(ContentBlock::Text {
-            text: std::mem::take(&mut buffer.text),
-        });
-    } else {
-        buffer.text.clear();
+    if let Some(event) = flush_text_buffer(&mut buffer) {
+        events.push(event);
     }
     buffer.command_outputs.clear();
+    events
+}
 
+/// Emit the buffered assistant text as its own `Assistant` event with a
+/// single `ContentBlock::Text`, then reset the text buffer + item_id.
+/// Returns `None` if the buffer is whitespace-only (no point persisting
+/// a blank message; we still clear the buffer so the next item starts
+/// fresh).
+fn flush_text_buffer(buffer: &mut CodexTurnOutput) -> Option<AgentEvent> {
+    if buffer.text.trim().is_empty() {
+        buffer.text.clear();
+        buffer.text_item_id = None;
+        return None;
+    }
+    let text = std::mem::take(&mut buffer.text);
+    buffer.text_item_id = None;
     Some(AgentEvent::Stream(StreamEvent::Assistant {
-        message: AssistantMessage { content },
+        message: AssistantMessage {
+            content: vec![ContentBlock::Text { text }],
+        },
+    }))
+}
+
+/// Same shape as `flush_text_buffer` but for reasoning — emits a single
+/// `ContentBlock::Thinking` so the UI's `Thinking…` collapsible gets a
+/// real per-item record instead of one giant late-arriving block.
+fn flush_thinking_buffer(buffer: &mut CodexTurnOutput) -> Option<AgentEvent> {
+    if buffer.thinking.trim().is_empty() {
+        buffer.thinking.clear();
+        buffer.thinking_item_id = None;
+        return None;
+    }
+    let thinking = std::mem::take(&mut buffer.thinking);
+    buffer.thinking_item_id = None;
+    Some(AgentEvent::Stream(StreamEvent::Assistant {
+        message: AssistantMessage {
+            content: vec![ContentBlock::Thinking { thinking }],
+        },
     }))
 }
 
@@ -3896,22 +3994,376 @@ mod tests {
 
         let _thinking_delta = rx.recv().await.expect("thinking delta");
         let _text_delta = rx.recv().await.expect("text delta");
+        // Neither item ever sent `item/completed`, so the turn-end
+        // safety drain fires: one Assistant event per kind in
+        // thinking-then-text order, each carrying a single ContentBlock.
         let AgentEvent::Stream(StreamEvent::Assistant { message }) =
-            rx.recv().await.expect("assistant event")
+            rx.recv().await.expect("thinking assistant event")
         else {
-            panic!("expected synthesized assistant event");
+            panic!("expected synthesized thinking assistant event");
         };
         assert!(matches!(
             &message.content[..],
-            [
-                ContentBlock::Thinking { thinking },
-                ContentBlock::Text { text },
-            ] if thinking == "thinking" && text == "hello"
+            [ContentBlock::Thinking { thinking }] if thinking == "thinking"
+        ));
+        let AgentEvent::Stream(StreamEvent::Assistant { message }) =
+            rx.recv().await.expect("text assistant event")
+        else {
+            panic!("expected synthesized text assistant event");
+        };
+        assert!(matches!(
+            &message.content[..],
+            [ContentBlock::Text { text }] if text == "hello"
         ));
         assert!(matches!(
             rx.recv().await.expect("result event"),
             AgentEvent::Stream(StreamEvent::Result { subtype, .. }) if subtype == "success"
         ));
+    }
+
+    /// Regression for issue #865: two `agentMessage` items in one turn
+    /// must produce TWO separate `ContentBlock::Text` blocks, not a
+    /// single concatenated wall of prose like "shell.Perfect…".
+    #[tokio::test]
+    async fn app_server_router_separates_agent_messages_per_item_id() {
+        let pending: PendingRequests = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+        let turn_output = Arc::new(tokio::sync::Mutex::new(CodexTurnOutput::default()));
+        let (event_tx, mut rx) = broadcast::channel(16);
+        let (rate_limits_tx, _) = broadcast::channel::<CodexRateLimitSnapshot>(8);
+
+        let agent_message_delta = |item_id: &str, delta: &str| {
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/agentMessage/delta".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": item_id,
+                    "delta": delta,
+                })),
+            })
+        };
+
+        for message in [
+            agent_message_delta("message-1", "first sentence."),
+            // Item-id change must flush the previous item before any of
+            // the new item's deltas land.
+            agent_message_delta("message-2", "Second sentence."),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "turn/completed".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                })),
+            }),
+        ] {
+            route_app_server_message(
+                1,
+                &event_tx,
+                &rate_limits_tx,
+                &pending,
+                None,
+                None,
+                Some(&turn_output),
+                message,
+            )
+            .await;
+        }
+
+        // first delta event (mapped from the first AgentMessageDelta)
+        let _first_delta = rx.recv().await.expect("first text delta");
+        // item-id change flushes message-1 as its own Assistant event
+        // BEFORE the second delta event lands, so chronological order
+        // is: [delta-1, assistant(message-1), delta-2, assistant(message-2)]
+        let AgentEvent::Stream(StreamEvent::Assistant { message }) =
+            rx.recv().await.expect("first assistant event")
+        else {
+            panic!("expected per-item assistant flush after item-id change");
+        };
+        assert!(matches!(
+            &message.content[..],
+            [ContentBlock::Text { text }] if text == "first sentence."
+        ));
+        let _second_delta = rx.recv().await.expect("second text delta");
+        let AgentEvent::Stream(StreamEvent::Assistant { message }) =
+            rx.recv().await.expect("second assistant event")
+        else {
+            panic!("expected turn-end flush of message-2");
+        };
+        assert!(matches!(
+            &message.content[..],
+            [ContentBlock::Text { text }] if text == "Second sentence."
+        ));
+        assert!(matches!(
+            rx.recv().await.expect("result event"),
+            AgentEvent::Stream(StreamEvent::Result { subtype, .. }) if subtype == "success"
+        ));
+    }
+
+    /// Regression for issue #865: `item/completed` for an `agentMessage`
+    /// item flushes its buffered text as its own Assistant event,
+    /// without waiting for turn end. This is what lets multi-paragraph
+    /// Codex turns render with item boundaries even when re-loaded from
+    /// the chat_messages row.
+    #[tokio::test]
+    async fn app_server_router_flushes_agent_message_on_item_completed() {
+        let pending: PendingRequests = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+        let turn_output = Arc::new(tokio::sync::Mutex::new(CodexTurnOutput::default()));
+        let (event_tx, mut rx) = broadcast::channel(8);
+        let (rate_limits_tx, _) = broadcast::channel::<CodexRateLimitSnapshot>(8);
+
+        for message in [
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/agentMessage/delta".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "message-1",
+                    "delta": "complete utterance",
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/completed".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {
+                        "type": "agentMessage",
+                        "id": "message-1",
+                        "text": "complete utterance",
+                    },
+                })),
+            }),
+        ] {
+            route_app_server_message(
+                1,
+                &event_tx,
+                &rate_limits_tx,
+                &pending,
+                None,
+                None,
+                Some(&turn_output),
+                message,
+            )
+            .await;
+        }
+
+        let _delta = rx.recv().await.expect("text delta");
+        let AgentEvent::Stream(StreamEvent::Assistant { message }) =
+            rx.recv().await.expect("assistant flush on item/completed")
+        else {
+            panic!("expected per-item assistant flush on item/completed");
+        };
+        assert!(matches!(
+            &message.content[..],
+            [ContentBlock::Text { text }] if text == "complete utterance"
+        ));
+    }
+
+    /// Regression for issue #865: reasoning items must be flushed
+    /// progressively during the turn so the `Thinking…` UI streams in
+    /// real time rather than getting one giant late-arriving block.
+    #[tokio::test]
+    async fn app_server_router_streams_thinking_per_reasoning_item() {
+        let pending: PendingRequests = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+        let turn_output = Arc::new(tokio::sync::Mutex::new(CodexTurnOutput::default()));
+        let (event_tx, mut rx) = broadcast::channel(16);
+        let (rate_limits_tx, _) = broadcast::channel::<CodexRateLimitSnapshot>(8);
+
+        let reasoning_delta = |item_id: &str, delta: &str| {
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/reasoning/textDelta".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": item_id,
+                    "delta": delta,
+                    "contentIndex": 0,
+                })),
+            })
+        };
+        let reasoning_completed = |item_id: &str| {
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/completed".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {
+                        "type": "reasoning",
+                        "id": item_id,
+                    },
+                })),
+            })
+        };
+
+        for message in [
+            reasoning_delta("reasoning-1", "thinking about A"),
+            reasoning_completed("reasoning-1"),
+            reasoning_delta("reasoning-2", "now thinking about B"),
+            reasoning_completed("reasoning-2"),
+        ] {
+            route_app_server_message(
+                1,
+                &event_tx,
+                &rate_limits_tx,
+                &pending,
+                None,
+                None,
+                Some(&turn_output),
+                message,
+            )
+            .await;
+        }
+
+        let _first_delta = rx.recv().await.expect("first thinking delta");
+        let AgentEvent::Stream(StreamEvent::Assistant { message }) =
+            rx.recv().await.expect("first thinking flush")
+        else {
+            panic!("expected per-item thinking flush after first item/completed");
+        };
+        assert!(matches!(
+            &message.content[..],
+            [ContentBlock::Thinking { thinking }] if thinking == "thinking about A"
+        ));
+        let _second_delta = rx.recv().await.expect("second thinking delta");
+        let AgentEvent::Stream(StreamEvent::Assistant { message }) =
+            rx.recv().await.expect("second thinking flush")
+        else {
+            panic!("expected per-item thinking flush after second item/completed");
+        };
+        assert!(matches!(
+            &message.content[..],
+            [ContentBlock::Thinking { thinking }] if thinking == "now thinking about B"
+        ));
+    }
+
+    /// Regression for issue #865: when reasoning and agentMessage items
+    /// interleave (reason → answer → reason → answer), the assistant
+    /// events must be emitted in chronological order so the chat
+    /// surface renders them with the same ordering Codex produced.
+    #[tokio::test]
+    async fn app_server_router_preserves_interleaved_reasoning_and_message_order() {
+        let pending: PendingRequests = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+        let turn_output = Arc::new(tokio::sync::Mutex::new(CodexTurnOutput::default()));
+        let (event_tx, mut rx) = broadcast::channel(32);
+        let (rate_limits_tx, _) = broadcast::channel::<CodexRateLimitSnapshot>(8);
+
+        let messages = [
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/reasoning/textDelta".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "reasoning-1",
+                    "delta": "reason one",
+                    "contentIndex": 0,
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/completed".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {"type": "reasoning", "id": "reasoning-1"},
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/agentMessage/delta".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "message-1",
+                    "delta": "answer one",
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/completed".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {"type": "agentMessage", "id": "message-1"},
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/reasoning/textDelta".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "reasoning-2",
+                    "delta": "reason two",
+                    "contentIndex": 0,
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/completed".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {"type": "reasoning", "id": "reasoning-2"},
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/agentMessage/delta".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "message-2",
+                    "delta": "answer two",
+                })),
+            }),
+            JsonRpcMessage::Notification(JsonRpcNotification {
+                method: "item/completed".to_string(),
+                params: Some(json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "item": {"type": "agentMessage", "id": "message-2"},
+                })),
+            }),
+        ];
+
+        for message in messages {
+            route_app_server_message(
+                1,
+                &event_tx,
+                &rate_limits_tx,
+                &pending,
+                None,
+                None,
+                Some(&turn_output),
+                message,
+            )
+            .await;
+        }
+
+        // Drain Assistant events only — ignore the per-delta stream
+        // events (which test their own contract elsewhere).
+        let mut assistants = Vec::new();
+        while assistants.len() < 4 {
+            match rx.recv().await.expect("assistant event") {
+                AgentEvent::Stream(StreamEvent::Assistant { message }) => {
+                    assistants.push(message);
+                }
+                _ => continue,
+            }
+        }
+
+        let payloads: Vec<(&'static str, String)> = assistants
+            .iter()
+            .map(|message| match &message.content[..] {
+                [ContentBlock::Thinking { thinking }] => ("thinking", thinking.clone()),
+                [ContentBlock::Text { text }] => ("text", text.clone()),
+                other => panic!("unexpected assistant content: {other:?}"),
+            })
+            .collect();
+
+        assert_eq!(
+            payloads,
+            vec![
+                ("thinking", "reason one".to_string()),
+                ("text", "answer one".to_string()),
+                ("thinking", "reason two".to_string()),
+                ("text", "answer two".to_string()),
+            ]
+        );
     }
 
     #[tokio::test]
