@@ -39,6 +39,13 @@ struct PiTurnOutput {
     thinking: String,
     tool_block_indices: HashMap<String, u32>,
     next_tool_block_index: u32,
+    /// Latest mid-turn error from the sidecar. Pi's `agent_end` does
+    /// NOT carry an errorMessage at the event level, so we capture
+    /// the `AssistantMessageEvent { type: "error" }` and
+    /// `auto_retry_end { success: false, finalError }` events the
+    /// harness now forwards as `turn_error`, and fold the latest
+    /// into the eventual `turn_end`. Cleared on every `turn_end`.
+    pending_error: Option<String>,
 }
 
 impl PiTurnOutput {
@@ -48,6 +55,7 @@ impl PiTurnOutput {
             thinking: String::new(),
             tool_block_indices: HashMap::new(),
             next_tool_block_index: FIRST_TOOL_BLOCK_INDEX,
+            pending_error: None,
         }
     }
 
@@ -672,6 +680,18 @@ enum PiHarnessMessage {
         #[serde(default)]
         error: Option<String>,
     },
+    /// Mid-turn failure surfaced by the harness when Pi's
+    /// `AssistantMessageEvent` returns an `error` variant or
+    /// `auto_retry_end` fails. The handler folds the error into
+    /// `turn_output` so the eventual `turn_end` carries it even if
+    /// pi-agent-core's top-level `agent_end` carries no
+    /// errorMessage (which is the common case — see the helper in
+    /// `main.ts`).
+    #[serde(rename = "turn_error")]
+    TurnError {
+        #[serde(default)]
+        error: Option<String>,
+    },
     #[serde(rename = "error")]
     Error {
         #[serde(default)]
@@ -994,12 +1014,33 @@ async fn route_pi_message(
                 is_synthetic: false,
             }));
         }
-        PiHarnessMessage::TurnEnd { error } => {
-            let mut output = turn_output.lock().await;
-            let error_text = error
+        PiHarnessMessage::TurnError { error } => {
+            // Defer surfacing — `turn_end` carries the consolidated
+            // error block. Stashing here lets a turn that emits
+            // multiple errors (e.g. retry-then-final-fail) collapse
+            // into one assistant block instead of three.
+            let trimmed = error
                 .as_ref()
                 .map(|e| e.trim().to_string())
                 .filter(|e| !e.is_empty());
+            if let Some(err) = trimmed {
+                let mut output = turn_output.lock().await;
+                output.pending_error = Some(err);
+            }
+        }
+        PiHarnessMessage::TurnEnd { error } => {
+            let mut output = turn_output.lock().await;
+            // Merge any mid-turn `turn_error` events the harness
+            // forwarded with the `agent_end` errorMessage walk.
+            // Either source can carry the user-facing failure, and
+            // we prefer the explicit end-of-turn error when both
+            // exist (it's the authoritative final state).
+            let pending_error = output.pending_error.take();
+            let from_turn_end = error
+                .as_ref()
+                .map(|e| e.trim().to_string())
+                .filter(|e| !e.is_empty());
+            let error_text = from_turn_end.or(pending_error);
             let mut content = Vec::new();
             if !output.thinking.trim().is_empty() {
                 content.push(ContentBlock::Thinking {
@@ -1932,6 +1973,164 @@ mod tests {
             other => panic!("expected Result, got {other:?}"),
         }
         assert!(try_recv_now(&mut rx).is_none());
+    }
+
+    /// A mid-turn `turn_error` (forwarded by the harness from a Pi
+    /// `AssistantMessageEvent { type: "error" }` or a failed
+    /// `auto_retry_end`) followed by a clean-looking `turn_end` must
+    /// still surface the error to the user. Without this, every
+    /// Copilot 401 / OpenRouter 5xx came through as "Agent stopped"
+    /// with no chat message.
+    #[tokio::test]
+    async fn turn_error_promotes_pending_error_into_turn_end() {
+        let (event_tx, control_tx, mut rx, pending, turn_output, init_cache) = pi_state();
+        route_pi_message(
+            &event_tx,
+            &control_tx,
+            &pending,
+            &turn_output,
+            &init_cache,
+            PiHarnessMessage::TurnError {
+                error: Some("401 Unauthorized".to_string()),
+            },
+        )
+        .await;
+        // turn_error itself produces no chat event — it stashes the
+        // error on turn_output until turn_end finalizes the turn.
+        assert!(try_recv_now(&mut rx).is_none());
+        route_pi_message(
+            &event_tx,
+            &control_tx,
+            &pending,
+            &turn_output,
+            &init_cache,
+            PiHarnessMessage::TurnEnd { error: None },
+        )
+        .await;
+        match next_event(&mut rx).await {
+            AgentEvent::Stream(StreamEvent::Assistant { message }) => {
+                let last = message.content.last().expect("error block");
+                match last {
+                    ContentBlock::Text { text } => {
+                        assert!(text.contains("401 Unauthorized"), "got {text:?}")
+                    }
+                    other => panic!("expected Text, got {other:?}"),
+                }
+            }
+            other => panic!("expected Assistant, got {other:?}"),
+        }
+        match next_event(&mut rx).await {
+            AgentEvent::Stream(StreamEvent::Result {
+                subtype, result, ..
+            }) => {
+                assert_eq!(subtype, "error");
+                assert!(result.unwrap().contains("401 Unauthorized"));
+            }
+            other => panic!("expected Result, got {other:?}"),
+        }
+    }
+
+    /// When BOTH `turn_error` (mid-turn) and `turn_end { error }`
+    /// (agent_end walk surfaced one too) arrive, `turn_end`'s error
+    /// wins. It's the authoritative final state — if Pi reports a
+    /// different message there, that's what the user should see.
+    #[tokio::test]
+    async fn turn_end_error_wins_over_pending_error() {
+        let (event_tx, control_tx, mut rx, pending, turn_output, init_cache) = pi_state();
+        route_pi_message(
+            &event_tx,
+            &control_tx,
+            &pending,
+            &turn_output,
+            &init_cache,
+            PiHarnessMessage::TurnError {
+                error: Some("retry-time error".to_string()),
+            },
+        )
+        .await;
+        route_pi_message(
+            &event_tx,
+            &control_tx,
+            &pending,
+            &turn_output,
+            &init_cache,
+            PiHarnessMessage::TurnEnd {
+                error: Some("final 500".to_string()),
+            },
+        )
+        .await;
+        match next_event(&mut rx).await {
+            AgentEvent::Stream(StreamEvent::Assistant { message }) => {
+                let last = message.content.last().expect("error block");
+                match last {
+                    ContentBlock::Text { text } => {
+                        assert!(text.contains("final 500"), "got {text:?}");
+                        assert!(!text.contains("retry-time error"), "got {text:?}");
+                    }
+                    other => panic!("expected Text, got {other:?}"),
+                }
+            }
+            other => panic!("expected Assistant, got {other:?}"),
+        }
+        let _ = next_event(&mut rx).await;
+    }
+
+    /// Pending error must be cleared between turns so a successful
+    /// turn N+1 doesn't inherit turn N's failure.
+    #[tokio::test]
+    async fn pending_error_is_cleared_between_turns() {
+        let (event_tx, control_tx, mut rx, pending, turn_output, init_cache) = pi_state();
+        route_pi_message(
+            &event_tx,
+            &control_tx,
+            &pending,
+            &turn_output,
+            &init_cache,
+            PiHarnessMessage::TurnError {
+                error: Some("turn1 failed".to_string()),
+            },
+        )
+        .await;
+        route_pi_message(
+            &event_tx,
+            &control_tx,
+            &pending,
+            &turn_output,
+            &init_cache,
+            PiHarnessMessage::TurnEnd { error: None },
+        )
+        .await;
+        // Drain turn-1 finalize events.
+        let _ = next_event(&mut rx).await;
+        let _ = next_event(&mut rx).await;
+
+        // Turn 2: clean run; must NOT re-surface the turn-1 error.
+        turn_output.lock().await.text.push_str("hello");
+        route_pi_message(
+            &event_tx,
+            &control_tx,
+            &pending,
+            &turn_output,
+            &init_cache,
+            PiHarnessMessage::TurnEnd { error: None },
+        )
+        .await;
+        match next_event(&mut rx).await {
+            AgentEvent::Stream(StreamEvent::Assistant { message }) => {
+                for block in &message.content {
+                    if let ContentBlock::Text { text } = block {
+                        assert!(!text.contains("turn1 failed"));
+                    }
+                }
+            }
+            other => panic!("expected Assistant, got {other:?}"),
+        }
+        match next_event(&mut rx).await {
+            AgentEvent::Stream(StreamEvent::Result { subtype, .. }) => {
+                assert_eq!(subtype, "success");
+            }
+            other => panic!("expected Result, got {other:?}"),
+        }
     }
 
     #[tokio::test]
