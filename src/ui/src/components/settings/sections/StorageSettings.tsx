@@ -80,7 +80,7 @@ export function StorageSettings() {
     [rows],
   );
 
-  const togglerow = (repoId: string) => {
+  const toggleRow = (repoId: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(repoId)) next.delete(repoId);
@@ -245,7 +245,7 @@ export function StorageSettings() {
                 <button
                   type="button"
                   className={styles.storageRepoChevron}
-                  onClick={() => hasBreakdown && togglerow(repo.id)}
+                  onClick={() => hasBreakdown && toggleRow(repo.id)}
                   disabled={!hasBreakdown}
                   aria-label={t("storage_toggle_breakdown")}
                 >

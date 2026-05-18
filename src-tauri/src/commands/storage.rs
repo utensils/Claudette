@@ -200,9 +200,20 @@ fn validate_rogue_purge_target(
     let base_canon = std::fs::canonicalize(base)
         .map(|c| c.to_string_lossy().to_string())
         .unwrap_or_else(|_| base.to_string_lossy().to_string());
-    let target_canon = std::fs::canonicalize(target_path)
-        .map(|c| c.to_string_lossy().to_string())
-        .unwrap_or_else(|_| target_path.to_string());
+
+    // Fail fast on unresolvable / relative target paths. The scan
+    // command only ever returns canonical absolute paths, so the only
+    // way to get here with a relative or non-existent path is a buggy
+    // or malicious caller. Returning a clear "could not resolve" beats
+    // the misleading "outside base" message the `starts_with` check
+    // below would produce for relative input.
+    let target_canon = match std::fs::canonicalize(target_path) {
+        Ok(c) => c.to_string_lossy().to_string(),
+        Err(_) if Path::new(target_path).is_absolute() => target_path.to_string(),
+        Err(e) => {
+            return Err(format!("Could not resolve path '{target_path}': {e}"));
+        }
+    };
 
     // Hard guard: target must be a strict descendant of base.
     if target_canon == base_canon || !Path::new(&target_canon).starts_with(&base_canon) {
@@ -464,5 +475,20 @@ mod tests {
         let wt = tree.base.join("my-repo/rogue-wt");
         let result = validate_rogue_purge_target(wt.to_str().unwrap(), &tree.base, &[]);
         assert!(result.is_ok(), "expected accept, got {result:?}");
+    }
+
+    #[test]
+    fn validate_rogue_purge_rejects_relative_unresolvable_path_with_clear_error() {
+        let tree = make_tree(&[("my-repo", &["rogue-wt"])]);
+        // A relative path that doesn't exist — canonicalize fails AND
+        // it isn't absolute, so the early-return clear-error branch
+        // should fire instead of the misleading "outside base" message.
+        let result = validate_rogue_purge_target("./does-not-exist", &tree.base, &[]);
+        assert!(result.is_err(), "expected rejection, got {result:?}");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Could not resolve path"),
+            "expected resolve-failure message, got: {err}"
+        );
     }
 }
