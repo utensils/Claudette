@@ -4,10 +4,18 @@ import { MessageMarkdown } from "./MessageMarkdown";
 import type { PlanApproval } from "../../stores/useAppStore";
 import { readPlanFile, sendRemoteCommand } from "../../services/tauri";
 import { CopyButton } from "../shared/CopyButton";
+import { useWorkspaceFileOpener } from "./useWorkspaceFileOpener";
 import styles from "./PlanApprovalCard.module.css";
 
 interface PlanApprovalCardProps {
   approval: PlanApproval;
+  /** Owning workspace for the plan. Lets the rendered plan content route
+   *  file-path clicks into this workspace's Monaco tab instead of falling
+   *  through to the OS default editor — plans frequently enumerate
+   *  "Critical Files" with absolute paths under `~/.claudette/workspaces/`,
+   *  which previously rendered as `<a href="claudettepath:…">` links with
+   *  no in-app opener context. */
+  workspaceId: string;
   /**
    * Called with the user's decision. `approved=true` lets the CLI run the
    * ExitPlanMode tool's `call()` (which writes the plan file and emits the
@@ -19,6 +27,7 @@ interface PlanApprovalCardProps {
 
 export function PlanApprovalCard({
   approval,
+  workspaceId,
   onRespond,
   remoteConnectionId,
 }: PlanApprovalCardProps) {
@@ -33,6 +42,7 @@ export function PlanApprovalCard({
   // instead of issuing duplicate `readPlanFile` / `sendRemoteCommand`
   // requests. Cleared in a `finally` so a failed fetch can be retried.
   const inFlightFetchRef = useRef<Promise<string> | null>(null);
+  const { openFile, resolveFilePath } = useWorkspaceFileOpener(workspaceId);
 
   const fetchPlanContent = (): Promise<string> => {
     if (planContent !== null) return Promise.resolve(planContent);
@@ -118,7 +128,11 @@ export function PlanApprovalCard({
 
       {expanded && planContent && (
         <div className={styles.planContent}>
-          <MessageMarkdown content={planContent} />
+          <MessageMarkdown
+            content={planContent}
+            onOpenFile={openFile}
+            resolveFilePath={resolveFilePath}
+          />
         </div>
       )}
 
