@@ -156,7 +156,12 @@ describe("PiProviderList", () => {
 
   it("labels configured rows with their auth source", () => {
     renderList();
-    expect(container.textContent).toContain("via auth.json");
+    // Source rendered as a compact pill alongside the row, not a
+    // "via X" sentence anymore. Confirm OpenRouter (the configured
+    // fixture) carries the pill text. Pinning the pill node lets a
+    // future label change find this assertion.
+    const text = container.textContent ?? "";
+    expect(text).toContain("auth.json");
   });
 
   it("uses Sign in / Configure based on provider kind", () => {

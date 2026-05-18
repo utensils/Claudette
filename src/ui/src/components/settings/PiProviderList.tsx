@@ -188,31 +188,33 @@ function PiProviderRow({
 
   // Show the auth source label for already-configured providers so a
   // user with both an env var and an auth.json entry can tell which
-  // one Pi will use.
+  // one Pi will use. For unconfigured rows we render the env hint as
+  // a dashed pill so the affordance is visually distinct from a live
+  // source label.
   const sourceLabel = (() => {
     if (!provider.configured) {
       if (provider.envHint) {
-        return t("pi_provider_env_hint", {
-          name: provider.envHint,
-          defaultValue: "or set ${{name}}",
-        });
+        return {
+          text: `$${provider.envHint}`,
+          isHint: true,
+        };
       }
       return undefined;
     }
     switch (provider.authSource) {
       case "stored":
-        return t("pi_provider_source_stored", "via auth.json");
+        return { text: t("pi_provider_source_stored_short", "auth.json"), isHint: false };
       case "environment":
-        return t("pi_provider_source_env", {
-          name: provider.envHint ?? "env var",
-          defaultValue: "via ${{name}}",
-        });
+        return {
+          text: `$${provider.envHint ?? "env"}`,
+          isHint: false,
+        };
       case "runtime":
-        return t("pi_provider_source_runtime", "via --api-key");
+        return { text: t("pi_provider_source_runtime_short", "--api-key"), isHint: false };
       case "fallback":
       case "models_json_key":
       case "models_json_command":
-        return t("pi_provider_source_models_json", "via models.json");
+        return { text: t("pi_provider_source_models_json_short", "models.json"), isHint: false };
       default:
         return undefined;
     }
@@ -222,48 +224,64 @@ function PiProviderRow({
     <div className={styles.row}>
       <span className={statusDotClass} aria-hidden />
       <div className={styles.body}>
-        <span className={styles.label}>
-          {provider.label}
+        <div className={styles.headerLine}>
+          <span className={styles.label}>{provider.label}</span>
           {provider.modelCount > 0 && (
-            <span style={{ marginLeft: 8, color: "var(--text-dim)", fontWeight: 400 }}>
-              {provider.modelCount} models
+            <span className={styles.modelCount}>
+              {t("pi_provider_model_count", {
+                count: provider.modelCount,
+                defaultValue: "{{count}} models",
+              })}
             </span>
           )}
-        </span>
+          <span className={styles.spacer} />
+          {sourceLabel && (
+            <span
+              className={
+                sourceLabel.isHint
+                  ? `${styles.sourcePill} ${styles.sourcePillEnvHint}`
+                  : styles.sourcePill
+              }
+            >
+              {sourceLabel.text}
+            </span>
+          )}
+          <div className={styles.actions}>
+            {showClearButton && (
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={() => onClear?.(provider)}
+                disabled={busy}
+              >
+                {clearLabel}
+              </button>
+            )}
+            <button
+              type="button"
+              className={
+                provider.configured && !isEnvOnly ? styles.btn : styles.btnPrimary
+              }
+              onClick={() => {
+                if (isEnvOnly && provider.docsUrl) {
+                  // Tauri's webview blocks bare `window.open`; route
+                  // every external-link launch through the
+                  // `open_url` command the rest of Settings uses.
+                  void openUrl(provider.docsUrl).catch(() => {});
+                  return;
+                }
+                onConfigure(provider);
+              }}
+              disabled={busy}
+            >
+              {isEnvOnly && (
+                <ExternalLink size={11} aria-hidden style={{ marginRight: 4 }} />
+              )}
+              {actionLabel}
+            </button>
+          </div>
+        </div>
         <span className={styles.description}>{provider.description}</span>
-      </div>
-      {sourceLabel && <span className={styles.source}>{sourceLabel}</span>}
-      <div style={{ display: "flex", gap: 6 }}>
-        {showClearButton && (
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() => onClear?.(provider)}
-            disabled={busy}
-          >
-            {clearLabel}
-          </button>
-        )}
-        <button
-          type="button"
-          className={
-            provider.configured && !isEnvOnly ? styles.btn : styles.btnPrimary
-          }
-          onClick={() => {
-            if (isEnvOnly && provider.docsUrl) {
-              // Tauri's webview blocks bare `window.open`; route
-              // every external-link launch through the
-              // `open_url` command the rest of Settings uses.
-              void openUrl(provider.docsUrl).catch(() => {});
-              return;
-            }
-            onConfigure(provider);
-          }}
-          disabled={busy}
-        >
-          {isEnvOnly && <ExternalLink size={11} aria-hidden style={{ marginRight: 4 }} />}
-          {actionLabel}
-        </button>
       </div>
     </div>
   );

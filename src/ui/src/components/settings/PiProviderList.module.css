@@ -1,7 +1,14 @@
 /* Provider list rendered inside the Pi card and inside the
  * `/login` provider picker. Visual tokens compose with the existing
- * Settings palette (`--divider`, `--text-muted`, `--accent-fg`, …) so
- * a theme change still drives this surface. */
+ * Settings palette (`--divider`, `--text-muted`, …) so theme changes
+ * drive this surface automatically.
+ *
+ * Each row is a two-line flex layout, not a fixed-column grid, so a
+ * long description doesn't push the action buttons off the right
+ * edge. Top line carries label + counts + source pill + buttons;
+ * bottom line is the description (truncated by ellipsis if it can't
+ * fit). The status dot spans both lines via `align-items: flex-start`
+ * + a fixed top offset so it visually anchors the row header. */
 
 .list {
   display: flex;
@@ -15,12 +22,13 @@
 
 .row {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: var(--space-3);
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
   padding: 10px 12px;
   background: var(--chat-input-bg);
   transition: background var(--transition-fast);
+  min-width: 0;
 }
 
 .row:hover {
@@ -33,6 +41,7 @@
   border-radius: 50%;
   background: var(--text-dim);
   flex-shrink: 0;
+  margin-top: 6px;
 }
 
 .statusDotConfigured {
@@ -46,7 +55,14 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.headerLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -57,6 +73,43 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.modelCount {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.sourcePill {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--hover-bg);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.sourcePillEnvHint {
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed var(--divider);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .description {
@@ -65,12 +118,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.source {
-  font-size: 11px;
-  color: var(--text-dim);
-  white-space: nowrap;
 }
 
 .btn {
@@ -82,6 +129,7 @@
   cursor: pointer;
   font-size: 12px;
   transition: background var(--transition-fast);
+  white-space: nowrap;
 }
 
 .btn:hover:not(:disabled) {
@@ -117,7 +165,7 @@
 .summary {
   font-size: 11px;
   color: var(--text-muted);
-  padding: 4px 0;
+  padding: 0 0 6px;
   display: flex;
   align-items: center;
   justify-content: space-between;
