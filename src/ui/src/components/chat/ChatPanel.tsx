@@ -1621,9 +1621,10 @@ export function ChatPanel() {
                 />
               )}
 
-              {pendingPlan && (
+              {pendingPlan && selectedWorkspaceId && (
                 <PlanApprovalCard
                   approval={pendingPlan}
+                  workspaceId={selectedWorkspaceId}
                   remoteConnectionId={ws?.remote_connection_id ?? undefined}
                   onRespond={async (approved, reason) => {
                     if (!activeSessionId) return;
