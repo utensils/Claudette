@@ -214,7 +214,7 @@ export function StorageSettings() {
                 {tCommon("cancel")}
               </button>
               <button
-                className={styles.storageRogueConfirmDelete}
+                className={`${styles.iconBtn} ${styles.storageRogueConfirmDelete}`}
                 onClick={() => handleRoguePurge(rogueConfirmPath)}
                 disabled={purgingRogue.has(rogueConfirmPath)}
               >

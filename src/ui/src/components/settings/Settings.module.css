@@ -345,7 +345,6 @@
 }
 
 .storageRogueConfirmDelete {
-  composes: iconBtn;
   color: var(--status-stopped);
   border-color: var(--status-stopped);
 }
