@@ -1,6 +1,7 @@
 import { GitBranch } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { WorkspaceActions } from "../chat/WorkspaceActions";
+import { InteractiveTerminalModeToggle } from "../chat/InteractiveTerminalModeToggle";
 import { PanelToggles } from "./PanelToggles";
 import { PanelHeader } from "./PanelHeader";
 import styles from "./WorkspacePanelHeader.module.css";
@@ -45,6 +46,7 @@ export function WorkspacePanelHeader() {
       left={left}
       right={
         <>
+          <InteractiveTerminalModeToggle />
           <WorkspaceActions worktreePath={ws?.worktree_path ?? null} />
           <PanelToggles />
         </>

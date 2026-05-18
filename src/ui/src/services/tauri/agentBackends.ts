@@ -33,11 +33,17 @@ export interface AgentBackendModel {
  *
  *  - `claude_code` — the bundled Claude CLI (with `ANTHROPIC_BASE_URL` /
  *    gateway env when the backend isn't Anthropic itself).
+ *  - `claude_interactive` — interactive `claude` running inside a
+ *    detachable host (tmux on Unix, sidecar on Windows). Gated on the
+ *    `claudeInteractiveEnabled` experimental flag and intentionally
+ *    absent from `availableHarnessesForKind` — the experimental gate
+ *    is enforced server-side via `AgentBackendConfig.effective_harness_kind`.
  *  - `codex_app_server` — the Codex CLI's debug app-server.
  *  - `pi_sdk` — Claudette's bundled Pi sidecar.
  */
 export type AgentBackendRuntimeHarness =
   | "claude_code"
+  | "claude_interactive"
   | "codex_app_server"
   | "pi_sdk";
 
@@ -186,11 +192,34 @@ export function availableHarnessesForKind(
 }
 
 /** Effective harness for a config: persisted override when allowed,
- *  otherwise the kind's default. Matches `AgentBackendConfig::effective_harness`. */
+ *  otherwise the kind's default.
+ *
+ *  Mirrors the Rust-side `AgentBackendConfig::effective_harness_kind`
+ *  (in `src/agent_backend.rs`): the persisted override is honored when
+ *  it appears in `availableHarnessesForKind(kind)`, OR when it's
+ *  `"claude_interactive"` AND the `claudeInteractiveEnabled`
+ *  experimental flag is on. `"claude_interactive"` is intentionally
+ *  absent from `availableHarnessesForKind` because the gate is the
+ *  experimental flag, not the per-kind matrix — so any caller that
+ *  has the flag value must pass it here, otherwise a backend with
+ *  `runtime_harness === "claude_interactive"` silently falls back to
+ *  the kind's default harness (a frontend/backend state mismatch).
+ *
+ *  @param backend Persisted backend config.
+ *  @param options.claudeInteractiveEnabled Value of the experimental
+ *    flag from the Zustand store. Defaults to `false` for callers that
+ *    don't (yet) know about the flag — same as the Rust default. */
 export function effectiveHarness(
   backend: AgentBackendConfig,
+  options?: { claudeInteractiveEnabled?: boolean },
 ): AgentBackendRuntimeHarness {
   const override = backend.runtime_harness ?? undefined;
+  if (
+    override === "claude_interactive" &&
+    options?.claudeInteractiveEnabled === true
+  ) {
+    return override;
+  }
   if (override && availableHarnessesForKind(backend.kind).includes(override)) {
     return override;
   }
