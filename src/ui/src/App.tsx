@@ -16,6 +16,7 @@ import {
 import { deriveScmCiState } from "./utils/scmChecks";
 import { KEYBINDING_SETTING_PREFIX } from "./hotkeys/bindings";
 import type { WorkspaceOrderModeByRepo } from "./utils/workspaceOrdering";
+import { useCiAutoFixSession } from "./hooks/useCiAutoFixSession";
 import { useMcpStatus } from "./hooks/useMcpStatus";
 import { useChatSessionCreatedEvent } from "./hooks/useChatSessionCreatedEvent";
 import { useUsageInsightsPoller } from "./hooks/useUsageInsightsPoller";
@@ -129,6 +130,7 @@ function App() {
   useMcpStatus();
   useChatSessionCreatedEvent();
   useUsageInsightsPoller();
+  useCiAutoFixSession();
 
   // Boot-health heartbeat for the post-update probation window.
   //
