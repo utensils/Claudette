@@ -56,7 +56,11 @@ export function UsageIndicator({ workspaceId, sessionId }: UsageIndicatorProps) 
   const { t } = useTranslation("settings");
 
   const usageInsightsEnabled = useAppStore((s) => s.usageInsightsEnabled);
+  const showOpenRouterBalance = useAppStore(
+    (s) => s.showOpenRouterBalanceInUsageMeter,
+  );
   const agentBackends = useAppStore((s) => s.agentBackends);
+  const selectedModel = useAppStore((s) => s.selectedModel);
   const selectedModelProvider = useAppStore((s) => s.selectedModelProvider);
   const sessionUsage = useAppStore((s) => s.sessionUsage);
   const openSettings = useAppStore((s) => s.openSettings);
@@ -71,7 +75,14 @@ export function UsageIndicator({ workspaceId, sessionId }: UsageIndicatorProps) 
     return agentBackends.find((b) => b.id === backendId) ?? null;
   }, [agentBackends, selectedModelProvider, sessionId]);
 
-  const mode = resolveIndicatorMode(backend, usageInsightsEnabled);
+  const usageBackend = useMemo(() => {
+    if (!backend || !sessionId) return backend;
+    const model = selectedModel[sessionId];
+    if (!model || backend.default_model === model) return backend;
+    return { ...backend, default_model: model };
+  }, [backend, selectedModel, sessionId]);
+
+  const mode = resolveIndicatorMode(usageBackend, usageInsightsEnabled);
   const snapshot = sessionId ? sessionUsage[sessionId] : null;
 
   // Drive the per-session poll on the active session. The hook
@@ -80,9 +91,10 @@ export function UsageIndicator({ workspaceId, sessionId }: UsageIndicatorProps) 
   useSessionUsagePoller({
     workspaceId,
     sessionId,
-    backend,
+    backend: usageBackend,
     mode,
     usageInsightsEnabled,
+    showOpenRouterBalance,
   });
 
   const triggerRef = useRef<HTMLButtonElement>(null);

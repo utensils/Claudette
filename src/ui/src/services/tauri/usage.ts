@@ -16,12 +16,14 @@ export function getSessionUsage(args: {
   chatSessionId: string;
   backend: AgentBackendConfig;
   usageInsightsEnabled: boolean;
+  showOpenRouterBalance: boolean;
 }): Promise<UsageSnapshot> {
   return invoke("get_session_usage", {
     workspaceId: args.workspaceId,
     chatSessionId: args.chatSessionId,
     backend: args.backend,
     usageInsightsEnabled: args.usageInsightsEnabled,
+    showOpenrouterBalance: args.showOpenRouterBalance,
   });
 }
 

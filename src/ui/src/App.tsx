@@ -70,6 +70,9 @@ function App() {
   const setSystemFonts = useAppStore((s) => s.setSystemFonts);
   const setDetectedApps = useAppStore((s) => s.setDetectedApps);
   const setUsageInsightsEnabled = useAppStore((s) => s.setUsageInsightsEnabled);
+  const setShowOpenRouterBalanceInUsageMeter = useAppStore(
+    (s) => s.setShowOpenRouterBalanceInUsageMeter,
+  );
   const setClaudetteTerminalEnabled = useAppStore((s) => s.setClaudetteTerminalEnabled);
   const setShowSidebarRunningCommands = useAppStore((s) => s.setShowSidebarRunningCommands);
   const setToolDisplayMode = useAppStore((s) => s.setToolDisplayMode);
@@ -354,6 +357,11 @@ function App() {
 
     getAppSetting("usage_insights_enabled")
       .then((val) => { if (val === "true") setUsageInsightsEnabled(true); })
+      .catch(() => {});
+    getAppSetting("openrouter_balance_in_usage_meter")
+      .then((val) => {
+        if (val === "false") setShowOpenRouterBalanceInUsageMeter(false);
+      })
       .catch(() => {});
     getAppSetting("claudette_terminal_enabled")
       .then((val) => {

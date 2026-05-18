@@ -14,7 +14,9 @@ import type { UsageSnapshot } from "../../../types/usage";
 // useAppStore mock below.
 const appStore = vi.hoisted(() => ({
   usageInsightsEnabled: false,
+  showOpenRouterBalanceInUsageMeter: true,
   agentBackends: [] as AgentBackendConfig[],
+  selectedModel: {} as Record<string, string>,
   selectedModelProvider: {} as Record<string, string>,
   sessionUsage: {} as Record<string, UsageSnapshot>,
   openSettings: vi.fn(),

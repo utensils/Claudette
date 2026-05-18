@@ -9,6 +9,12 @@ const appStore = vi.hoisted(() => ({
   setUsageInsightsEnabled: vi.fn((next: boolean) => {
     appStore.usageInsightsEnabled = next;
   }),
+  showOpenRouterBalanceInUsageMeter: true,
+  setShowOpenRouterBalanceInUsageMeter: vi.fn((next: boolean) => {
+    appStore.showOpenRouterBalanceInUsageMeter = next;
+  }),
+  settingsFocus: null as string | null,
+  clearSettingsFocus: vi.fn(),
 }));
 
 const serviceMocks = vi.hoisted(() => ({
@@ -79,7 +85,11 @@ function findConfirmButton(container: HTMLElement): HTMLButtonElement | null {
 
 beforeEach(() => {
   appStore.usageInsightsEnabled = false;
+  appStore.showOpenRouterBalanceInUsageMeter = true;
+  appStore.settingsFocus = null;
   appStore.setUsageInsightsEnabled.mockClear();
+  appStore.setShowOpenRouterBalanceInUsageMeter.mockClear();
+  appStore.clearSettingsFocus.mockClear();
   serviceMocks.setAppSetting.mockClear();
   serviceMocks.setAppSetting.mockResolvedValue(undefined);
 });
