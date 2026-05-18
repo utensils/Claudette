@@ -1,16 +1,11 @@
 /**
  * Format a byte count for human display using binary units (KiB / MiB / GiB).
  *
- * Decisions:
- *   - Bytes < 1024 → integer "<n> B".
- *   - KiB / MiB / GiB → up to 1 decimal place; trailing ".0" trimmed.
- *   - Null / undefined / NaN / negative → "0 B" (defensive — input may
- *     come from a Rust Option<u64> serialized as null).
- *
- * Replaces the inline copies in PluginsSettings.tsx, SoundPackBrowser.tsx,
- * AttachmentCardShell.tsx, DiffViewer.tsx, and FileViewer.tsx. Those use
- * KB/MB/GB labels (technically wrong for base 1024) — migrate them in a
- * follow-up so the whole UI agrees on units.
+ * - Bytes < 1024 → integer "<n> B".
+ * - KiB / MiB / GiB / TiB → up to 1 decimal place; trailing ".0" trimmed.
+ * - Null / undefined / NaN / negative → "0 B" (defensive — input may come
+ *   from a Rust Option<u64> serialized as null). Callers can rely on this
+ *   never throwing.
  */
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null || !Number.isFinite(bytes) || bytes < 0) {

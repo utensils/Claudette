@@ -20,15 +20,6 @@ interface WorktreeRow extends DiscoveredWorktree {
   editedName: string;
 }
 
-/** Defensive wrapper so a stubbed formatBytes can't crash the modal. */
-function safeFormatBytes(n: number): string {
-  try {
-    return formatBytes(n);
-  } catch {
-    return `${n} B`;
-  }
-}
-
 export function ImportWorktreesModal() {
   const { t } = useTranslation("modals");
   const { t: tCommon } = useTranslation("common");
@@ -174,7 +165,7 @@ export function ImportWorktreesModal() {
           const nameValid = NAME_RE.test(row.editedName);
           const isPurging = purging.has(row.path);
           const size =
-            row.size_bytes != null ? safeFormatBytes(row.size_bytes) : null;
+            row.size_bytes != null ? formatBytes(row.size_bytes) : null;
           return (
             <label key={row.path} className={styles.worktreeRow}>
               <input

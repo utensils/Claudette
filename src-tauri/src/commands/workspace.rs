@@ -1510,8 +1510,10 @@ pub struct DiscoveredWorktree {
 /// Symlinks are not followed (would risk cycles and double-counting). I/O
 /// errors on individual entries are silently skipped so one unreadable
 /// subdir doesn't disqualify the whole worktree — the size is best-effort
-/// for UI display, not accounting.
-fn directory_size_bytes(root: &Path) -> std::io::Result<u64> {
+/// for UI display, not accounting. Returns `u64` directly because there
+/// is no fatal-error path: an unreadable root yields `0`, same as an
+/// empty dir.
+fn directory_size_bytes(root: &Path) -> u64 {
     let mut total: u64 = 0;
     let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -1531,7 +1533,7 @@ fn directory_size_bytes(root: &Path) -> std::io::Result<u64> {
             }
         }
     }
-    Ok(total)
+    total
 }
 
 /// Validate a workspace name: ASCII alphanumeric + hyphens, no leading/trailing hyphens.
@@ -1573,29 +1575,35 @@ pub async fn discover_worktrees(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| repo.path.clone());
 
-    let mut discovered = Vec::new();
+    // First pass: filter the worktree list down to entries that need a
+    // size computed. Spawn all the (blocking) size walks up front so they
+    // run in parallel on Tokio's blocking pool instead of one-at-a-time
+    // (a repo with dozens of multi-GiB sandboxes would otherwise stall
+    // the dialog open).
+    struct Pending {
+        path: String,
+        branch: String,
+        head: String,
+        suggested_name: String,
+        name_valid: bool,
+        size_handle: tokio::task::JoinHandle<u64>,
+    }
 
+    let mut pending: Vec<Pending> = Vec::new();
     for wt in worktrees {
-        // Skip the main repo entry.
         let wt_canon = std::fs::canonicalize(&wt.path)
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| wt.path.clone());
         if wt_canon == repo_canon || wt.is_bare {
             continue;
         }
-
-        // Skip detached HEAD worktrees.
         let branch = match &wt.branch {
             Some(b) => b.clone(),
             None => continue,
         };
-
-        // Skip worktrees that don't exist on disk.
         if !Path::new(&wt.path).is_dir() {
             continue;
         }
-
-        // Skip already-tracked worktrees.
         if tracked_paths.contains(&wt_canon) || tracked_branches.contains(branch.as_str()) {
             continue;
         }
@@ -1604,26 +1612,46 @@ pub async fn discover_worktrees(
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-
         let name_valid = is_valid_workspace_name(&suggested_name);
 
         let size_path = PathBuf::from(&wt.path);
-        let size_bytes = tokio::task::spawn_blocking(move || directory_size_bytes(&size_path))
-            .await
-            .ok()
-            .and_then(|r| r.ok());
+        let size_handle = tokio::task::spawn_blocking(move || directory_size_bytes(&size_path));
 
-        discovered.push(DiscoveredWorktree {
-            path: wt_path_display(&wt.path),
-            branch_name: branch,
-            head_sha: wt.head,
+        pending.push(Pending {
+            path: wt.path,
+            branch,
+            head: wt.head,
             suggested_name,
             name_valid,
+            size_handle,
+        });
+    }
+
+    let mut discovered = Vec::with_capacity(pending.len());
+    for p in pending {
+        let size_bytes = p.size_handle.await.ok();
+        discovered.push(DiscoveredWorktree {
+            path: wt_path_display(&p.path),
+            branch_name: p.branch,
+            head_sha: p.head,
+            suggested_name: p.suggested_name,
+            name_valid: p.name_valid,
             size_bytes,
         });
     }
 
     Ok(discovered)
+}
+
+/// Best-effort canonicalize: returns the canonical path string when the
+/// path exists on disk, otherwise the raw string. Comparisons that need
+/// to handle deleted-on-disk paths should compare both `(canon, raw)`
+/// pairs to avoid macOS `/tmp` vs `/private/tmp` mismatches when one
+/// side canonicalized and the other couldn't.
+fn canon_or_raw(p: &str) -> String {
+    std::fs::canonicalize(p)
+        .map(|c| c.to_string_lossy().to_string())
+        .unwrap_or_else(|_| p.to_string())
 }
 
 /// Force-remove a stray worktree the user picked from the import dialog.
@@ -1635,10 +1663,14 @@ pub async fn discover_worktrees(
 /// 2. If the dir still exists (git lost track, or refused), fall back to
 ///    `std::fs::remove_dir_all`.
 ///
-/// Safety guards: refuses to delete the repo root itself, paths already
-/// tracked as Claudette workspaces, or anything outside a plausible
-/// worktree shape (path must be a directory the user explicitly chose
-/// from the discovery list — we re-validate the canonical path here).
+/// Safety guards (all enforced server-side because the frontend isn't
+/// the only possible caller of a Tauri command):
+/// - `path` must be one of the worktrees `git worktree list` reports for
+///   this repo. Arbitrary absolute paths are rejected.
+/// - Refuses the repo root itself.
+/// - Refuses paths still claimed by a Claudette workspace (active or
+///   archived). Comparison uses both canonical and raw forms so
+///   deleted-on-disk DB rows still match against a canonical target.
 #[tauri::command]
 pub async fn purge_stray_worktree(
     repo_id: String,
@@ -1652,26 +1684,52 @@ pub async fn purge_stray_worktree(
         .find(|r| r.id == repo_id)
         .ok_or("Repository not found")?;
 
-    let target_canon = std::fs::canonicalize(&path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| path.clone());
-    let repo_canon = std::fs::canonicalize(&repo.path)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| repo.path.clone());
+    let target_canon = canon_or_raw(&path);
+    let target_raw = path.clone();
+    let repo_canon = canon_or_raw(&repo.path);
 
-    if target_canon == repo_canon {
+    if target_canon == repo_canon || target_raw == repo_canon {
         return Err("Refusing to delete the main repository directory".into());
     }
 
+    // Re-validate the path against the live `git worktree list` for this
+    // repo. A caller (including any future XSS injecting into a Tauri
+    // invoke) cannot use this command to delete arbitrary filesystem
+    // paths.
+    let worktrees = git::list_worktrees(&repo.path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let valid_worktree_paths: std::collections::HashSet<String> = worktrees
+        .iter()
+        .filter(|wt| !wt.is_bare)
+        .flat_map(|wt| {
+            // Accept both canonical and raw forms — `git worktree list`
+            // may report `/tmp/foo` while the canonical is `/private/tmp/foo`.
+            let raw = wt.path.clone();
+            let canon = canon_or_raw(&wt.path);
+            [raw, canon]
+        })
+        .collect();
+    if !valid_worktree_paths.contains(&target_canon) && !valid_worktree_paths.contains(&target_raw)
+    {
+        return Err(format!(
+            "'{path}' is not a linked worktree of this repository"
+        ));
+    }
+
     // Refuse if any active or archived workspace still claims this path.
+    // Compare both canonical and raw forms — a stored path whose dir was
+    // deleted will fail to canonicalize and would otherwise slip the guard.
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
     let claimed = workspaces
         .iter()
         .filter_map(|w| w.worktree_path.as_ref())
         .any(|p| {
-            std::fs::canonicalize(p)
-                .map(|c| c.to_string_lossy() == target_canon.as_str())
-                .unwrap_or_else(|_| p.as_str() == target_canon.as_str())
+            let p_canon = canon_or_raw(p);
+            p_canon == target_canon
+                || p_canon == target_raw
+                || p.as_str() == target_canon.as_str()
+                || p.as_str() == target_raw.as_str()
         });
     if claimed {
         return Err(
