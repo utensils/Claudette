@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { listWorkspaceFiles } from "../../services/tauri";
 import { useAppStore } from "../../stores/useAppStore";
 import {
   extractClaudetteWorktreeRelativePath,
   parseFilePathTarget,
 } from "../../utils/filePathLinks";
+import { loadWorkspaceFilesCached } from "../../utils/workspaceFileCache";
 
 export interface WorkspaceFileIndex {
   resolve: (path: string) => string | null;
@@ -16,14 +16,6 @@ interface FileIndexData {
   paths: Set<string>;
   uniqueBasenames: Map<string, string | null>;
 }
-
-interface FileIndexCacheEntry {
-  refreshNonce: number;
-  promise: Promise<FileIndexData>;
-}
-
-const MAX_CACHED_WORKSPACES = 20;
-const dataCache = new Map<string, FileIndexCacheEntry>();
 
 export function useWorkspaceFileIndex(
   workspaceId: string | null | undefined,
@@ -39,23 +31,14 @@ export function useWorkspaceFileIndex(
       return;
     }
     let cancelled = false;
-    const cached = dataCache.get(workspaceId);
-    let promise =
-      cached?.refreshNonce === refreshNonce ? cached.promise : undefined;
-    if (!promise) {
-      promise = listWorkspaceFiles(workspaceId).then(buildFileIndex);
-      dataCache.set(workspaceId, { refreshNonce, promise });
-      trimFileIndexCache();
-    }
+    const promise = loadWorkspaceFilesCached(workspaceId, refreshNonce).then(
+      buildFileIndex,
+    );
     promise
       .then((next) => {
         if (!cancelled) setData(next);
       })
       .catch((err) => {
-        const current = dataCache.get(workspaceId);
-        if (current?.promise === promise) {
-          dataCache.delete(workspaceId);
-        }
         if (cancelled) return;
         console.error("Failed to load workspace file index:", err);
         setData(null);
@@ -95,14 +78,6 @@ export function useWorkspaceFileIndex(
   }, [data]);
 }
 
-function trimFileIndexCache(): void {
-  while (dataCache.size > MAX_CACHED_WORKSPACES) {
-    const oldestKey = dataCache.keys().next().value;
-    if (!oldestKey) return;
-    dataCache.delete(oldestKey);
-  }
-}
-
 function formatLineSuffix(parsed: ReturnType<typeof parseFilePathTarget>): string {
   if (typeof parsed.startLine !== "number") return "";
   let suffix = `:${parsed.startLine}`;
@@ -123,7 +98,7 @@ function formatLineSuffix(parsed: ReturnType<typeof parseFilePathTarget>): strin
 }
 
 function buildFileIndex(
-  entries: Awaited<ReturnType<typeof listWorkspaceFiles>>,
+  entries: Awaited<ReturnType<typeof loadWorkspaceFilesCached>>,
 ): FileIndexData {
   const paths = new Set<string>();
   const uniqueBasenames = new Map<string, string | null>();
